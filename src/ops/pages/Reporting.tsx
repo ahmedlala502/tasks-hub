@@ -11,6 +11,7 @@ import {
   Handshake,
   Search,
   ShieldAlert,
+  Trash2,
   Users2,
   Workflow,
 } from 'lucide-react';
@@ -170,6 +171,7 @@ export default function Reporting() {
   const [searchTerm, setSearchTerm] = useState('');
   const [cloudUsers, setCloudUsers] = useState<OpsUser[]>([]);
   const [, setRefreshNonce] = useState(0);
+  const [hiddenAgents, setHiddenAgents] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const pillarParam = searchParams.get('pillar');
@@ -283,7 +285,7 @@ export default function Reporting() {
 
     const tasksByOwner = buildRowsMap(tasks, (task) => task.ownerId);
     const blockersByOwner = buildRowsMap(blockers, (blocker) => blocker.ownerId);
-    const handoversByOutgoing = buildRowsMap(handovers, (handover) => handover.outgoingLead);
+    const handoversByOutgoing = buildRowsMap(handovers, (handover) => handover.outgoingLead ?? '');
     const campaignsByOwner = buildRowsMap(campaigns, (campaign) => campaign.currentOwner);
 
     const officeRows: DataRow[] = officeInsights.officeRows.map((row) => ({
@@ -387,8 +389,8 @@ export default function Reporting() {
       Date: handover.handoffDate,
       Team: handover.team,
       Region: handover.region,
-      From: handover.outgoingLead,
-      To: handover.incomingLead,
+      From: handover.outgoingLead ?? '',
+      To: handover.incomingLead ?? '',
       Status: handover.status,
       LinkedTasks: handover.taskIds.length,
       NotesSize: handover.notes.length,
@@ -523,11 +525,17 @@ export default function Reporting() {
     : selectedReport.rows;
   const filteredRows = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return activeReportRows;
-    return activeReportRows.filter((row) =>
-      Object.values(row).some((value) => String(value).toLowerCase().includes(query)),
-    );
-  }, [activeReportRows, searchTerm]);
+    let rows = activeReportRows;
+    if (selectedPillar === 'agents') {
+      rows = rows.filter((row) => !hiddenAgents.has(String(row.Agent || row.name)));
+    }
+    if (query) {
+      rows = rows.filter((row) =>
+        Object.values(row).some((value) => String(value).toLowerCase().includes(query)),
+      );
+    }
+    return rows;
+  }, [activeReportRows, searchTerm, selectedPillar, hiddenAgents]);
 
   const chart = useMemo(() => {
     const rows = filteredRows.slice(0, 6);
@@ -765,6 +773,21 @@ export default function Reporting() {
               onChange={(event) => setSearchTerm(event.target.value)}
             />
           </div>
+          {selectedPillar === 'agents' && hiddenAgents.size > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 text-[10px]"
+              onClick={() => {
+                if (confirm(`Show all ${hiddenAgents.size} hidden agent(s)?`)) {
+                  setHiddenAgents(new Set());
+                }
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Show {hiddenAgents.size} Hidden
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {filteredRows.length ? (
@@ -777,6 +800,11 @@ export default function Reporting() {
                         {column}
                       </TableHead>
                     ))}
+                    {selectedPillar === 'agents' && (
+                      <TableHead className="py-3 text-[10px] font-extrabold uppercase tracking-[0.12em] text-muted-foreground text-right">
+                        Actions
+                      </TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -787,6 +815,23 @@ export default function Reporting() {
                           {String(row[column])}
                         </TableCell>
                       ))}
+                      {selectedPillar === 'agents' && (
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                            onClick={() => {
+                              const agentName = String(row.Agent || row.name || '');
+                              if (agentName && confirm(`Hide "${agentName}" from reports?`)) {
+                                setHiddenAgents(prev => new Set([...prev, agentName]));
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
