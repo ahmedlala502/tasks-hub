@@ -3,15 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   ArrowUpCircle,
+  BellRing,
+  CalendarCheck,
   CheckCircle2,
   Circle,
   Clock,
   Flame,
+  Flag,
   Plus,
+  RefreshCw,
   Save,
   Search,
   Trash2,
@@ -24,9 +28,11 @@ import { cn } from '../utils';
 import { dataService, TEAM_MEMBERS } from '../services/dataService';
 import { notify } from '../services/notificationService';
 import { Task } from '../types';
+import { completeDailyTask, getDueReminderCandidates } from '../lib/dailyOperatingTasks';
 
 const PRIORITIES: Task['priority'][] = ['Critical', 'High', 'Medium', 'Low'];
 const ONE_DAY = 86400000;
+const REMINDER_STORAGE_KEY = 'GC_DAILY_TASK_REMINDERS_SENT';
 
 const fallbackDueDate = () => Date.now() + ONE_DAY;
 
@@ -50,6 +56,22 @@ const parseDateInput = (value: string, fallback: unknown) => {
 
 const isTaskOverdue = (task: Task) =>
   !task.completed && isPast(toValidDate(task.dueDate));
+
+const loadNotifiedReminderKeys = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(REMINDER_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return new Set();
+  }
+};
+
+const saveNotifiedReminderKeys = (keys: Set<string>) => {
+  try {
+    localStorage.setItem(REMINDER_STORAGE_KEY, JSON.stringify([...keys].slice(-300)));
+  } catch {}
+};
 
 const emptyDraft = (): Partial<Task> => ({
   title: '',
@@ -129,6 +151,29 @@ export default function PriorityBoard() {
   const [draft, setDraft] = useState<Partial<Task>>(emptyDraft());
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [supabaseUsers, setSupabaseUsers] = useState<string[]>([]);
+  const [lastDailySync, setLastDailySync] = useState('');
+
+  const syncDailyTasks = useCallback((mode: 'auto' | 'manual' = 'auto') => {
+    const result = dataService.ensureDailyOperatingTasks();
+    const scoped = filterTasksByRole(role, result.tasks);
+    setTasks(scoped);
+    setLastDailySync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+    if (result.createdCount > 0) {
+      notify(
+        'Daily Operating Sheet Ready',
+        `${result.createdCount} recurring tasks created for today`,
+        'purple',
+        '/priority-board',
+      );
+    } else if (mode === 'manual') {
+      notify('Daily Tasks Already Current', 'No duplicate tasks were added for today', 'green', '/priority-board');
+    }
+  }, [role]);
+
+  useEffect(() => {
+    syncDailyTasks('auto');
+  }, [syncDailyTasks]);
 
   useEffect(() => {
     let mounted = true;
@@ -142,6 +187,23 @@ export default function PriorityBoard() {
     });
     return () => { mounted = false; };
   }, []);
+
+  useEffect(() => {
+    const notifiedKeys = loadNotifiedReminderKeys();
+    const due = getDueReminderCandidates(tasks, Date.now(), notifiedKeys);
+    if (due.length === 0) return;
+
+    due.forEach(({ task, reminder, notificationKey }) => {
+      notifiedKeys.add(notificationKey);
+      notify(
+        'Task Reminder',
+        `${reminder.label} · ${task.ownerId}: ${task.title}`,
+        task.priority === 'Critical' ? 'red' : 'orange',
+        '/priority-board',
+      );
+    });
+    saveNotifiedReminderKeys(notifiedKeys);
+  }, [tasks]);
 
   const campaigns = filterCampaignsByRole(role, dataService.getCampaigns());
   const owners = filterOwnerOptionsByRole(
@@ -184,6 +246,7 @@ export default function PriorityBoard() {
   const criticalCount = tasks.filter(
     (t) => t.priority === 'Critical' && !t.completed
   ).length;
+  const dailyCount = tasks.filter((t) => t.dailyTaskDate).length;
 
   const openCreateFor = (priority: Task['priority']) => {
     setCreateForPriority(priority);
@@ -219,14 +282,25 @@ export default function PriorityBoard() {
 
   const toggleComplete = (task: Task) => {
     const next = !task.completed;
+    const patch = next
+      ? completeDailyTask(task)
+      : {
+          ...task,
+          completed: false,
+          completedAt: undefined,
+          updatedAt: Date.now(),
+          flags: (task.flags || []).map((flag) => ({ ...flag, resolved: false })),
+        };
     const updated = filterTasksByRole(
       role,
-      dataService.updateTask(task.id, { completed: next, updatedAt: Date.now() })
+      dataService.updateTask(task.id, patch)
     );
     setTasks(updated);
     notify(
       next ? 'Task Done' : 'Task Reopened',
-      `"${task.title}" ${next ? 'marked complete' : 'returned to active'}`,
+      next
+        ? `"${task.title}" completed by ${task.ownerId}`
+        : `"${task.title}" returned to active`,
       next ? 'green' : 'orange',
       '/priority-board'
     );
@@ -255,6 +329,15 @@ export default function PriorityBoard() {
             Tasks organized by urgency — triage and act on the highest impact work first.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => syncDailyTasks('manual')}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-gc-orange px-4 text-xs font-extrabold uppercase tracking-widest text-white shadow-sm transition-colors hover:bg-gc-orange/90"
+          title={lastDailySync ? `Last synced ${lastDailySync}` : 'Sync daily tasks'}
+        >
+          <RefreshCw size={14} />
+          Sync Daily Tasks
+        </button>
       </div>
 
       {/* Stats row */}
@@ -262,7 +345,7 @@ export default function PriorityBoard() {
         <StatCard label="Active" value={totalActive} color="text-gc-orange" />
         <StatCard label="Overdue" value={totalOverdue} color="text-red-600" />
         <StatCard label="Critical" value={criticalCount} color="text-red-600" />
-        <StatCard label="Owners" value={owners.length} color="text-purple-600 dark:text-purple-400" />
+        <StatCard label="Daily Tasks" value={dailyCount} color="text-purple-600 dark:text-purple-400" />
       </div>
 
       {/* Filters */}
@@ -542,11 +625,15 @@ function TaskCard({
   onDelete: () => void;
 }) {
   const ownerId = task.ownerId?.trim() || 'Unassigned';
+  const nextReminder = task.reminders
+    ?.filter((reminder) => reminder.dueAt >= Date.now())
+    .sort((a, b) => a.dueAt - b.dueAt)[0];
+  const openFlags = task.flags?.filter((flag) => !flag.resolved).slice(0, 3) || [];
 
   return (
     <div
       className={cn(
-        'px-4 py-3 transition-colors',
+        'group px-4 py-3 transition-colors',
         task.completed && 'opacity-60',
         overdue && !task.completed && 'bg-red-50/40 dark:bg-red-900/10'
       )}
@@ -583,6 +670,12 @@ function TaskCard({
             </p>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {task.department && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-gc-orange/10 px-2 py-0.5 text-[10px] font-bold text-gc-orange">
+                <CalendarCheck size={9} />
+                {task.department}
+              </span>
+            )}
             <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-foreground">
               {ownerId}
             </span>
@@ -603,7 +696,40 @@ function TaskCard({
               )}
               {overdue && !task.completed && ' · Overdue'}
             </span>
+            {nextReminder && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700 dark:bg-purple-900/20 dark:text-purple-300">
+                <BellRing size={9} />
+                {format(new Date(nextReminder.dueAt), 'HH:mm')}
+              </span>
+            )}
           </div>
+          {(task.output || task.kpi) && (
+            <div className="mt-2 space-y-1 rounded-lg border border-border bg-background/60 p-2">
+              {task.output && (
+                <p className="text-[10.5px] font-semibold leading-relaxed text-foreground">
+                  {task.output}
+                </p>
+              )}
+              {task.kpi && (
+                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  KPI: {task.kpi}
+                </p>
+              )}
+            </div>
+          )}
+          {openFlags.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {openFlags.map((flag) => (
+                <span
+                  key={flag.id}
+                  className="inline-flex items-center gap-1 rounded-md border border-orange-100 bg-orange-50 px-1.5 py-0.5 text-[9.5px] font-bold text-orange-700 dark:border-orange-900/40 dark:bg-orange-900/20 dark:text-orange-300"
+                >
+                  <Flag size={8} />
+                  {flag.label}
+                </span>
+              ))}
+            </div>
+          )}
           {task.campaignId && task.campaignId !== 'Generic Ops' && (
             <p className="mt-1 text-[10px] text-muted-foreground truncate">
               {task.campaignId}

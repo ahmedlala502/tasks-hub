@@ -1,0 +1,33 @@
+import { describe, expect, it } from 'vitest';
+import { DEFAULT_ACCESS_PASSWORD, DEFAULT_ACCESS_USERS } from './defaultAccessUsers';
+
+describe('default access users', () => {
+  it('includes every user shown in the access screenshot', () => {
+    expect(DEFAULT_ACCESS_USERS.map((user) => user.email)).toEqual([
+      'shouq_ksa@trygc.com',
+      'sara_ksa@trygc.com',
+      'aljazi_ksa@trygc.com',
+      'lamiaa@trygc.com',
+      'm.tarek@trygc.com',
+      'mahdi@trygc.com',
+      'adel@grand-community.com',
+      'sabry@trygc.com',
+      'a.ismail@trygc.com',
+      'shahd@trygc.com',
+      'nada@trygc.com',
+      'm.atia@trygc.com',
+      'admin@trygc.com',
+    ]);
+  });
+
+  it('uses the requested default password and preserves master roles', () => {
+    expect(DEFAULT_ACCESS_PASSWORD).toBe('Admin123');
+    expect(DEFAULT_ACCESS_USERS.filter((user) => user.role === 'master').map((user) => user.email)).toEqual([
+      'lamiaa@trygc.com',
+      'adel@grand-community.com',
+      'sabry@trygc.com',
+      'a.ismail@trygc.com',
+      'admin@trygc.com',
+    ]);
+  });
+});

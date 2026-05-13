@@ -146,6 +146,30 @@ export interface Task extends BaseEntity {
   campaignId: string;
   priority: 'Low' | 'Medium' | 'High' | 'Critical';
   completed: boolean;
+  department?: string;
+  output?: string;
+  kpi?: string;
+  cadence?: string;
+  scheduleLabel?: string;
+  dailyTaskKey?: string;
+  dailyTaskDate?: string;
+  completedAt?: number;
+  reminders?: TaskReminder[];
+  flags?: TaskFlag[];
+}
+
+export interface TaskReminder {
+  id: string;
+  label: string;
+  dueAt: number;
+  notifiedAt?: number;
+}
+
+export interface TaskFlag {
+  id: string;
+  label: string;
+  tone: 'red' | 'orange' | 'purple' | 'green';
+  resolved: boolean;
 }
 
 export interface Handover extends BaseEntity {

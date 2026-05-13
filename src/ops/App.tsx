@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from './components/ui/sonner';
 import { canAccessPath, getHomePath } from './lib/access';
 import { supabaseAuth } from './services/supabaseAuth';
-import type { OpsRole, OpsUser } from './auth/types';
+import type { OpsDepartment, OpsRole, OpsUser } from './auth/types';
 
 import Dashboard from './pages/Dashboard';
 import Blockers from './pages/Blockers';
@@ -12,6 +12,7 @@ import Admin from './pages/Admin';
 import Reporting from './pages/Reporting';
 import Tasks from './pages/Tasks';
 import PriorityBoard from './pages/PriorityBoard';
+import UserProfile from './pages/UserProfile';
 import Templates from './pages/Templates';
 import Analytics from './pages/Analytics';
 import AssetRegistry from './pages/AssetRegistry';
@@ -26,6 +27,8 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateProfile: (payload: { displayName: string; department: OpsDepartment; title: string; timezone: string }) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -76,6 +79,18 @@ export default function App() {
     setRole(null);
   };
 
+  const updateProfile = async (payload: { displayName: string; department: OpsDepartment; title: string; timezone: string }) => {
+    const updatedUser = await supabaseAuth.updateProfile(payload);
+    setUser(updatedUser);
+    setRole(updatedUser.role);
+  };
+
+  const updatePassword = async (password: string) => {
+    const updatedUser = await supabaseAuth.updatePassword(password);
+    setUser(updatedUser);
+    setRole(updatedUser.role);
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-zinc-950 text-zinc-400">
@@ -89,7 +104,7 @@ export default function App() {
   const allow = (path: string, element: React.ReactElement) => (canAccessPath(role, path) ? element : redirectHome);
 
   return (
-    <AuthContext.Provider value={{ user, role, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, role, loading, login, logout, updateProfile, updatePassword }}>
       <Router>
         <Routes>
           <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
@@ -104,6 +119,7 @@ export default function App() {
             <Route path="reporting" element={allow('/reporting', <Reporting />)} />
             <Route path="tasks" element={allow('/tasks', <Tasks />)} />
             <Route path="priority-board" element={allow('/priority-board', <PriorityBoard />)} />
+            <Route path="profile" element={allow('/profile', <UserProfile />)} />
             <Route path="templates" element={allow('/templates', <Templates />)} />
             <Route path="analytics" element={allow('/analytics', <Analytics />)} />
             <Route path="assets" element={allow('/assets', <AssetRegistry />)} />

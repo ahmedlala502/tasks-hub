@@ -5,8 +5,8 @@ type OpsStatus = 'active' | 'suspended';
 
 type RequestPayload =
   | { action: 'listUsers' }
-  | { action: 'createUser'; name: string; email: string; password: string; role: OpsRole }
-  | { action: 'updateUser'; id: string; name?: string; role?: OpsRole; status?: OpsStatus }
+  | { action: 'createUser'; name: string; email: string; password: string; role: OpsRole; department?: string; title?: string }
+  | { action: 'updateUser'; id: string; name?: string; role?: OpsRole; status?: OpsStatus; department?: string; title?: string }
   | { action: 'deleteUser'; id: string };
 
 const corsHeaders = {
@@ -67,6 +67,9 @@ function mapUser(user: {
     displayName,
     role: email.toLowerCase() === bootstrapMasterEmail ? 'master' : metadataRole,
     status: user.banned_until ? 'suspended' : 'active',
+    department: user.user_metadata?.department ?? 'Operations',
+    title: user.user_metadata?.title ?? (metadataRole === 'master' ? 'Master Admin' : 'Team Member'),
+    timezone: user.user_metadata?.timezone ?? 'Africa/Cairo',
     createdAt: user.created_at ?? null,
     lastSignInAt: user.last_sign_in_at ?? null,
   };
@@ -140,6 +143,10 @@ Deno.serve(async (request) => {
           },
           user_metadata: {
             display_name: payload.name.trim(),
+            full_name: payload.name.trim(),
+            department: payload.department ?? 'Operations',
+            title: payload.title ?? (role === 'master' ? 'Master Admin' : 'Team Member'),
+            timezone: 'Africa/Cairo',
           },
         });
 
@@ -150,7 +157,13 @@ Deno.serve(async (request) => {
       case 'updateUser': {
         const updateData: {
           app_metadata?: { role: OpsRole };
-          user_metadata?: { display_name: string };
+          user_metadata?: {
+            display_name: string;
+            full_name?: string;
+            department?: string;
+            title?: string;
+            timezone?: string;
+          };
           ban_duration?: 'none' | '876000h';
         } = {};
 
@@ -159,7 +172,21 @@ Deno.serve(async (request) => {
         }
 
         if (payload.name?.trim()) {
-          updateData.user_metadata = { display_name: payload.name.trim() };
+          updateData.user_metadata = {
+            display_name: payload.name.trim(),
+            full_name: payload.name.trim(),
+            department: payload.department ?? 'Operations',
+            title: payload.title ?? 'Team Member',
+            timezone: 'Africa/Cairo',
+          };
+        } else if (payload.department || payload.title) {
+          updateData.user_metadata = {
+            display_name: '',
+            full_name: '',
+            department: payload.department ?? 'Operations',
+            title: payload.title ?? 'Team Member',
+            timezone: 'Africa/Cairo',
+          };
         }
 
         if (payload.status) {

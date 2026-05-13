@@ -1,0 +1,26 @@
+{
+  "campaigns": [],
+  "influencers": [],
+  "blockers": [],
+  "tasks": [],
+  "handovers": [
+    {
+      "id": "HO-1778661161179",
+      "handoffDate": "2026-05-13",
+      "fromShift": "Morning",
+      "toShift": "Mid",
+      "team": "Operations",
+      "region": "Regional",
+      "outgoingLead": "Sarah A.",
+      "incomingLead": "Ahmed E.",
+      "notes": "",
+      "taskIds": [],
+      "status": "Pending",
+      "createdAt": 1778661161179,
+      "updatedAt": 1778661161179,
+      "createdBy": "admin"
+    }
+  ],
+  "exportedAt": 1778664821551,
+  "version": "1.0"
+}

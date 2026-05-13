@@ -5,6 +5,11 @@
 
 import { CampaignStage } from '../constants';
 import { Campaign, CampaignInfluencer, Blocker, Handover, Task } from '../types';
+import { ensureDailyOperatingTasks } from '../lib/dailyOperatingTasks';
+import completedTasksCsv from '../data/community-done-tasks.csv?raw';
+import attachedWorkspaceExport from '../data/attached-workspace-export.json';
+import { buildImportedCompletedTasks, deriveUsersFromCompletedTasks, extractUsersFromWorkspaceExport, parseCompletedTasksCsv } from '../lib/importedWorkspaceData';
+import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
 
 const buildCampaignId = (seed: number) => `C-${Date.now()}-${seed}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -102,6 +107,11 @@ const INITIAL_BLOCKERS_DATA: Blocker[] = [
 ];
 
 // Real team roles used as default owner options across the workspace
+const IMPORTED_COMPLETED_TASK_ROWS = parseCompletedTasksCsv(completedTasksCsv);
+export const IMPORTED_COMPLETED_TASKS = buildImportedCompletedTasks(IMPORTED_COMPLETED_TASK_ROWS);
+export const IMPORTED_COMPLETED_USER_NAMES = deriveUsersFromCompletedTasks(IMPORTED_COMPLETED_TASK_ROWS);
+export const ATTACHED_EXPORT_USERS = extractUsersFromWorkspaceExport(attachedWorkspaceExport);
+
 export const TEAM_MEMBERS: string[] = [
   'Campaign Manager',
   'Community Lead',
@@ -110,9 +120,11 @@ export const TEAM_MEMBERS: string[] = [
   'QA Lead',
   'Finance Lead',
   'Head of Operations',
+  ...DEFAULT_ACCESS_USERS.map((user) => user.name),
+  ...IMPORTED_COMPLETED_USER_NAMES,
 ];
 
-const INITIAL_TASKS_DATA: Task[] = [];
+const INITIAL_TASKS_DATA: Task[] = IMPORTED_COMPLETED_TASKS;
 
 const INITIAL_HANDOVERS_DATA: Handover[] = [
   {
@@ -198,6 +210,16 @@ if (hydratedCampaigns.hasChanges) {
   saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
 }
 
+const mergeImportedCompletedTasks = () => {
+  const existingIds = new Set(TASKS_DATA.map((task) => task.id));
+  const missing = IMPORTED_COMPLETED_TASKS.filter((task) => !existingIds.has(task.id));
+  if (missing.length === 0) return;
+  TASKS_DATA = [...missing, ...TASKS_DATA];
+  saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+};
+
+mergeImportedCompletedTasks();
+
 // Service Methods
 export const dataService = {
   getCampaigns: () => [...CAMPAIGNS_DATA],
@@ -242,6 +264,14 @@ export const dataService = {
     return [...CAMPAIGNS_DATA];
   },
   getTasks: () => [...TASKS_DATA],
+  ensureDailyOperatingTasks: (now = Date.now()) => {
+    const result = ensureDailyOperatingTasks(TASKS_DATA, now);
+    if (result.createdCount > 0) {
+      TASKS_DATA = result.tasks;
+      saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+    }
+    return { tasks: [...TASKS_DATA], createdCount: result.createdCount };
+  },
   updateTask: (id: string, updates: Partial<Task>) => {
     TASKS_DATA = TASKS_DATA.map(t => t.id === id ? { ...t, ...updates } : t);
     saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);

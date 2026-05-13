@@ -7,7 +7,7 @@ import {
   Shield, BarChart3, MessageSquare, CheckSquare, Flame,
   Sun, Moon, RefreshCw, Download,
   ChevronRight,
-  Search, X, SlidersHorizontal, Check, Clock, CircleAlert, CheckCircle2
+  Search, X, SlidersHorizontal, Check, Clock, CircleAlert, CheckCircle2, UserRound
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { notificationService, AppNotification } from '../services/notificationService';
@@ -32,6 +32,7 @@ const OPS_NAV: NavItem[] = [
 ];
 
 const SYSTEM_NAV: NavItem[] = [
+  { icon: UserRound,     label: 'Profile',     path: '/profile' },
   { icon: MessageSquare, label: 'Templates',  path: '/templates' },
   { icon: History,       label: 'Audit Logs', path: '/audit' },
   { icon: Settings,      label: 'Settings',   path: '/settings' },
@@ -214,7 +215,11 @@ export default function Layout() {
 
         {/* User footer */}
         <div className="border-t border-sidebar-border p-3 relative z-10">
-          <div className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-accent/60 transition-colors cursor-pointer group mb-1">
+          <div
+            className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-accent/60 transition-colors cursor-pointer group mb-1"
+            onClick={() => navigate('/profile')}
+            title="Open profile"
+          >
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gc-purple to-gc-orange flex items-center justify-center text-[10px] font-extrabold text-white font-condensed shrink-0">
               {initials}
             </div>

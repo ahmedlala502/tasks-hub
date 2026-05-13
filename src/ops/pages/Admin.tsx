@@ -30,6 +30,7 @@ import { dataService, exportAllData, importAllData, downloadJson } from '../serv
 import { useAuth } from '../App';
 import type { OpsRole } from '../auth/types';
 import { adminApi } from '../services/adminApi';
+import { DEFAULT_ACCESS_PASSWORD, DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
 
 type AdminRole = 'Master' | 'Operations' | 'Community';
 type AccessLevel = 'Full' | 'Scoped' | 'Read Only';
@@ -69,35 +70,21 @@ type DataCounts = {
 
 const STORAGE_KEY = 'trygc-admin-access-center';
 
-const defaultUsers: AdminUser[] = [
-  {
-    id: 'usr-owner',
-    name: 'Admin User',
-    email: 'admin@trygc.com',
-    role: 'Master',
-    access: 'Full',
-    status: 'Active',
-    lastSeen: 'Now',
-  },
-  {
-    id: 'usr-ops',
-    name: 'Sarah A.',
-    email: 'sarah.ops@trygc.com',
-    role: 'Operations',
-    access: 'Full',
-    status: 'Active',
-    lastSeen: '8m ago',
-  },
-  {
-    id: 'usr-community',
-    name: 'Mona K.',
-    email: 'mona.community@trygc.com',
-    role: 'Community',
-    access: 'Scoped',
-    status: 'Active',
-    lastSeen: '32m ago',
-  },
-];
+const seedRoleToAdminRole = (role: OpsRole): AdminRole => {
+  if (role === 'master') return 'Master';
+  if (role === 'community') return 'Community';
+  return 'Operations';
+};
+
+const defaultUsers: AdminUser[] = DEFAULT_ACCESS_USERS.map((user) => ({
+  id: `seed-${user.email}`,
+  name: user.name,
+  email: user.email,
+  role: seedRoleToAdminRole(user.role),
+  access: user.role === 'master' ? 'Full' : 'Scoped',
+  status: 'Active',
+  lastSeen: 'Never',
+}));
 
 const defaultPolicies: ModulePolicy[] = [
   { id: 'tasks', label: 'Task Management', description: 'Assign, reassign, edit, and close operational tasks.', owner: 'Operations', enabled: true, approvalRequired: false },
@@ -186,6 +173,7 @@ export default function Admin() {
   const [savedAt, setSavedAt] = useState('Ready');
   const [hydrated, setHydrated] = useState(false);
   const [usersLoading, setUsersLoading] = useState(true);
+  const [generatingAccess, setGeneratingAccess] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const restoreRef = useRef<HTMLInputElement>(null);
 
@@ -306,6 +294,8 @@ export default function Admin() {
         email,
         password,
         role: roleToOpsRole(newUser.role),
+        department: newUser.role === 'Community' ? 'Coordination' : 'Operations',
+        title: newUser.role === 'Master' ? 'Master Admin' : `${newUser.role} Access`,
       });
 
       setUsers(prev => [mapApiUserToAdminUser(createdUser), ...prev.filter(user => user.email.toLowerCase() !== email)]);
@@ -335,6 +325,54 @@ export default function Admin() {
       .catch((error: any) => {
         setSavedAt(error.message || 'Unable to remove user');
       });
+  };
+
+  const generateDefaultAccess = async () => {
+    setGeneratingAccess(true);
+    setUserCreateError('');
+
+    try {
+      let latestUsers = await adminApi.listUsers();
+      let created = 0;
+      let updated = 0;
+
+      for (const seed of DEFAULT_ACCESS_USERS) {
+        const existing = latestUsers.find(user => user.email.toLowerCase() === seed.email.toLowerCase());
+
+        if (existing) {
+          const nextUser = await adminApi.updateUser({
+            id: existing.uid,
+            name: seed.name,
+            role: seed.role,
+            status: 'active',
+            department: seed.department,
+            title: seed.title,
+          });
+          latestUsers = latestUsers.map(user => user.uid === nextUser.uid ? nextUser : user);
+          updated += 1;
+          continue;
+        }
+
+        const createdUser = await adminApi.createUser({
+          name: seed.name,
+          email: seed.email,
+          password: DEFAULT_ACCESS_PASSWORD,
+          role: seed.role,
+          department: seed.department,
+          title: seed.title,
+        });
+        latestUsers = [createdUser, ...latestUsers];
+        created += 1;
+      }
+
+      setUsers(latestUsers.map(mapApiUserToAdminUser));
+      setSavedAt(`Default access ready: ${created} created, ${updated} updated · password ${DEFAULT_ACCESS_PASSWORD}`);
+    } catch (error: any) {
+      setSavedAt(error.message || 'Unable to generate default access');
+      setUserCreateError(error.message || 'Unable to generate default access.');
+    } finally {
+      setGeneratingAccess(false);
+    }
   };
 
   const refreshDataCounts = () => setDataCounts(getDataCounts());
@@ -464,6 +502,14 @@ export default function Admin() {
                 </label>
                 <button onClick={grantFullAccess} className="h-10 px-4 rounded-lg bg-gc-orange text-white text-[11px] font-extrabold uppercase tracking-widest hover:bg-gc-orange-hover transition-colors flex items-center justify-center gap-2">
                   <ShieldCheck size={14} /> Grant All
+                </button>
+                <button
+                  onClick={generateDefaultAccess}
+                  disabled={generatingAccess}
+                  className="h-10 px-4 rounded-lg border border-gc-orange/30 bg-gc-orange/10 text-gc-orange text-[11px] font-extrabold uppercase tracking-widest hover:bg-gc-orange/15 transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  title={`Create missing screenshot users with password ${DEFAULT_ACCESS_PASSWORD}`}
+                >
+                  <Key size={14} /> {generatingAccess ? 'Generating...' : 'Generate Access'}
                 </button>
               </div>
             </div>

@@ -79,10 +79,21 @@ export function filterInfluencersByRole(role: OpsRole | null, influencers: Campa
   return influencers.filter((influencer) => (scope === 'community' ? isCommunityInfluencer(influencer) : !isCommunityInfluencer(influencer)));
 }
 
+// Team-role names that should always be available regardless of workspace scope.
+// The community-hint filter must NOT strip these predefined roles.
+const ALWAYS_VISIBLE_OWNERS = new Set([
+  'campaign manager', 'community lead', 'coordination lead',
+  'coverage lead', 'qa lead', 'finance lead', 'head of operations',
+]);
+
 export function filterOwnerOptionsByRole(role: OpsRole | null, owners: string[]): string[] {
   const scope = getWorkspaceScope(role);
   if (scope === 'all') return owners;
-  return owners.filter((owner) => (scope === 'community' ? isCommunityText(owner) : !isCommunityText(owner)));
+  return owners.filter((owner) => {
+    // Never filter out predefined team-role names
+    if (ALWAYS_VISIBLE_OWNERS.has(owner.toLowerCase())) return true;
+    return scope === 'community' ? isCommunityText(owner) : !isCommunityText(owner);
+  });
 }
 
 export function filterTeamOptionsByRole(role: OpsRole | null, teams: string[]): string[] {
