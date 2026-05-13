@@ -760,8 +760,7 @@ function CreateForm({
 }
 
 function CampaignSequenceSection({ groups }: { groups: CampaignTaskGroup[] }) {
-  const completionRate = (done: number, total: number) => 
-    total > 0 ? Math.round((done / total) * 100) : 0;
+  const completionRate = (done: number, total: number) => total > 0 ? Math.round((done / total) * 100) : 0;
 
   const getCampaignHealth = (group: CampaignTaskGroup) => {
     const rate = completionRate(group.done, group.total);
@@ -779,19 +778,15 @@ function CampaignSequenceSection({ groups }: { groups: CampaignTaskGroup[] }) {
             <Layers3 size={16} /> Campaign Operations
           </div>
           <h3 className="mt-1 text-xl font-extrabold tracking-tight text-foreground">Campaign Task Sequences</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Tasks organized by campaign with progress tracking and priority insights
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Tasks organized by campaign with progress tracking</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="rounded-lg border border-border bg-background px-4 py-2">
             <div className="text-2xl font-bold text-foreground">{groups.length}</div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Active Campaigns</div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Campaigns</div>
           </div>
           <div className="rounded-lg border border-gc-orange/20 bg-gc-orange/5 px-4 py-2">
-            <div className="text-2xl font-bold text-gc-orange">
-              {groups.reduce((sum, g) => sum + g.total, 0)}
-            </div>
+            <div className="text-2xl font-bold text-gc-orange">{groups.reduce((sum, g) => sum + g.total, 0)}</div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-gc-orange">Total Tasks</div>
           </div>
         </div>
@@ -801,9 +796,7 @@ function CampaignSequenceSection({ groups }: { groups: CampaignTaskGroup[] }) {
         <div className="rounded-xl border-2 border-dashed border-border px-6 py-12 text-center">
           <Layers3 size={48} className="mx-auto mb-4 text-gc-orange/50" />
           <h4 className="text-lg font-bold text-foreground">No Campaign Tasks</h4>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Tasks in this lane aren't linked to campaigns yet. Link tasks to campaigns in the table above.
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Tasks aren't linked to campaigns yet</p>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -817,17 +810,10 @@ function CampaignSequenceSection({ groups }: { groups: CampaignTaskGroup[] }) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-gc-orange">
-                          Campaign #{idx + 1}
-                        </span>
-                        <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-black uppercase', 
-                          health.bg, health.color, health.border, 'border')}">
-                          {health.label}
-                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-gc-orange">Campaign #{idx + 1}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase border ${health.bg} ${health.color} ${health.border}`}>{health.label}</span>
                       </div>
-                      <h4 className="mt-1 truncate text-sm font-extrabold text-foreground">
-                        {group.campaignName}
-                      </h4>
+                      <h4 className="mt-1 truncate text-sm font-extrabold text-foreground">{group.campaignName}</h4>
                     </div>
                     <div className="flex items-center gap-1 text-right">
                       <div className="text-lg font-bold text-foreground">{group.total}</div>
@@ -837,19 +823,11 @@ function CampaignSequenceSection({ groups }: { groups: CampaignTaskGroup[] }) {
                   
                   <div className="mt-3">
                     <div className="h-2 w-full rounded-full bg-border overflow-hidden">
-                      <div 
-                        className={cn('h-full transition-all', 
-                          progress === 100 ? 'bg-green-500' : 
-                          progress >= 50 ? 'bg-gc-orange' : 'bg-amber-500'
-                        )}
-                        style={{ width: `${progress}%` }}
-                      />
+                      <div className={`h-full transition-all ${progress === 100 ? 'bg-green-500' : progress >= 50 ? 'bg-gc-orange' : 'bg-amber-500'}`} style={{ width: `${progress}%` }} />
                     </div>
                     <div className="mt-1 flex items-center justify-between text-[10px] font-bold">
                       <span className="text-muted-foreground">Progress</span>
-                      <span className={cn(progress === 100 ? 'text-green-600' : 'text-foreground')}>
-                        {progress}% Complete
-                      </span>
+                      <span className={progress === 100 ? 'text-green-600' : 'text-foreground'}>{progress}% Complete</span>
                     </div>
                   </div>
                 </div>
@@ -862,58 +840,40 @@ function CampaignSequenceSection({ groups }: { groups: CampaignTaskGroup[] }) {
                     <span className="text-right">Due</span>
                   </div>
                   
-                  {group.tasks.slice(0, 5).map((item) => (
-                    <div key={item.task.id} className="group/item grid grid-cols-4 gap-2 items-center px-3 py-2.5 text-sm transition-colors hover:bg-muted/30">
-                      <div className="min-w-0">
-                        <div className="truncate font-semibold text-foreground">{item.task.title}</div>
-                        <div className="mt-0.5 flex items-center gap-1.5">
-                          <span className={cn('inline-block h-2 w-2 rounded-full',
-                            item.task.priority === 'Critical' ? 'bg-red-500' :
-                            item.task.priority === 'High' ? 'bg-gc-orange' :
-                            item.task.priority === 'Medium' ? 'bg-amber-500' :
-                            'bg-green-500'
-                          )} />
-                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
-                            {item.task.priority}
-                          </span>
+                  {group.tasks.slice(0, 5).map((item) => {
+                    const priorityDot = item.task.priority === 'Critical' ? 'bg-red-500' : item.task.priority === 'High' ? 'bg-gc-orange' : item.task.priority === 'Medium' ? 'bg-amber-500' : 'bg-green-500';
+                    const ownerClass = item.task.ownerId ? 'bg-secondary text-foreground' : 'bg-red-50 text-red-700';
+                    const bucketClass = item.bucket === 'done' ? 'bg-green-50 text-green-700' : item.bucket === 'blocked' ? 'bg-red-50 text-red-700' : item.bucket === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700';
+                    
+                    return (
+                      <div key={item.task.id} className="group/item grid grid-cols-4 gap-2 items-center px-3 py-2.5 text-sm transition-colors hover:bg-muted/30">
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold text-foreground">{item.task.title}</div>
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            <span className={`inline-block h-2 w-2 rounded-full ${priorityDot}`} />
+                            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{item.task.priority}</span>
+                          </div>
+                        </div>
+                        
+                        <div className="text-center">
+                          <span className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold ${ownerClass}`}>{item.task.ownerId?.split(' ')[0] || 'Unassigned'}</span>
+                        </div>
+                        
+                        <div className="text-center">
+                          <span className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${bucketClass}`}>{item.bucket}</span>
+                        </div>
+                        
+                        <div className="text-right">
+                          <div className="text-xs font-semibold text-foreground">{fmt(item.task.dueDate, 'MMM d')}</div>
+                          <div className="text-[10px] text-muted-foreground">{fmt(item.task.dueDate, 'h:mm a')}</div>
                         </div>
                       </div>
-                      
-                      <div className="text-center">
-                        <span className={cn('inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold',
-                          item.task.ownerId ? 'bg-secondary text-foreground' : 'bg-red-50 text-red-700'
-                        )}">
-                          {item.task.ownerId?.split(' ')[0] || 'Unassigned'}
-                        </span>
-                      </div>
-                      
-                      <div className="text-center">
-                        <span className={cn('inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase',
-                          item.bucket === 'done' ? 'bg-green-50 text-green-700' :
-                          item.bucket === 'blocked' ? 'bg-red-50 text-red-700' :
-                          item.bucket === 'pending' ? 'bg-amber-50 text-amber-700' :
-                          'bg-blue-50 text-blue-700'
-                        )}">
-                          {item.bucket}
-                        </span>
-                      </div>
-                      
-                      <div className="text-right">
-                        <div className="text-xs font-semibold text-foreground">
-                          {fmt(item.task.dueDate, 'MMM d')}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground">
-                          {fmt(item.task.dueDate, 'h:mm a')}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   
                   {group.tasks.length > 5 && (
                     <div className="px-3 py-3 text-center text-xs font-bold text-muted-foreground">
-                      <span className="rounded-full bg-secondary px-3 py-1">
-                        +{group.tasks.length - 5} more tasks
-                      </span>
+                      <span className="rounded-full bg-secondary px-3 py-1">+{group.tasks.length - 5} more tasks</span>
                     </div>
                   )}
                 </div>
@@ -924,9 +884,7 @@ function CampaignSequenceSection({ groups }: { groups: CampaignTaskGroup[] }) {
                       <CheckSquare size={12} className="text-gc-orange" />
                       <span className="text-muted-foreground">Completion</span>
                     </div>
-                    <span className={cn(progress === 100 ? 'text-green-600' : 'text-foreground')}>
-                      {group.done}/{group.total} • {progress}%
-                    </span>
+                    <span className={progress === 100 ? 'text-green-600' : 'text-foreground'}>{group.done}/{group.total} • {progress}%</span>
                   </div>
                 </div>
               </div>
