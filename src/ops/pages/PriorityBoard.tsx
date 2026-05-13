@@ -3,7 +3,7 @@ import {
   AlertCircle, ArrowUpCircle, BellRing, CheckCircle2, Circle,
   Clock, Edit2, Flag, FolderKanban, Layers3, Plus, RefreshCw,
   Save, Search, Trash2, X, LayoutGrid, Check, ChevronDown, ChevronUp,
-  User, Calendar, MapPin, DollarSign, Target
+  User, Calendar, MapPin, DollarSign, Target, List, Grid3x3, Columns
 } from 'lucide-react';
 import { format, isPast, isValid } from 'date-fns';
 import { useAuth } from '../App';
@@ -17,6 +17,32 @@ import { completeDailyTask, getDueReminderCandidates } from '../lib/dailyOperati
 const PRIORITIES: Task['priority'][] = ['Critical', 'High', 'Medium', 'Low'];
 const ONE_DAY = 86400000;
 const REMINDER_STORAGE_KEY = 'GC_DAILY_TASK_REMINDERS_SENT';
+
+const DEFAULT_DAILY_TASKS = [
+  { area: 'Coordination', task: 'Monitor client groups, assign tasks, follow up on blockers, run handovers.' },
+  { area: 'WhatsApp / Live Chat', task: 'Reply fast, handle confirmations, reminders, visits, complaints, and missed visits.' },
+  { area: 'Coverage', task: 'Check coverage 4 times daily, follow up on missing posts, archive proofs.' },
+  { area: 'Onboarding', task: 'Add new influencers, complete profiles, update data, prepare lookalike lists.' },
+  { area: 'Activation', task: 'Contact inactive/new influencers and build backup influencer pool.' },
+  { area: 'Quality', task: 'Audit chats, coverage, onboarding, mistakes, and train agents.' },
+  { area: 'Systems', task: 'Maintain dashboards, automations, reminders, and live reports.' },
+  { area: 'Account Managers', task: 'Track client targets, campaign progress, risks, and client updates.' },
+  { area: 'Data Analysis', task: 'Validate influencer data and prepare clean usable lists.' },
+];
+
+const DEFAULT_CAMPAIGN_STAGES = [
+  { stage: 'Campaign Setup', tasks: 'Review booking, target, dates, branches, deliverables, criteria, and exceptions.' },
+  { stage: 'Data Preparation', tasks: 'Filter active, inactive, blocked influencers, and WhatsApp active numbers.' },
+  { stage: 'Influencer Pool', tasks: 'Prepare main list, lookalike list, and backup list.' },
+  { stage: 'Client Validation', tasks: 'Confirm QR/test codes, booking details, and emergency contact.' },
+  { stage: 'Task Assignment', tasks: 'Split work by team and assign clear owners.' },
+  { stage: 'Outreach', tasks: 'Send invitations, reminders, answer questions, and collect confirmations.' },
+  { stage: 'Visit Management', tasks: 'Confirm visit dates, follow up before visits, and reschedule missed visits.' },
+  { stage: 'Coverage Monitoring', tasks: 'Track posts, missing coverage, overdue posts, and content compliance.' },
+  { stage: 'Quality Check', tasks: 'Audit communication, coverage, data, and mistakes.' },
+  { stage: 'Reporting', tasks: 'Update live report, share client updates, and prepare final campaign report.' },
+  { stage: 'Closure', tasks: 'Archive all proofs, close missing items, document learnings, and send final report.' },
+];
 
 const fallbackDueDate = () => Date.now() + ONE_DAY;
 
@@ -60,6 +86,30 @@ interface TaskWithEdit extends Task {
   isEditing?: boolean;
 }
 
+type ViewLayout = 'list' | 'grid' | 'compact';
+
+interface DailyTaskTemplate {
+  id: string;
+  area: string;
+  task: string;
+  completed: boolean;
+  assignedTo?: string;
+  dueDate?: number;
+  priority?: Task['priority'];
+  expanded?: boolean;
+}
+
+interface CampaignStageTemplate {
+  id: string;
+  stage: string;
+  tasks: string;
+  completed: boolean;
+  assignedTo?: string;
+  dueDate?: number;
+  priority?: Task['priority'];
+  expanded?: boolean;
+}
+
 export default function PriorityBoard() {
   const { role } = useAuth();
   const [tasks, setTasks] = useState<Task[]>(filterTasksByRole(role, dataService.getTasks()));
@@ -74,6 +124,32 @@ export default function PriorityBoard() {
   const [draft, setDraft] = useState<Partial<Task>>(emptyDraft());
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [supabaseUsers, setSupabaseUsers] = useState<string[]>([]);
+  const [viewLayout, setViewLayout] = useState<ViewLayout>('list');
+  
+  // Daily task templates
+  const [dailyTaskTemplates, setDailyTaskTemplates] = useState<DailyTaskTemplate[]>(() => {
+    const stored = localStorage.getItem('GC_DAILY_TASK_TEMPLATES');
+    if (stored) return JSON.parse(stored);
+    return DEFAULT_DAILY_TASKS.map((t, i) => ({ id: `DT-${i}`, ...t, completed: false }));
+  });
+  
+  // Campaign stage templates
+  const [campaignStageTemplates, setCampaignStageTemplates] = useState<CampaignStageTemplate[]>(() => {
+    const stored = localStorage.getItem('GC_CAMPAIGN_STAGE_TEMPLATES');
+    if (stored) return JSON.parse(stored);
+    return DEFAULT_CAMPAIGN_STAGES.map((s, i) => ({ id: `CS-${i}`, ...s, completed: false }));
+  });
+  
+  const [editingDailyTask, setEditingDailyTask] = useState<string | null>(null);
+  const [editingCampaignStage, setEditingCampaignStage] = useState<string | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('GC_DAILY_TASK_TEMPLATES', JSON.stringify(dailyTaskTemplates));
+  }, [dailyTaskTemplates]);
+  
+  useEffect(() => {
+    localStorage.setItem('GC_CAMPAIGN_STAGE_TEMPLATES', JSON.stringify(campaignStageTemplates));
+  }, [campaignStageTemplates]);
 
   useEffect(() => {
     let mounted = true;
@@ -102,11 +178,15 @@ export default function PriorityBoard() {
     });
   }, [tasks, query, ownerFilter, campaignFilter, showCompleted]);
 
+  const dailyTasks = useMemo(() => {
+    return filteredTasks.filter((t) => !t.campaignId || t.campaignId.trim() === '');
+  }, [filteredTasks]);
+
   const tasksByCampaign = useMemo(() => {
     const map = new Map<string, Task[]>();
     filteredTasks.forEach((t) => {
-      const key = t.campaignId?.trim() || 'No Campaign';
-      // Filter out "Account Managers" bucket
+      const key = t.campaignId?.trim();
+      if (!key) return; // Skip tasks without campaign (they go to daily)
       if (key === 'Account Managers') return;
       
       const arr = map.get(key) || [];
@@ -119,6 +199,7 @@ export default function PriorityBoard() {
   const totalActive = tasks.filter((t) => !t.completed).length;
   const totalOverdue = tasks.filter(isTaskOverdue).length;
   const criticalCount = tasks.filter((t) => t.priority === 'Critical' && !t.completed).length;
+  const dailyActiveCount = dailyTasks.filter((t) => !t.completed).length;
 
   const openCreate = (campaignId?: string) => { 
     setDraft({ ...emptyDraft(), campaignId: campaignId || '' }); 
@@ -205,6 +286,58 @@ export default function PriorityBoard() {
     setExpandedCampaigns(next);
   };
 
+  const toggleDailyTaskComplete = (id: string) => {
+    setDailyTaskTemplates(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  };
+  
+  const toggleCampaignStageComplete = (id: string) => {
+    setCampaignStageTemplates(prev => prev.map(s => s.id === id ? { ...s, completed: !s.completed } : s));
+  };
+  
+  const addDailyTask = () => {
+    const newTask: DailyTaskTemplate = {
+      id: `DT-${Date.now()}`,
+      area: 'New Area',
+      task: 'New task description',
+      completed: false,
+      assignedTo: '',
+      dueDate: Date.now() + ONE_DAY,
+      priority: 'Medium',
+      expanded: false,
+    };
+    setDailyTaskTemplates(prev => [...prev, newTask]);
+  };
+  
+  const addCampaignStage = () => {
+    const newStage: CampaignStageTemplate = {
+      id: `CS-${Date.now()}`,
+      stage: 'New Stage',
+      tasks: 'Stage tasks description',
+      completed: false,
+      assignedTo: '',
+      dueDate: Date.now() + ONE_DAY,
+      priority: 'Medium',
+      expanded: false,
+    };
+    setCampaignStageTemplates(prev => [...prev, newStage]);
+  };
+  
+  const updateDailyTask = (id: string, updates: Partial<DailyTaskTemplate>) => {
+    setDailyTaskTemplates(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+  };
+  
+  const updateCampaignStage = (id: string, updates: Partial<CampaignStageTemplate>) => {
+    setCampaignStageTemplates(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+  };
+  
+  const deleteDailyTask = (id: string) => {
+    setDailyTaskTemplates(prev => prev.filter(t => t.id !== id));
+  };
+  
+  const deleteCampaignStage = (id: string) => {
+    setCampaignStageTemplates(prev => prev.filter(s => s.id !== id));
+  };
+
   const getCampaignDetails = (campaignName: string): Campaign | undefined => {
     return campaigns.find((c) => c.name === campaignName);
   };
@@ -220,13 +353,37 @@ export default function PriorityBoard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={openCreate} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gc-orange px-3 text-xs font-bold text-white hover:bg-gc-orange/90">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
+            <button
+              onClick={() => setViewLayout('list')}
+              className={cn('p-1.5 rounded transition-colors', viewLayout === 'list' ? 'bg-gc-orange text-white' : 'hover:bg-accent')}
+              title="List view"
+            >
+              <List size={16} />
+            </button>
+            <button
+              onClick={() => setViewLayout('grid')}
+              className={cn('p-1.5 rounded transition-colors', viewLayout === 'grid' ? 'bg-gc-orange text-white' : 'hover:bg-accent')}
+              title="Grid view"
+            >
+              <Grid3x3 size={16} />
+            </button>
+            <button
+              onClick={() => setViewLayout('compact')}
+              className={cn('p-1.5 rounded transition-colors', viewLayout === 'compact' ? 'bg-gc-orange text-white' : 'hover:bg-accent')}
+              title="Compact view"
+            >
+              <Columns size={16} />
+            </button>
+          </div>
+          <button onClick={() => openCreate()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gc-orange px-3 text-xs font-bold text-white hover:bg-gc-orange/90">
             <Plus size={14} /> New Task
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <StatCard label="Daily Tasks" value={dailyActiveCount} color="text-blue-600 dark:text-blue-400" />
         <StatCard label="Active Tasks" value={totalActive} color="text-gc-orange" />
         <StatCard label="Overdue" value={totalOverdue} color="text-red-600" />
         <StatCard label="Critical" value={criticalCount} color="text-red-600" />
@@ -306,15 +463,526 @@ export default function PriorityBoard() {
         </div>
       )}
 
-      <div className="space-y-4">
-        {tasksByCampaign.length === 0 ? (
-          <div className="rounded-xl border-2 border-dashed border-border py-12 text-center">
-            <FolderKanban size={48} className="mx-auto mb-4 text-gc-orange/50" />
-            <h3 className="text-lg font-bold text-foreground">No Tasks Found</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Create tasks or adjust your filters</p>
+      <div className="space-y-6">
+        {/* Daily Recurring Tasks Section */}
+        <div className="rounded-xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/20 dark:to-card shadow-lg overflow-hidden dark:border-blue-900/30">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                  <Clock size={24} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-extrabold text-white">Daily Tasks</h3>
+                  <p className="text-xs text-blue-100">Recurring tasks to complete today</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-white">{dailyTaskTemplates.filter(t => t.completed).length}/{dailyTaskTemplates.length}</div>
+                  <div className="text-[10px] font-bold uppercase text-blue-100">Completed</div>
+                </div>
+                <button
+                  onClick={addDailyTask}
+                  className="p-2.5 rounded-lg bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-colors"
+                  title="Add daily task"
+                >
+                  <Plus size={18} />
+                </button>
+              </div>
+            </div>
           </div>
-        ) : (
-          tasksByCampaign.map(([campaignName, campaignTasks]) => {
+
+          {dailyTaskTemplates.length === 0 ? (
+            <div className="px-6 py-8 text-center">
+              <Clock size={40} className="mx-auto mb-3 text-blue-400/50" />
+              <p className="text-sm font-semibold text-muted-foreground">No daily tasks yet</p>
+              <p className="text-xs text-muted-foreground mt-1">Add recurring tasks that need to be done every day</p>
+            </div>
+          ) : (
+            <div className={cn(
+              viewLayout === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-3 p-4' :
+              viewLayout === 'compact' ? 'divide-y divide-blue-100 dark:divide-blue-900/30' :
+              'divide-y divide-blue-100 dark:divide-blue-900/30'
+            )}>
+              {dailyTaskTemplates.map((taskTemplate) => {
+                const isEditing = editingDailyTask === taskTemplate.id;
+                const isExpanded = taskTemplate.expanded;
+                
+                if (isEditing) {
+                  return (
+                    <div key={taskTemplate.id} className={cn(
+                      'bg-orange-50/40 dark:bg-orange-900/10',
+                      viewLayout === 'grid' ? 'p-4 rounded-lg border border-orange-200 dark:border-orange-900/30' : 'px-6 py-4'
+                    )}>
+                      <div className="space-y-3">
+                        <input
+                          className="settings-input text-sm font-bold"
+                          value={taskTemplate.area}
+                          onChange={(e) => updateDailyTask(taskTemplate.id, { area: e.target.value })}
+                          placeholder="Area name"
+                        />
+                        <textarea
+                          className="settings-input text-xs"
+                          value={taskTemplate.task}
+                          onChange={(e) => updateDailyTask(taskTemplate.id, { task: e.target.value })}
+                          placeholder="Task description"
+                          rows={3}
+                        />
+                        <div className="grid grid-cols-2 gap-3">
+                          <select
+                            className="settings-input text-xs"
+                            value={taskTemplate.assignedTo || ''}
+                            onChange={(e) => updateDailyTask(taskTemplate.id, { assignedTo: e.target.value })}
+                          >
+                            <option value="">Assign to...</option>
+                            {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                          <select
+                            className="settings-input text-xs"
+                            value={taskTemplate.priority || 'Medium'}
+                            onChange={(e) => updateDailyTask(taskTemplate.id, { priority: e.target.value as Task['priority'] })}
+                          >
+                            {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        </div>
+                        <input
+                          className="settings-input text-xs"
+                          type="date"
+                          value={taskTemplate.dueDate ? formatDueDate(taskTemplate.dueDate, 'yyyy-MM-dd') : ''}
+                          onChange={(e) => updateDailyTask(taskTemplate.id, { dueDate: parseDateInput(e.target.value, taskTemplate.dueDate) })}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setEditingDailyTask(null)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700">
+                            <Save size={12} className="inline mr-1" /> Done
+                          </button>
+                          {role === 'master' && (
+                            <button onClick={() => { deleteDailyTask(taskTemplate.id); setEditingDailyTask(null); }} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50">
+                              <Trash2 size={12} className="inline mr-1" /> Delete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+                
+                if (viewLayout === 'grid') {
+                  return (
+                    <div key={taskTemplate.id} className="space-y-2">
+                      <div
+                        className={cn(
+                          'p-4 rounded-lg border border-blue-200 dark:border-blue-900/30 transition-all hover:shadow-md cursor-pointer',
+                          taskTemplate.completed && 'opacity-60 bg-blue-50/30 dark:bg-blue-900/5'
+                        )}
+                        onClick={() => updateDailyTask(taskTemplate.id, { expanded: !isExpanded })}
+                      >
+                        <div className="flex items-start gap-3">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); toggleDailyTaskComplete(taskTemplate.id); }}
+                            className={cn(
+                              'flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all flex-shrink-0 mt-0.5',
+                              taskTemplate.completed
+                                ? 'border-green-500 bg-green-500 text-white shadow-sm'
+                                : 'border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                            )}
+                          >
+                            {taskTemplate.completed && <Check size={12} />}
+                          </button>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <h4 className={cn(
+                                'text-sm font-bold text-blue-600 dark:text-blue-400',
+                                taskTemplate.completed && 'line-through opacity-60'
+                              )}>
+                                {taskTemplate.area}
+                              </h4>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setEditingDailyTask(taskTemplate.id); }}
+                                  className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/20 transition-colors"
+                                  title="Edit"
+                                >
+                                  <Edit2 size={12} />
+                                </button>
+                                {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              </div>
+                            </div>
+                            <p className={cn(
+                              'text-xs text-muted-foreground',
+                              taskTemplate.completed && 'line-through'
+                            )}>
+                              {taskTemplate.task}
+                            </p>
+                            {taskTemplate.assignedTo && (
+                              <div className="mt-2 flex items-center gap-1.5 text-xs">
+                                <User size={11} className="text-muted-foreground" />
+                                <span className="font-semibold">{taskTemplate.assignedTo}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {isExpanded && (
+                        <div className="px-4 py-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg border border-blue-200 dark:border-blue-900/30 space-y-2">
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">Assigned:</span>
+                              <span className="ml-1 font-semibold">{taskTemplate.assignedTo || 'Unassigned'}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Priority:</span>
+                              <span className="ml-1 font-semibold">{taskTemplate.priority || 'Medium'}</span>
+                            </div>
+                            {taskTemplate.dueDate && (
+                              <div className="col-span-2">
+                                <span className="text-muted-foreground">Due:</span>
+                                <span className="ml-1 font-semibold">{formatDueDate(taskTemplate.dueDate, 'MMM d, yyyy')}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                
+                if (viewLayout === 'compact') {
+                  return (
+                    <div
+                      key={taskTemplate.id}
+                      className={cn(
+                        'px-6 py-2.5 transition-colors hover:bg-blue-50/50 dark:hover:bg-blue-900/10 flex items-center gap-3',
+                        taskTemplate.completed && 'opacity-60 bg-blue-50/30 dark:bg-blue-900/5'
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleDailyTaskComplete(taskTemplate.id)}
+                        className={cn(
+                          'flex h-5 w-5 items-center justify-center rounded-full border-2 transition-all flex-shrink-0',
+                          taskTemplate.completed
+                            ? 'border-green-500 bg-green-500 text-white'
+                            : 'border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                        )}
+                      >
+                        {taskTemplate.completed && <Check size={10} />}
+                      </button>
+                      <div className="flex-1 min-w-0 flex items-center gap-3">
+                        <span className={cn(
+                          'text-xs font-bold text-blue-600 dark:text-blue-400 w-32 flex-shrink-0',
+                          taskTemplate.completed && 'line-through opacity-60'
+                        )}>
+                          {taskTemplate.area}
+                        </span>
+                        <span className={cn(
+                          'text-xs text-muted-foreground truncate',
+                          taskTemplate.completed && 'line-through'
+                        )}>
+                          {taskTemplate.task}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setEditingDailyTask(taskTemplate.id)}
+                        className="p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-900/20 transition-colors flex-shrink-0"
+                        title="Edit"
+                      >
+                        <Edit2 size={12} />
+                      </button>
+                    </div>
+                  );
+                }
+                
+                return (
+                  <div
+                    key={taskTemplate.id}
+                    className={cn(
+                      'px-6 py-4 transition-colors hover:bg-blue-50/50 dark:hover:bg-blue-900/10',
+                      taskTemplate.completed && 'opacity-60 bg-blue-50/30 dark:bg-blue-900/5'
+                    )}
+                  >
+                    <div className="flex items-center gap-4">
+                      <button
+                        type="button"
+                        onClick={() => toggleDailyTaskComplete(taskTemplate.id)}
+                        className={cn(
+                          'flex h-7 w-7 items-center justify-center rounded-full border-2 transition-all flex-shrink-0',
+                          taskTemplate.completed
+                            ? 'border-green-500 bg-green-500 text-white shadow-sm'
+                            : 'border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                        )}
+                      >
+                        {taskTemplate.completed && <Check size={14} />}
+                      </button>
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className={cn(
+                            'text-sm font-bold text-blue-600 dark:text-blue-400',
+                            taskTemplate.completed && 'line-through opacity-60'
+                          )}>
+                            {taskTemplate.area}
+                          </h4>
+                        </div>
+                        <p className={cn(
+                          'mt-0.5 text-xs text-muted-foreground',
+                          taskTemplate.completed && 'line-through'
+                        )}>
+                          {taskTemplate.task}
+                        </p>
+                      </div>
+                      
+                      <button
+                        onClick={() => setEditingDailyTask(taskTemplate.id)}
+                        className="rounded-lg border border-border p-1.5 hover:bg-accent transition-colors flex-shrink-0"
+                        title="Edit task"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Campaign Tasks Section */}
+        <div>
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-extrabold text-foreground flex items-center gap-2">
+                <FolderKanban size={20} className="text-gc-orange" />
+                Campaign Stage Checklist
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Standard stages for every campaign</p>
+            </div>
+            <button
+              onClick={addCampaignStage}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-gc-orange px-3 text-xs font-bold text-white hover:bg-gc-orange/90"
+            >
+              <Plus size={12} /> Add Stage
+            </button>
+          </div>
+
+          <div className={cn(
+            'rounded-xl border border-border bg-card overflow-hidden shadow-sm mb-6',
+            viewLayout === 'grid' ? 'p-4' : ''
+          )}>
+            {campaignStageTemplates.length === 0 ? (
+              <div className="px-6 py-8 text-center">
+                <FolderKanban size={40} className="mx-auto mb-3 text-gc-orange/50" />
+                <p className="text-sm font-semibold text-muted-foreground">No campaign stages yet</p>
+                <p className="text-xs text-muted-foreground mt-1">Add standard stages for campaign execution</p>
+              </div>
+            ) : (
+              <div className={cn(
+                viewLayout === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3' :
+                viewLayout === 'compact' ? 'divide-y divide-border' :
+                'divide-y divide-border'
+              )}>
+                {campaignStageTemplates.map((stageTemplate) => {
+                  const isEditing = editingCampaignStage === stageTemplate.id;
+                  
+                  if (isEditing) {
+                    return (
+                      <div key={stageTemplate.id} className={cn(
+                        'bg-orange-50/40 dark:bg-orange-900/10',
+                        viewLayout === 'grid' ? 'p-4 rounded-lg border border-orange-200 dark:border-orange-900/30' : 'px-6 py-4'
+                      )}>
+                        <div className="space-y-3">
+                          <input
+                            className="settings-input text-sm font-bold"
+                            value={stageTemplate.stage}
+                            onChange={(e) => updateCampaignStage(stageTemplate.id, { stage: e.target.value })}
+                            placeholder="Stage name"
+                          />
+                          <textarea
+                            className="settings-input text-xs"
+                            value={stageTemplate.tasks}
+                            onChange={(e) => updateCampaignStage(stageTemplate.id, { tasks: e.target.value })}
+                            placeholder="Stage tasks"
+                            rows={3}
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => setEditingCampaignStage(null)} className="rounded-lg bg-gc-orange px-3 py-1.5 text-xs font-bold text-white hover:bg-gc-orange/90">
+                              <Save size={12} className="inline mr-1" /> Done
+                            </button>
+                            {role === 'master' && (
+                              <button onClick={() => { deleteCampaignStage(stageTemplate.id); setEditingCampaignStage(null); }} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50">
+                                <Trash2 size={12} className="inline mr-1" /> Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  if (viewLayout === 'grid') {
+                    return (
+                      <div
+                        key={stageTemplate.id}
+                        className={cn(
+                          'p-4 rounded-lg border border-border transition-all hover:shadow-md',
+                          stageTemplate.completed && 'opacity-60 bg-muted/20'
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <button
+                            type="button"
+                            onClick={() => toggleCampaignStageComplete(stageTemplate.id)}
+                            className={cn(
+                              'flex h-6 w-6 items-center justify-center rounded-full border-2 transition-all flex-shrink-0 mt-0.5',
+                              stageTemplate.completed
+                                ? 'border-green-500 bg-green-500 text-white shadow-sm'
+                                : 'border-gc-orange hover:bg-orange-50 dark:hover:bg-orange-900/20'
+                            )}
+                          >
+                            {stageTemplate.completed && <Check size={12} />}
+                          </button>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                              <h4 className={cn(
+                                'text-sm font-bold text-gc-orange',
+                                stageTemplate.completed && 'line-through opacity-60'
+                              )}>
+                                {stageTemplate.stage}
+                              </h4>
+                              <button
+                                onClick={() => setEditingCampaignStage(stageTemplate.id)}
+                                className="p-1 rounded hover:bg-accent transition-colors"
+                                title="Edit"
+                              >
+                                <Edit2 size={12} />
+                              </button>
+                            </div>
+                            <p className={cn(
+                              'text-xs text-muted-foreground',
+                              stageTemplate.completed && 'line-through'
+                            )}>
+                              {stageTemplate.tasks}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  if (viewLayout === 'compact') {
+                    return (
+                      <div
+                        key={stageTemplate.id}
+                        className={cn(
+                          'px-6 py-2.5 transition-colors hover:bg-muted/30 flex items-center gap-3',
+                          stageTemplate.completed && 'opacity-60 bg-muted/20'
+                        )}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleCampaignStageComplete(stageTemplate.id)}
+                          className={cn(
+                            'flex h-5 w-5 items-center justify-center rounded-full border-2 transition-all flex-shrink-0',
+                            stageTemplate.completed
+                              ? 'border-green-500 bg-green-500 text-white'
+                              : 'border-gc-orange hover:bg-orange-50 dark:hover:bg-orange-900/20'
+                          )}
+                        >
+                          {stageTemplate.completed && <Check size={10} />}
+                        </button>
+                        <div className="flex-1 min-w-0 flex items-center gap-3">
+                          <span className={cn(
+                            'text-xs font-bold text-gc-orange w-40 flex-shrink-0',
+                            stageTemplate.completed && 'line-through opacity-60'
+                          )}>
+                            {stageTemplate.stage}
+                          </span>
+                          <span className={cn(
+                            'text-xs text-muted-foreground truncate',
+                            stageTemplate.completed && 'line-through'
+                          )}>
+                            {stageTemplate.tasks}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setEditingCampaignStage(stageTemplate.id)}
+                          className="p-1 rounded hover:bg-accent transition-colors flex-shrink-0"
+                          title="Edit"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <div
+                      key={stageTemplate.id}
+                      className={cn(
+                        'px-6 py-4 transition-colors hover:bg-muted/30',
+                        stageTemplate.completed && 'opacity-60 bg-muted/20'
+                      )}
+                    >
+                      <div className="flex items-center gap-4">
+                        <button
+                          type="button"
+                          onClick={() => toggleCampaignStageComplete(stageTemplate.id)}
+                          className={cn(
+                            'flex h-7 w-7 items-center justify-center rounded-full border-2 transition-all flex-shrink-0',
+                            stageTemplate.completed
+                              ? 'border-green-500 bg-green-500 text-white shadow-sm'
+                              : 'border-gc-orange hover:bg-orange-50 dark:hover:bg-orange-900/20'
+                          )}
+                        >
+                          {stageTemplate.completed && <Check size={14} />}
+                        </button>
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4 className={cn(
+                              'text-sm font-bold text-gc-orange',
+                              stageTemplate.completed && 'line-through opacity-60'
+                            )}>
+                              {stageTemplate.stage}
+                            </h4>
+                          </div>
+                          <p className={cn(
+                            'mt-0.5 text-xs text-muted-foreground',
+                            stageTemplate.completed && 'line-through'
+                          )}>
+                            {stageTemplate.tasks}
+                          </p>
+                        </div>
+                        
+                        <button
+                          onClick={() => setEditingCampaignStage(stageTemplate.id)}
+                          className="rounded-lg border border-border p-1.5 hover:bg-accent transition-colors flex-shrink-0"
+                          title="Edit stage"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Campaign-Specific Tasks Section */}
+        <div>
+
+          {tasksByCampaign.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed border-border py-12 text-center">
+              <FolderKanban size={48} className="mx-auto mb-4 text-gc-orange/50" />
+              <h3 className="text-lg font-bold text-foreground">No Campaign Tasks</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Create tasks or adjust your filters</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {tasksByCampaign.map(([campaignName, campaignTasks]) => {
             const isExpanded = expandedCampaigns.has(campaignName);
             const campaign = getCampaignDetails(campaignName);
             const completedCount = campaignTasks.filter((t) => t.completed).length;
@@ -623,9 +1291,11 @@ export default function PriorityBoard() {
                   </div>
                 )}
               </div>
-            );
-          })
-        )}
+              );
+            })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

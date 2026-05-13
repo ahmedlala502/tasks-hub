@@ -235,9 +235,11 @@ export default function HandoverCenter() {
         id: `HO-${Date.now()}`, handoffDate: draft.handoffDate || format(new Date(), 'yyyy-MM-dd'),
         fromShift: draft.fromShift || 'Morning', toShift: draft.toShift || 'Mid',
         team: draft.team || defaultTeam, region: draft.region || 'Regional',
+        outgoingLead: (draft.assignFrom || [])[0] || '',
+        incomingLead: (draft.assignTo || [])[0] || '',
         assignFrom: draft.assignFrom || [], assignTo: draft.assignTo || [],
         notes: draft.notes || '', taskIds: draft.taskIds || [], status: 'Pending',
-        createdAt: Date.now(), updatedAt: Date.now(), createdBy: 'admin',
+        createdAt: Date.now(), updatedAt: Date.now(), createdBy: 'system',
       };
       setHandovers(filterHandoversByRole(role, dataService.addHandover(next)));
       notify('Handover Created', `${next.fromShift} → ${next.toShift} relay for ${(next.assignTo || []).length} users`, 'green', '/handover');
@@ -295,11 +297,11 @@ export default function HandoverCenter() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Pending" value={pendingCount} tone="text-gc-orange" />
-        <StatCard label="Acknowledged" value={acknowledgedCount} tone="text-green-600" />
-        <StatCard label="Tasks Transferred" value={transferredTaskCount} tone="text-purple-600 dark:text-purple-400" />
-        <StatCard label="Readiness" value={readiness} suffix="%" tone={readiness >= 80 ? 'text-green-600' : readiness >= 50 ? 'text-gc-orange' : 'text-red-600'} />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Pending" value={pendingCount} tone="orange" />
+        <StatCard label="Acknowledged" value={acknowledgedCount} tone="green" />
+        <StatCard label="Tasks in Relay" value={transferredTaskCount} tone="purple" />
+        <StatCard label="Readiness" value={readiness} suffix="%" tone={readiness >= 80 ? 'green' : readiness >= 50 ? 'orange' : 'red'} />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -486,7 +488,7 @@ export default function HandoverCenter() {
             <div className="max-h-[760px] overflow-y-auto">
               {filteredHandovers.map((handover) => {
                 const relatedTasks = tasks.filter((t) => handover.taskIds.includes(t.id));
-                const hasFullPermissions = role === 'master' || role === 'admin';
+                const hasFullPermissions = role === 'master';
                 
                 return (
                   <div key={handover.id} className="border-b border-border p-5 last:border-b-0 hover:bg-muted/20 transition-colors">
@@ -633,8 +635,8 @@ export default function HandoverCenter() {
 }
 
 function SelectField({
-  label, value, onChange, options, type = 'select'
-}: { label: string; value: string; onChange: (v: string) => void; options: string[]; type?: 'select' | 'date' }) {
+  label, value, onChange, options = [], type = 'select'
+}: { label: string; value: string; onChange: (v: string) => void; options?: string[]; type?: 'select' | 'date' }) {
   return (
     <label>
       <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
@@ -668,14 +670,13 @@ function StatCard({ label, value, suffix = '', tone }: {
   label: string; 
   value: number; 
   suffix?: string; 
-  tone: 'purple' | 'green' | 'orange' | 'red' | 'blue';
+  tone: 'orange' | 'green' | 'purple' | 'red';
 }) {
   const colors = {
     orange: 'text-gc-orange',
     green: 'text-green-600',
     purple: 'text-purple-600 dark:text-purple-400',
     red: 'text-red-600',
-    blue: 'text-blue-600 dark:text-blue-400',
   };
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-sm">

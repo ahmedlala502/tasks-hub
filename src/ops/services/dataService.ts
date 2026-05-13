@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { format } from 'date-fns';
 import { CampaignStage } from '../constants';
 import { Campaign, CampaignInfluencer, Blocker, Handover, Task } from '../types';
 import { ensureDailyOperatingTasks } from '../lib/dailyOperatingTasks';
@@ -42,50 +43,31 @@ export const TEAM_MEMBERS: string[] = [
   ...DEFAULT_ACCESS_USERS.map((user) => user.name),
 ];
 
-const INITIAL_CAMPAIGNS_DATA: Campaign[] = [
+export const ATTACHED_EXPORT_USERS = extractUsersFromWorkspaceExport(attachedWorkspaceExport);
+const IMPORTED_COMPLETED_TASK_ROWS = parseCompletedTasksCsv(completedTasksCsv);
+export const IMPORTED_COMPLETED_TASKS = buildImportedCompletedTasks(IMPORTED_COMPLETED_TASK_ROWS);
+
+const INITIAL_CAMPAIGNS_DATA: Campaign[] = [];
+
+export const INITIAL_INFLUENCERS_DATA: CampaignInfluencer[] = [
   {
-    id: 'C-RED-001', name: 'Red Bull Summer', clientId: 'c1', brandId: 'b1',
-    stage: 14 as any, status: 'Active', country: 'KSA', budget: 50000, budgetType: 'USD',
-    recordHealth: 'Healthy', targetInfluencers: 50, targetPostingCoverage: 100,
-    currentOwner: 'Sarah A.', nextAction: 'Reconcile visit logs',
+    id: 'CI-001', campaignId: 'C-RED-001', influencerId: 'INF-101', username: '@lifestyle_sa',
+    platform: 'Instagram', status: 'Confirmed', niche: 'Lifestyle', followerRange: '100k-500k',
+    invitationWave: 1, reminder1Sent: true, reminder2Sent: false, visitCompleted: true,
+    coverageReceived: true, qaStatus: 'Approved', ownerId: 'Sarah A.',
     createdAt: Date.now(), updatedAt: Date.now(), createdBy: 'system',
-    city: 'Riyadh', objective: 'Brand Awareness', platforms: ['Instagram', 'TikTok'],
-    type: 'Influencer Marketing', startDate: '2024-06-01', endDate: '2024-08-31',
-    deliverables: '2 Stories, 1 Reel', tags: '#RedBullSummer', mentions: '@redbullksa',
-    links: 'redbull.com/summer', visitRequired: true, productDetails: 'Summer Edition Cans',
-    approvalFlow: 'Standard', reportingCadence: 'Weekly', restrictions: 'None',
-    internalOwners: ['Sarah A.'], clientOwners: ['John D.'],
-    influencerCriteria: 'Gen Z, Outdoor lifestyle',
-  },
-  {
-    id: 'C-STC-002', name: 'STC Pay Launch', clientId: 'c2', brandId: 'b2',
-    stage: 6 as any, status: 'Active', country: 'UAE', budget: 120000, budgetType: 'USD',
-    recordHealth: 'Healthy', targetInfluencers: 200, targetPostingCoverage: 400,
-    currentOwner: 'Ahmed E.', nextAction: 'Finalize influencer selection',
-    createdAt: Date.now(), updatedAt: Date.now(), createdBy: 'system',
-    city: 'Dubai', objective: 'User Acquisition', platforms: ['Snapchat', 'TikTok'],
-    type: 'Performance', startDate: '2024-07-01', endDate: '2024-07-15',
-    deliverables: '1 Snap Ad, 1 TikTok Spark', tags: '#STCPayUAE', mentions: '@stcpay_uae',
-    links: 'stcpay.com.ae/launch', visitRequired: false, productDetails: 'Mobile App',
-    approvalFlow: 'High Priority', reportingCadence: 'Daily', restrictions: 'No competitors',
-    internalOwners: ['Ahmed E.'], clientOwners: ['Sarah M.'],
-    influencerCriteria: 'Tech savvy, UAE based',
   },
 ];
 
-const INITIAL_TASKS_DATA: Task[] = TEAM_MEMBERS.map((user, idx) => ({
-  id: `TSK-DEMO-${idx}`,
-  title: `Demo Task for ${user}`,
-  description: 'Automated demo task.',
-  ownerId: user,
-  campaignId: idx % 2 === 0 ? 'Red Bull Summer' : 'STC Pay Launch',
-  priority: 'Medium',
-  dueDate: Date.now() + (86400000 * 2),
-  completed: false,
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-  createdBy: 'system',
-}));
+export const INITIAL_BLOCKERS_DATA: Blocker[] = [
+  {
+    id: 'B-001', campaignId: 'C-RED-001', summary: 'Visit Proof Mismatch',
+    impact: 'QA blocking', status: 'Open', severity: 'Critical',
+    ownerId: 'Sarah A.', createdAt: Date.now(), updatedAt: Date.now(), createdBy: 'system',
+  },
+];
+
+const INITIAL_TASKS_DATA: Task[] = [];
 
 const INITIAL_HANDOVERS_DATA: Handover[] = TEAM_MEMBERS.map((user, idx) => ({
   id: `HO-DEMO-${idx}`,
@@ -94,6 +76,8 @@ const INITIAL_HANDOVERS_DATA: Handover[] = TEAM_MEMBERS.map((user, idx) => ({
   toShift: 'Mid',
   team: 'Operations',
   region: 'Regional',
+  outgoingLead: user,
+  incomingLead: TEAM_MEMBERS[(idx + 1) % TEAM_MEMBERS.length],
   assignFrom: [user],
   assignTo: [TEAM_MEMBERS[(idx + 1) % TEAM_MEMBERS.length]],
   notes: `Shift relay context for ${user}.`,

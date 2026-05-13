@@ -105,7 +105,7 @@ export function buildOnlineUserRoster({
 
   handovers.forEach((handover) => {
     const lastActiveAt = maxTimestamp(handover.reviewedAt, handover.acknowledgedAt, handover.updatedAt, handover.createdAt);
-    [handover.outgoingLead, handover.incomingLead].forEach((name) => {
+    [handover.outgoingLead ?? '', handover.incomingLead ?? ''].forEach((name) => {
       const row = ensureRow(name);
       if (!row) return;
       row.handoversTouched += 1;

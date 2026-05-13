@@ -285,8 +285,8 @@ export default function Dashboard() {
   });
 
   handovers.forEach(handover => {
-    const outgoing = ensureEmployee(handover.outgoingLead);
-    const incoming = ensureEmployee(handover.incomingLead);
+    const outgoing = ensureEmployee(handover.outgoingLead ?? '');
+    const incoming = ensureEmployee(handover.incomingLead ?? '');
 
     outgoing.outgoingHandovers += 1;
     incoming.incomingHandovers += 1;
@@ -319,7 +319,7 @@ export default function Dashboard() {
   });
   handovers.forEach(handover => {
     const lastActiveAt = handover.reviewedAt ?? handover.acknowledgedAt ?? handover.updatedAt;
-    [handover.outgoingLead, handover.incomingLead].forEach(name => {
+    [handover.outgoingLead ?? '', handover.incomingLead ?? ''].forEach(name => {
       const employee = normalizeName(name);
       recentActivity.set(employee, Math.max(recentActivity.get(employee) ?? 0, lastActiveAt));
     });
@@ -434,7 +434,7 @@ export default function Dashboard() {
                             </div>
                             <div>
                               <p className="text-[13px] font-semibold text-foreground group-hover:text-gc-orange transition-colors">
-                                {handover.outgoingLead} to {handover.incomingLead}
+                                {handover.outgoingLead ?? ''} to {handover.incomingLead ?? ''}
                               </p>
                               <p className="text-[10px] text-muted-foreground font-mono uppercase">
                                 {handover.handoffDate} · {handover.fromShift} to {handover.toShift}
