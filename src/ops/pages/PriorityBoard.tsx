@@ -106,6 +106,9 @@ export default function PriorityBoard() {
     const map = new Map<string, Task[]>();
     filteredTasks.forEach((t) => {
       const key = t.campaignId?.trim() || 'No Campaign';
+      // Filter out "Account Managers" bucket
+      if (key === 'Account Managers') return;
+      
       const arr = map.get(key) || [];
       arr.push(t);
       map.set(key, arr);
@@ -117,7 +120,24 @@ export default function PriorityBoard() {
   const totalOverdue = tasks.filter(isTaskOverdue).length;
   const criticalCount = tasks.filter((t) => t.priority === 'Critical' && !t.completed).length;
 
-  const openCreate = () => { setDraft(emptyDraft()); setShowCreate(true); };
+  const openCreate = (campaignId?: string) => { 
+    setDraft({ ...emptyDraft(), campaignId: campaignId || '' }); 
+    setShowCreate(true); 
+  };
+
+  const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+
+  const saveCampaignEdit = () => {
+    if (!editingCampaign) return;
+    setCampaigns(dataService.updateCampaign(editingCampaign.id, editingCampaign));
+    notify('Campaign Updated', `"${editingCampaign.name}" details saved`, 'orange', '/priority-board');
+    setEditingCampaign(null);
+  };
+
+  const deleteCampaign = (id: string) => {
+    setCampaigns(dataService.deleteCampaign(id));
+    notify('Campaign Removed', 'Campaign bucket deleted successfully', 'red', '/priority-board');
+  };
 
   const saveTask = () => {
     if (!draft.title?.trim()) return;
@@ -239,7 +259,7 @@ export default function PriorityBoard() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-gc-orange">New Task</p>
-              <h3 className="text-lg font-bold text-foreground">Create Task</h3>
+              <h3 className="text-lg font-bold text-foreground">Create Task {draft.campaignId ? `for ${draft.campaignId}` : ''}</h3>
             </div>
             <button onClick={() => setShowCreate(false)} className="icon-btn"><X size={15} /></button>
           </div>
@@ -260,6 +280,28 @@ export default function PriorityBoard() {
           <div className="mt-4 flex justify-end gap-2">
             <button onClick={() => setShowCreate(false)} className="rounded-lg border border-border px-4 py-2 text-sm font-bold hover:bg-accent">Cancel</button>
             <button onClick={saveTask} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-sm font-bold text-white hover:bg-gc-orange/90"><Save size={15} /> Save Task</button>
+          </div>
+        </div>
+      )}
+
+      {editingCampaign && (
+        <div className="rounded-xl border border-blue-200 bg-card p-5 shadow-sm dark:border-blue-900/30">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-blue-600">Modify Campaign</p>
+              <h3 className="text-lg font-bold text-foreground">Edit {editingCampaign.name}</h3>
+            </div>
+            <button onClick={() => setEditingCampaign(null)} className="icon-btn"><X size={15} /></button>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <FieldInput label="Campaign Name" value={editingCampaign.name} onChange={(v) => setEditingCampaign({ ...editingCampaign, name: v })} />
+            <SelectField label="Status" value={editingCampaign.status} onChange={(v) => setEditingCampaign({ ...editingCampaign, status: v as any })} options={['Active', 'Blocked', 'Closed', 'On Hold']} />
+            <FieldInput label="City" value={editingCampaign.city} onChange={(v) => setEditingCampaign({ ...editingCampaign, city: v })} />
+            <FieldInput label="Country" value={editingCampaign.country} onChange={(v) => setEditingCampaign({ ...editingCampaign, country: v })} />
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={() => setEditingCampaign(null)} className="rounded-lg border border-border px-4 py-2 text-sm font-bold hover:bg-accent">Cancel</button>
+            <button onClick={saveCampaignEdit} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"><Save size={15} /> Save Changes</button>
           </div>
         </div>
       )}
@@ -343,6 +385,33 @@ export default function PriorityBoard() {
                   </div>
                   
                   <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 mr-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openCreate(campaignName); }}
+                        className="p-2 rounded-lg bg-gc-orange/10 text-gc-orange hover:bg-gc-orange/20 transition-colors"
+                        title="Add task to this campaign"
+                      >
+                        <Plus size={16} />
+                      </button>
+                      {role === 'master' && (
+                        <>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingCampaign(campaign || null); }}
+                            className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                            title="Edit campaign bucket"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); if(campaign) deleteCampaign(campaign.id); }}
+                            className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                            title="Delete campaign bucket"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      )}
+                    </div>
                     <div className="text-right">
                       <div className="text-2xl font-bold text-gc-orange">{progress}%</div>
                       <div className="text-[10px] font-bold uppercase text-muted-foreground">Complete</div>

@@ -12,6 +12,8 @@ import {
   Check,
   CheckCircle2,
   CheckSquare,
+  ChevronDown,
+  ChevronUp,
   CirclePlus,
   Clock3,
   Flame,
@@ -366,35 +368,94 @@ export default function TasksCenter() {
 }
 
 function TaskWidgetGrid({ summaries }: { summaries: ReturnType<typeof buildTaskBucketSummaries> }) {
+  const { role } = useAuth();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [hiddenBuckets, setHiddenBuckets] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('GC_HIDDEN_TASK_WIDGETS');
+    return new Set(saved ? JSON.parse(saved) : []);
+  });
+
+  const toggleBucket = (bucket: string) => {
+    const next = new Set(hiddenBuckets);
+    if (next.has(bucket)) next.delete(bucket);
+    else next.add(bucket);
+    setHiddenBuckets(next);
+    localStorage.setItem('GC_HIDDEN_TASK_WIDGETS', JSON.stringify([...next]));
+    notify('Widget Filter Updated', `Visibility for ${bucket} changed`, 'orange', '/tasks');
+  };
+
+  const visibleSummaries = summaries.filter(s => !hiddenBuckets.has(s.bucket));
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {summaries.map((summary) => {
-        const Icon = BUCKET_STYLE[summary.bucket].icon;
-        return (
-          <Link
-            key={summary.bucket}
-            to={`/tasks/${summary.bucket}`}
-            className={cn(
-              'group rounded-xl border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gc-orange hover:shadow-md',
-              summary.bucket === 'all' && 'sm:col-span-2 xl:col-span-1',
-            )}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className={cn('flex h-11 w-11 items-center justify-center rounded-lg border', BUCKET_STYLE[summary.bucket].ring)}>
-                <Icon size={20} className={BUCKET_STYLE[summary.bucket].tone} />
-              </div>
-              <span className="text-3xl font-black tabular-nums text-foreground">{summary.count}</span>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <button 
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {isCollapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          {isCollapsed ? 'Show Task Statistics' : 'Hide Task Statistics'}
+        </button>
+        
+        {role === 'master' && !isCollapsed && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase mr-2">Master Visibility:</span>
+            {summaries.map(s => (
+              <button
+                key={s.bucket}
+                onClick={() => toggleBucket(s.bucket)}
+                className={cn(
+                  "px-2 py-1 rounded text-[9px] font-black uppercase border transition-all",
+                  hiddenBuckets.has(s.bucket) 
+                    ? "bg-red-50 text-red-600 border-red-200" 
+                    : "bg-green-50 text-green-600 border-green-200"
+                )}
+              >
+                {s.bucket}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {!isCollapsed && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {visibleSummaries.map((summary) => {
+            const Icon = BUCKET_STYLE[summary.bucket].icon;
+            return (
+              <Link
+                key={summary.bucket}
+                to={`/tasks/${summary.bucket}`}
+                className={cn(
+                  'group rounded-xl border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gc-orange hover:shadow-md',
+                  summary.bucket === 'all' && 'sm:col-span-2 xl:col-span-1',
+                )}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className={cn('flex h-11 w-11 items-center justify-center rounded-lg border', BUCKET_STYLE[summary.bucket].ring)}>
+                    <Icon size={20} className={BUCKET_STYLE[summary.bucket].tone} />
+                  </div>
+                  <span className="text-3xl font-black tabular-nums text-foreground">{summary.count}</span>
+                </div>
+                <div className="mt-5">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-extrabold text-foreground">{summary.label}</h3>
+                  </div>
+                  <p className="mt-1 min-h-10 text-sm font-medium text-muted-foreground">{summary.description}</p>
+                </div>
+                <div className="mt-4 flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-gc-orange">
+                  Open lane <ArrowLeft size={13} className="rotate-180 transition-transform group-hover:translate-x-1" />
+                </div>
+              </Link>
+            );
+          })}
+          {visibleSummaries.length === 0 && (
+            <div className="col-span-full py-8 text-center border-2 border-dashed border-border rounded-xl">
+              <p className="text-sm font-bold text-muted-foreground">All summary widgets are hidden. Use Master Visibility to restore them.</p>
             </div>
-            <div className="mt-5">
-              <h3 className="text-base font-extrabold text-foreground">{summary.label}</h3>
-              <p className="mt-1 min-h-10 text-sm font-medium text-muted-foreground">{summary.description}</p>
-            </div>
-            <div className="mt-4 flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-gc-orange">
-              Open lane <ArrowLeft size={13} className="rotate-180 transition-transform group-hover:translate-x-1" />
-            </div>
-          </Link>
-        );
-      })}
+          )}
+        </div>
+      )}
     </div>
   );
 }

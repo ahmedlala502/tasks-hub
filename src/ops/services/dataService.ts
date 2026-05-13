@@ -35,14 +35,20 @@ const normalizeCampaignIds = (campaigns: Campaign[]) => {
   return { normalized, hasChanges };
 };
 
-// Seeded from backup trygc-backup-1778656311825.json
+export const TEAM_MEMBERS: string[] = [
+  'Ahmed E.', 'Sarah A.', 'Mona K.', 'Omar S.', 'Nurhan M.', 'Khalid J.',
+  'Campaign Manager', 'Community Lead', 'Coordination Lead', 'Coverage Lead',
+  'QA Lead', 'Finance Lead', 'Head of Operations',
+  ...DEFAULT_ACCESS_USERS.map((user) => user.name),
+];
+
 const INITIAL_CAMPAIGNS_DATA: Campaign[] = [
   {
-    id: 'C-001', name: 'Red Bull Summer KSA', clientId: 'c1', brandId: 'b1',
+    id: 'C-RED-001', name: 'Red Bull Summer', clientId: 'c1', brandId: 'b1',
     stage: 14 as any, status: 'Active', country: 'KSA', budget: 50000, budgetType: 'USD',
     recordHealth: 'Healthy', targetInfluencers: 50, targetPostingCoverage: 100,
     currentOwner: 'Sarah A.', nextAction: 'Reconcile visit logs',
-    createdAt: 1778223025420, updatedAt: 1778655025420, createdBy: 'system',
+    createdAt: Date.now(), updatedAt: Date.now(), createdBy: 'system',
     city: 'Riyadh', objective: 'Brand Awareness', platforms: ['Instagram', 'TikTok'],
     type: 'Influencer Marketing', startDate: '2024-06-01', endDate: '2024-08-31',
     deliverables: '2 Stories, 1 Reel', tags: '#RedBullSummer', mentions: '@redbullksa',
@@ -52,11 +58,11 @@ const INITIAL_CAMPAIGNS_DATA: Campaign[] = [
     influencerCriteria: 'Gen Z, Outdoor lifestyle',
   },
   {
-    id: 'C-002', name: 'STC Pay Launch', clientId: 'c2', brandId: 'b2',
+    id: 'C-STC-002', name: 'STC Pay Launch', clientId: 'c2', brandId: 'b2',
     stage: 6 as any, status: 'Active', country: 'UAE', budget: 120000, budgetType: 'USD',
     recordHealth: 'Healthy', targetInfluencers: 200, targetPostingCoverage: 400,
     currentOwner: 'Ahmed E.', nextAction: 'Finalize influencer selection',
-    createdAt: 1778482225420, updatedAt: 1778655025420, createdBy: 'system',
+    createdAt: Date.now(), updatedAt: Date.now(), createdBy: 'system',
     city: 'Dubai', objective: 'User Acquisition', platforms: ['Snapchat', 'TikTok'],
     type: 'Performance', startDate: '2024-07-01', endDate: '2024-07-15',
     deliverables: '1 Snap Ad, 1 TikTok Spark', tags: '#STCPayUAE', mentions: '@stcpay_uae',
@@ -67,66 +73,36 @@ const INITIAL_CAMPAIGNS_DATA: Campaign[] = [
   },
 ];
 
-const INITIAL_INFLUENCERS_DATA: CampaignInfluencer[] = [
-  {
-    id: 'CI-001', campaignId: 'C-001', influencerId: 'INF-101', username: '@lifestyle_sa',
-    platform: 'Instagram', status: 'Confirmed', niche: 'Lifestyle', followerRange: '100k-500k',
-    invitationWave: 1, reminder1Sent: true, reminder2Sent: false, visitCompleted: true,
-    coverageReceived: true, qaStatus: 'Approved', ownerId: 'Sarah A.',
-    createdAt: 1778655025420, updatedAt: 1778655025420, createdBy: 'system',
-  },
-  {
-    id: 'CI-002', campaignId: 'C-001', influencerId: 'INF-102', username: '@travel_vibe',
-    platform: 'TikTok', status: 'Pending', niche: 'Travel', followerRange: '50k-100k',
-    invitationWave: 1, reminder1Sent: false, reminder2Sent: false, visitCompleted: false,
-    coverageReceived: false, qaStatus: 'Pending', ownerId: 'Sarah A.', city: 'Dubai',
-    createdAt: 1778655025420, updatedAt: 1778655025420, createdBy: 'system',
-  },
-  {
-    id: 'CI-003', campaignId: 'C-002', influencerId: 'INF-103', username: '@tech_guy_uae',
-    platform: 'Snapchat', status: 'Invited', niche: 'Tech', followerRange: '10k-50k',
-    invitationWave: 2, reminder1Sent: true, reminder2Sent: true, visitCompleted: false,
-    coverageReceived: false, qaStatus: 'Pending', ownerId: 'Ahmed E.', city: 'Abu Dhabi',
-    createdAt: 1778655025420, updatedAt: 1778655025420, createdBy: 'system',
-  },
-  {
-    id: 'CI-004', campaignId: 'C-001', influencerId: 'INF-104', username: '@foodie_riyadh',
-    platform: 'Instagram', status: 'Confirmed', niche: 'Food', followerRange: '500k-1M',
-    invitationWave: 1, reminder1Sent: true, reminder2Sent: false, visitCompleted: true,
-    coverageReceived: false, qaStatus: 'Pending', ownerId: 'Sarah A.', city: 'Riyadh',
-    createdAt: 1778655025420, updatedAt: 1778655025420, createdBy: 'system',
-  },
-];
+const INITIAL_TASKS_DATA: Task[] = TEAM_MEMBERS.map((user, idx) => ({
+  id: `TSK-DEMO-${idx}`,
+  title: `Demo Task for ${user}`,
+  description: 'Automated demo task.',
+  ownerId: user,
+  campaignId: idx % 2 === 0 ? 'Red Bull Summer' : 'STC Pay Launch',
+  priority: 'Medium',
+  dueDate: Date.now() + (86400000 * 2),
+  completed: false,
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+  createdBy: 'system',
+}));
 
-const INITIAL_BLOCKERS_DATA: Blocker[] = [
-  {
-    id: 'B-001', campaignId: 'C-001', summary: 'Visit Proof Mismatch for @lifestyle_sa',
-    impact: 'QA blocking for 12 posts', status: 'Open', severity: 'Critical',
-    ownerId: 'Sarah A.', createdAt: 1778655025420, updatedAt: 1778655025420, createdBy: 'system',
-  },
-];
-
-// Real team roles used as default owner options across the workspace
-const IMPORTED_COMPLETED_TASK_ROWS = parseCompletedTasksCsv(completedTasksCsv);
-export const IMPORTED_COMPLETED_TASKS = buildImportedCompletedTasks(IMPORTED_COMPLETED_TASK_ROWS);
-export const IMPORTED_COMPLETED_USER_NAMES = deriveUsersFromCompletedTasks(IMPORTED_COMPLETED_TASK_ROWS);
-export const ATTACHED_EXPORT_USERS = extractUsersFromWorkspaceExport(attachedWorkspaceExport);
-
-export const TEAM_MEMBERS: string[] = [
-  'Campaign Manager',
-  'Community Lead',
-  'Coordination Lead',
-  'Coverage Lead',
-  'QA Lead',
-  'Finance Lead',
-  'Head of Operations',
-  ...DEFAULT_ACCESS_USERS.map((user) => user.name),
-  ...IMPORTED_COMPLETED_USER_NAMES,
-];
-
-const INITIAL_TASKS_DATA: Task[] = IMPORTED_COMPLETED_TASKS;
-
-const INITIAL_HANDOVERS_DATA: Handover[] = [];
+const INITIAL_HANDOVERS_DATA: Handover[] = TEAM_MEMBERS.map((user, idx) => ({
+  id: `HO-DEMO-${idx}`,
+  handoffDate: format(new Date(), 'yyyy-MM-dd'),
+  fromShift: 'Morning',
+  toShift: 'Mid',
+  team: 'Operations',
+  region: 'Regional',
+  assignFrom: [user],
+  assignTo: [TEAM_MEMBERS[(idx + 1) % TEAM_MEMBERS.length]],
+  notes: `Shift relay context for ${user}.`,
+  taskIds: [`TSK-DEMO-${idx}`],
+  status: 'Pending',
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+  createdBy: 'system',
+}));
 
 const DEMO_HANDOVER_IDS = new Set([
   'HO-1778620084142',
@@ -161,13 +137,13 @@ const saveToStorage = (key: string, data: any) => {
   localStorage.removeItem(key);
 });
 
-// V4 — tasks cleared (users start fresh with no bulk/demo tasks)
+// V5 — tasks and handovers reset for demo
 const STORAGE_KEYS = {
-  campaigns: 'GC_CAMPAIGNS_V3',
-  influencers: 'GC_INFLUENCERS_V3',
-  blockers: 'GC_BLOCKERS_V3',
-  tasks: 'GC_TASKS_V4',
-  handovers: 'GC_HANDOVERS_V3',
+  campaigns: 'GC_CAMPAIGNS_V4',
+  influencers: 'GC_INFLUENCERS_V4',
+  blockers: 'GC_BLOCKERS_V4',
+  tasks: 'GC_TASKS_V5',
+  handovers: 'GC_HANDOVERS_V4',
 };
 
 export let CAMPAIGNS_DATA: Campaign[] = loadFromStorage(STORAGE_KEYS.campaigns, INITIAL_CAMPAIGNS_DATA);
