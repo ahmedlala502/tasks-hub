@@ -8,6 +8,12 @@ describe('ops access rules', () => {
     expect(canAccessPath('community', '/profile')).toBe(true);
   });
 
+  it('lets signed-in users open the live online roster from dashboard widgets', () => {
+    expect(canAccessPath('master', '/online-users')).toBe(true);
+    expect(canAccessPath('operations', '/online-users')).toBe(true);
+    expect(canAccessPath('community', '/online-users')).toBe(true);
+  });
+
   it('keeps system administration master-only', () => {
     expect(canAccessPath('master', '/admin')).toBe(true);
     expect(canAccessPath('operations', '/admin')).toBe(false);

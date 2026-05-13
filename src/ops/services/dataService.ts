@@ -126,43 +126,15 @@ export const TEAM_MEMBERS: string[] = [
 
 const INITIAL_TASKS_DATA: Task[] = IMPORTED_COMPLETED_TASKS;
 
-const INITIAL_HANDOVERS_DATA: Handover[] = [
-  {
-    id: 'HO-1778620084142', handoffDate: '2026-05-13', fromShift: 'Morning', toShift: 'Mid',
-    team: 'Operations', region: 'Regional', outgoingLead: 'Sarah A.', incomingLead: 'Ahmed E.',
-    notes: '', taskIds: [], status: 'Acknowledged', createdAt: 1778620084142,
-    updatedAt: 1778620207031, createdBy: 'admin', acknowledgedAt: 1778620207031,
-  },
-  {
-    id: 'HO-1778620079406', handoffDate: '2026-05-13', fromShift: 'Morning', toShift: 'Mid',
-    team: 'Operations', region: 'Regional', outgoingLead: 'Sarah A.', incomingLead: 'Ahmed E.',
-    notes: '', taskIds: [], status: 'Reviewed', createdAt: 1778620079406,
-    updatedAt: 1778620205943, createdBy: 'admin', acknowledgedAt: 1778620083015,
-    reviewedAt: 1778620205943,
-  },
-  {
-    id: 'HO-1778620077935', handoffDate: '2026-05-13', fromShift: 'Morning', toShift: 'Mid',
-    team: 'Operations', region: 'Regional', outgoingLead: 'Sarah A.', incomingLead: 'Ahmed E.',
-    notes: '', taskIds: [], status: 'Pending', createdAt: 1778620077935,
-    updatedAt: 1778620077935, createdBy: 'admin',
-  },
-  {
-    id: 'HO-001', handoffDate: '2026-05-12', fromShift: 'Morning', toShift: 'Mid',
-    team: 'Operations', region: 'KSA / UAE', outgoingLead: 'Sarah A.', incomingLead: 'Ahmed E.',
-    status: 'Pending',
-    notes: 'Prioritize visit-proof follow-up and confirm missing recovery owners before the mid shift fully picks up.',
-    taskIds: ['TSK-101', 'TSK-104'], createdAt: 1778597382573, updatedAt: 1778611782573, createdBy: 'system',
-  },
-  {
-    id: 'HO-002', handoffDate: '2026-05-11', fromShift: 'Mid', toShift: 'Night',
-    team: 'Coverage', region: 'KSA', outgoingLead: 'Ahmed E.', incomingLead: 'Mona K.',
-    status: 'Reviewed',
-    notes: 'All outbound creator reminders sent. Night shift should only monitor late creator replies and archive any final proofs.',
-    taskIds: ['TSK-102', 'TSK-103'], acknowledgedAt: 1778575782573,
-    createdAt: 1778532582573, updatedAt: 1778620076687, createdBy: 'system',
-    reviewedAt: 1778620076687,
-  },
-];
+const INITIAL_HANDOVERS_DATA: Handover[] = [];
+
+const DEMO_HANDOVER_IDS = new Set([
+  'HO-1778620084142',
+  'HO-1778620079406',
+  'HO-1778620077935',
+  'HO-001',
+  'HO-002',
+]);
 
 const loadFromStorage = (key: string, initialData: any) => {
   try {
@@ -203,6 +175,12 @@ export let INFLUENCERS_DATA: CampaignInfluencer[] = loadFromStorage(STORAGE_KEYS
 export let BLOCKERS_DATA: Blocker[] = loadFromStorage(STORAGE_KEYS.blockers, INITIAL_BLOCKERS_DATA);
 export let TASKS_DATA: Task[] = loadFromStorage(STORAGE_KEYS.tasks, INITIAL_TASKS_DATA);
 export let HANDOVERS_DATA: Handover[] = loadFromStorage(STORAGE_KEYS.handovers, INITIAL_HANDOVERS_DATA);
+
+const realHandovers = HANDOVERS_DATA.filter((handover) => !DEMO_HANDOVER_IDS.has(handover.id) && handover.createdBy !== 'system');
+if (realHandovers.length !== HANDOVERS_DATA.length) {
+  HANDOVERS_DATA = realHandovers;
+  saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
+}
 
 const hydratedCampaigns = normalizeCampaignIds(CAMPAIGNS_DATA);
 CAMPAIGNS_DATA = hydratedCampaigns.normalized;

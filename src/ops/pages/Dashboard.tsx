@@ -349,7 +349,7 @@ export default function Dashboard() {
             </button>
             <button
               type="button"
-              onClick={() => navigate('/tasks')}
+              onClick={() => navigate('/tasks/pending')}
               className="px-2.5 py-1 rounded-full bg-secondary border border-border text-[10px] font-bold tracking-[0.2px] text-muted-foreground hover:border-gc-orange hover:text-gc-orange transition-colors"
             >
               {pendingTasks} pending tasks
@@ -368,7 +368,7 @@ export default function Dashboard() {
 
         <div className="relative z-10 flex flex-col sm:flex-row gap-3 shrink-0">
           <Button
-            onClick={() => navigate('/tasks')}
+            onClick={() => navigate('/tasks/all')}
             className="bg-gc-orange hover:bg-gc-orange/90 text-white font-condensed font-bold tracking-wide text-sm gap-2"
           >
             <Activity className="h-4 w-4" />
@@ -385,12 +385,12 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        <HeaderWidget label="Employees Online" value={onlineEmployees.toLocaleString()} detail="Active within 12h" tone="green" active={onlineEmployees > 0} onClick={() => navigate('/handover')} />
+        <HeaderWidget label="Employees Online" value={onlineEmployees.toLocaleString()} detail="Active within 12h" tone="green" active={onlineEmployees > 0} onClick={() => navigate('/online-users')} />
         <HeaderWidget label="All Campaigns" value={campaigns.length.toLocaleString()} detail="Portfolio load" onClick={() => navigate('/analytics')} />
         <HeaderWidget label="Active Now" value={activeCampaigns.toLocaleString()} detail="Currently running" tone="orange" onClick={() => navigate('/analytics')} />
-        <HeaderWidget label="All Tasks" value={totalTasks.toLocaleString()} detail="Open + completed" tone="purple" onClick={() => navigate('/tasks')} />
-        <HeaderWidget label="Tasks Done" value={completedTasks.toLocaleString()} detail="Closed tasks" tone="green" active={completedTasks > 0} onClick={() => navigate('/tasks')} />
-        <HeaderWidget label="Tasks Pending" value={pendingTasks.toLocaleString()} detail="Awaiting completion" tone="red" onClick={() => navigate('/tasks')} />
+        <HeaderWidget label="All Tasks" value={totalTasks.toLocaleString()} detail="Open + completed" tone="purple" onClick={() => navigate('/tasks/all')} />
+        <HeaderWidget label="Tasks Done" value={completedTasks.toLocaleString()} detail="Closed tasks" tone="green" active={completedTasks > 0} onClick={() => navigate('/tasks/done')} />
+        <HeaderWidget label="Tasks Pending" value={pendingTasks.toLocaleString()} detail="Awaiting completion" tone="red" onClick={() => navigate('/tasks/pending')} />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
@@ -399,15 +399,15 @@ export default function Dashboard() {
             <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-4">
               <div>
                 <p className="text-[9.5px] font-bold uppercase tracking-[1.5px] text-muted-foreground mb-0.5">Status Panel</p>
-                <h3 className="font-condensed font-extrabold text-[17px] tracking-tight text-foreground">Latest Handover Relay</h3>
+                <h3 className="font-condensed font-extrabold text-[17px] tracking-tight text-foreground">Real Recent Handovers</h3>
               </div>
               <Button variant="outline" size="sm" className="h-7 text-[11px] font-semibold" onClick={() => navigate('/handover')}>
-                Open Handover Board
+                Open Real Handovers
               </Button>
             </div>
             {latestHandovers.length === 0 ? (
               <div className="px-5 py-10 text-center text-sm text-muted-foreground">
-                No handovers yet. <button onClick={() => navigate('/handover')} className="text-gc-orange font-semibold hover:underline">Open shift relay</button>
+                No real handovers yet. <button onClick={() => navigate('/handover')} className="text-gc-orange font-semibold hover:underline">Create shift relay</button>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -548,17 +548,17 @@ export default function Dashboard() {
 
             <div className="p-5 space-y-5">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <MiniBadge label="Employees Tracked" value={employeeStats.length.toString()} tone="orange" onClick={() => navigate('/tasks')} />
-                <MiniBadge label="Online Now" value={onlineEmployees.toString()} tone="green" onClick={() => navigate('/handover')} />
-                <MiniBadge label="Tasks Completed" value={completedTasks.toString()} tone="green" onClick={() => navigate('/tasks')} />
+                <MiniBadge label="Employees Tracked" value={employeeStats.length.toString()} tone="orange" onClick={() => navigate('/profile')} />
+                <MiniBadge label="Online Now" value={onlineEmployees.toString()} tone="green" onClick={() => navigate('/online-users')} />
+                <MiniBadge label="Tasks Completed" value={completedTasks.toString()} tone="green" onClick={() => navigate('/tasks/done')} />
                 <MiniBadge label="Handovers Reviewed" value={reviewedHandovers.toString()} tone="purple" onClick={() => navigate('/handover')} />
-                <MiniBadge label="Overdue Tasks" value={overdueTasks.toString()} tone={overdueTasks > 0 ? 'red' : 'green'} onClick={() => navigate('/tasks')} />
+                <MiniBadge label="Overdue Tasks" value={overdueTasks.toString()} tone={overdueTasks > 0 ? 'red' : 'green'} onClick={() => navigate('/tasks/blocked')} />
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
                 <button
                   type="button"
-                  onClick={() => navigate('/tasks')}
+                  onClick={() => navigate('/tasks/done')}
                   className="rounded-xl border border-border bg-background p-4 text-left hover:border-gc-orange/40 transition-colors"
                 >
                   <p className="text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground">Top Performer</p>
@@ -582,7 +582,7 @@ export default function Dashboard() {
 
                 <button
                   type="button"
-                  onClick={() => navigate('/tasks')}
+                  onClick={() => navigate('/tasks/blocked')}
                   className="rounded-xl border border-border bg-background p-4 text-left hover:border-gc-orange/40 transition-colors"
                 >
                   <p className="text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground">Needs Support</p>
@@ -598,7 +598,7 @@ export default function Dashboard() {
                   <EmployeeCard
                     key={employee.name}
                     employee={employee}
-                    onTasksClick={() => navigate('/tasks')}
+                    onTasksClick={() => navigate('/tasks/all')}
                     onHandoverClick={() => navigate('/handover')}
                   />
                 ))}
@@ -693,7 +693,7 @@ export default function Dashboard() {
 
           <button
             type="button"
-            onClick={() => navigate('/tasks')}
+            onClick={() => navigate('/tasks/all')}
             className="w-full bg-white dark:bg-card border border-green-100 dark:border-green-900/30 rounded-xl p-5 relative overflow-hidden shadow-sm text-left"
           >
             <Activity className="absolute -bottom-3 -right-3 h-20 w-20 text-green-500/10" />

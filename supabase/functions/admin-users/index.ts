@@ -2,11 +2,12 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 type OpsRole = 'master' | 'operations' | 'community';
 type OpsStatus = 'active' | 'suspended';
+type OpsOffice = 'Egypt' | 'KSA' | 'UAE' | 'Kuwait';
 
 type RequestPayload =
   | { action: 'listUsers' }
-  | { action: 'createUser'; name: string; email: string; password: string; role: OpsRole; department?: string; title?: string }
-  | { action: 'updateUser'; id: string; name?: string; role?: OpsRole; status?: OpsStatus; department?: string; title?: string }
+  | { action: 'createUser'; name: string; email: string; password: string; role: OpsRole; office?: OpsOffice; department?: string; title?: string }
+  | { action: 'updateUser'; id: string; name?: string; role?: OpsRole; status?: OpsStatus; office?: OpsOffice; department?: string; title?: string }
   | { action: 'deleteUser'; id: string };
 
 const corsHeaders = {
@@ -41,6 +42,28 @@ function normalizeRole(role: unknown): OpsRole {
   return 'operations';
 }
 
+function normalizeOffice(office: unknown): OpsOffice {
+  if (office === 'KSA' || office === 'UAE' || office === 'Kuwait' || office === 'Egypt') return office;
+  return 'Egypt';
+}
+
+function normalizeText(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function inferOffice(input: { name?: unknown; role?: unknown; office?: unknown }): OpsOffice {
+  if (input.office === 'KSA' || input.office === 'UAE' || input.office === 'Kuwait' || input.office === 'Egypt') return input.office;
+  const normalizedName = normalizeText(input.name);
+  if (['abdulrahman', 'khalid', 'nurhan'].some((name) => normalizedName.includes(name))) return 'UAE';
+  if (input.role === 'community') return 'KSA';
+  return 'Egypt';
+}
+
 function mapUser(user: {
   id: string;
   email?: string | null;
@@ -67,6 +90,7 @@ function mapUser(user: {
     displayName,
     role: email.toLowerCase() === bootstrapMasterEmail ? 'master' : metadataRole,
     status: user.banned_until ? 'suspended' : 'active',
+    office: inferOffice({ name: displayName, role: email.toLowerCase() === bootstrapMasterEmail ? 'master' : metadataRole, office: user.user_metadata?.office }),
     department: user.user_metadata?.department ?? 'Operations',
     title: user.user_metadata?.title ?? (metadataRole === 'master' ? 'Master Admin' : 'Team Member'),
     timezone: user.user_metadata?.timezone ?? 'Africa/Cairo',
@@ -144,6 +168,7 @@ Deno.serve(async (request) => {
           user_metadata: {
             display_name: payload.name.trim(),
             full_name: payload.name.trim(),
+            office: inferOffice({ name: payload.name, role, office: payload.office }),
             department: payload.department ?? 'Operations',
             title: payload.title ?? (role === 'master' ? 'Master Admin' : 'Team Member'),
             timezone: 'Africa/Cairo',
@@ -160,6 +185,7 @@ Deno.serve(async (request) => {
           user_metadata?: {
             display_name: string;
             full_name?: string;
+            office?: OpsOffice;
             department?: string;
             title?: string;
             timezone?: string;
@@ -175,6 +201,7 @@ Deno.serve(async (request) => {
           updateData.user_metadata = {
             display_name: payload.name.trim(),
             full_name: payload.name.trim(),
+            office: inferOffice({ name: payload.name, role: payload.role, office: payload.office }),
             department: payload.department ?? 'Operations',
             title: payload.title ?? 'Team Member',
             timezone: 'Africa/Cairo',
@@ -183,6 +210,7 @@ Deno.serve(async (request) => {
           updateData.user_metadata = {
             display_name: '',
             full_name: '',
+            office: inferOffice({ role: payload.role, office: payload.office }),
             department: payload.department ?? 'Operations',
             title: payload.title ?? 'Team Member',
             timezone: 'Africa/Cairo',

@@ -1,4 +1,4 @@
-import type { OpsDepartment, OpsRole, OpsUser } from '../auth/types';
+import type { OpsDepartment, OpsOffice, OpsRole, OpsUser } from '../auth/types';
 import { supabase } from '../lib/supabase';
 
 type AdminApiUser = OpsUser;
@@ -23,11 +23,11 @@ export const adminApi = {
     return invokeFunction<AdminApiUser[]>('listUsers');
   },
 
-  async createUser(payload: { name: string; email: string; password: string; role: OpsRole; department?: OpsDepartment; title?: string }) {
+  async createUser(payload: { name: string; email: string; password: string; role: OpsRole; office: OpsOffice; department?: OpsDepartment; title?: string }) {
     return invokeFunction<AdminApiUser>('createUser', payload);
   },
 
-  async updateUser(payload: { id: string; name?: string; role?: OpsRole; status?: 'active' | 'suspended'; department?: OpsDepartment; title?: string }) {
+  async updateUser(payload: { id: string; name?: string; role?: OpsRole; status?: 'active' | 'suspended'; office?: OpsOffice; department?: OpsDepartment; title?: string }) {
     return invokeFunction<AdminApiUser>('updateUser', payload);
   },
 

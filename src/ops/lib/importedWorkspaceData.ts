@@ -1,4 +1,5 @@
 import type { OpsUser } from '../auth/types';
+import { getOfficeFromProfile } from '../auth/types';
 import type { Task } from '../types';
 
 export type CompletedTaskCsvRow = {
@@ -181,12 +182,15 @@ export function extractUsersFromWorkspaceExport(data: unknown): OpsUser[] {
       const displayName = String(value.displayName || value.name || '').trim();
       if (!email || !displayName) return null;
 
+      const role = value.role === 'master' || value.role === 'community' ? value.role : 'operations';
+
       return {
         uid: String(value.uid || value.id || email),
         email,
         displayName,
-        role: value.role === 'master' || value.role === 'community' ? value.role : 'operations',
+        role,
         status: value.status === 'suspended' ? 'suspended' : 'active',
+        office: getOfficeFromProfile({ name: displayName, role, office: value.office || value.country }),
         department: 'Operations',
         title: 'Imported User',
         timezone: 'Africa/Cairo',

@@ -30,4 +30,10 @@ describe('default access users', () => {
       'admin@trygc.com',
     ]);
   });
+
+  it('assigns required offices for seeded access users', () => {
+    expect(DEFAULT_ACCESS_USERS.every((user) => Boolean(user.office))).toBe(true);
+    expect(DEFAULT_ACCESS_USERS.filter((user) => user.role === 'community').every((user) => user.office === 'KSA')).toBe(true);
+    expect(DEFAULT_ACCESS_USERS.filter((user) => user.role !== 'community').every((user) => user.office === 'Egypt')).toBe(true);
+  });
 });

@@ -4,7 +4,6 @@ import {
   ArrowRight,
   CheckCircle2,
   ClipboardList,
-  Clock3,
   Edit2,
   Handshake,
   Plus,
@@ -100,6 +99,17 @@ export default function HandoverCenter() {
     if (linkedTasks.length > 0) score += 20;
     return score;
   }, [draft, linkedTasks.length]);
+
+  const canSaveHandover = Boolean(draft.outgoingLead?.trim() && draft.incomingLead?.trim());
+
+  const selectedTaskIds = useMemo(() => new Set(draft.taskIds || []), [draft.taskIds]);
+  const availableTransferTasks = useMemo(() => {
+    const priorityWeight = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+    return activeTasks
+      .filter((task) => !selectedTaskIds.has(task.id))
+      .slice()
+      .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority] || a.dueDate - b.dueDate);
+  }, [activeTasks, selectedTaskIds]);
 
   const filteredHandovers = useMemo(() => {
     return handovers.filter((handover) => {
@@ -209,9 +219,22 @@ export default function HandoverCenter() {
 
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-xl border border-border bg-card shadow-sm">
-          <div className="border-b border-border bg-muted/30 px-5 py-4">
-            <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-gc-orange">Builder</p>
-            <h3 className="text-lg font-bold text-foreground">{editingId ? 'Edit active relay' : 'Prepare next-shift relay'}</h3>
+          <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-border bg-card/95 px-5 py-4 backdrop-blur md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-gc-orange">Builder</p>
+              <h3 className="text-lg font-bold text-foreground">{editingId ? 'Edit active relay' : 'Prepare next-shift relay'}</h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={resetDraft} className="rounded-lg border border-border px-4 py-2 text-sm font-bold hover:bg-accent">Reset</button>
+              <button
+                onClick={saveHandover}
+                disabled={!canSaveHandover}
+                className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-sm font-bold text-white hover:bg-gc-orange/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <RefreshCw size={15} />
+                {editingId ? 'Update Handover' : 'Save Handover'}
+              </button>
+            </div>
           </div>
           <div className="grid gap-4 p-5 md:grid-cols-2">
             <SelectField label="Date" value={draft.handoffDate || ''} onChange={(value) => setDraft({ ...draft, handoffDate: value })} options={[]} type="date" />
@@ -251,68 +274,56 @@ export default function HandoverCenter() {
                 No active tasks available to transfer.
               </p>
             ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {activeTasks
-                  .slice()
-                  .sort((a, b) => {
-                    const w = { Critical: 4, High: 3, Medium: 2, Low: 1 };
-                    return w[b.priority] - w[a.priority];
-                  })
-                  .map((task) => {
-                  const selected = (draft.taskIds || []).includes(task.id);
-                  const overdue = !task.completed && new Date(task.dueDate) < new Date();
-                  return (
-                    <button
-                      key={task.id}
-                      onClick={() => toggleTask(task.id)}
-                      className={cn(
-                        'rounded-xl border p-4 text-left transition-colors',
-                        selected ? 'border-gc-orange bg-gc-orange/10' : 'border-border bg-background hover:bg-accent/40'
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-bold text-foreground truncate">{task.title}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground truncate">
-                            {task.ownerId.trim()} · {task.campaignId}
+              <div className="space-y-3">
+                <select
+                  className="settings-input"
+                  value=""
+                  onChange={(event) => {
+                    if (!event.target.value) return;
+                    toggleTask(event.target.value);
+                  }}
+                >
+                  <option value="">Add task to this handover...</option>
+                  {availableTransferTasks.map((task) => (
+                    <option key={task.id} value={task.id}>
+                      {task.priority} - {task.title} - {task.ownerId.trim()} - due {format(new Date(task.dueDate), 'MMM dd, h:mm a')}
+                    </option>
+                  ))}
+                </select>
+                <div className="space-y-2">
+                  {linkedTasks.length === 0 ? (
+                    <p className="rounded-lg border border-dashed border-border px-4 py-5 text-center text-sm text-muted-foreground">
+                      No tasks selected. Use the dropdown above to attach only the tasks that matter.
+                    </p>
+                  ) : linkedTasks.map((task) => {
+                    const overdue = !task.completed && new Date(task.dueDate) < new Date();
+                    return (
+                      <div key={task.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-foreground">{task.title}</p>
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {task.ownerId.trim()} - {task.campaignId} - due {format(new Date(task.dueDate), 'MMM dd, h:mm a')}
                           </p>
-                          <div className="mt-2 flex items-center gap-2 flex-wrap">
-                            <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold uppercase', priorityTone(task.priority))}>
-                              {task.priority}
-                            </span>
-                            {overdue && (
-                              <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:bg-red-900/20 dark:text-red-400">
-                                Overdue
-                              </span>
-                            )}
-                            <span className="text-[10px] text-muted-foreground">
-                              Due {format(new Date(task.dueDate), 'MMM dd')}
-                            </span>
-                          </div>
                         </div>
-                        <div className={cn(
-                          'shrink-0 flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors mt-0.5',
-                          selected ? 'border-gc-orange bg-gc-orange' : 'border-border'
-                        )}>
-                          {selected && (
-                            <svg viewBox="0 0 10 8" className="h-2.5 w-2.5 fill-white">
-                              <path d="M1 4l2.5 2.5L9 1" stroke="white" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold uppercase', priorityTone(task.priority))}>
+                            {task.priority}
+                          </span>
+                          {overdue && (
+                            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                              Overdue
+                            </span>
                           )}
+                          <button onClick={() => toggleTask(task.id)} className="icon-btn" aria-label={`Remove ${task.title}`}>
+                            <X size={14} />
+                          </button>
                         </div>
                       </div>
-                    </button>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
-          </div>
-          <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
-            <button onClick={resetDraft} className="rounded-lg border border-border px-4 py-2 text-sm font-bold hover:bg-accent">Reset</button>
-            <button onClick={saveHandover} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-sm font-bold text-white hover:bg-gc-orange/90">
-              <RefreshCw size={15} />
-              {editingId ? 'Update Handover' : 'Save Handover'}
-            </button>
           </div>
         </div>
 

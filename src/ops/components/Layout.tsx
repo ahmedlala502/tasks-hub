@@ -61,6 +61,8 @@ function timeAgo(ts: number): string {
 function getPageLabel(pathname: string): string {
   const exact = ALL_NAV.find(i => i.path === pathname);
   if (exact) return exact.label;
+  if (pathname.startsWith('/tasks/')) return 'Tasks';
+  if (pathname === '/online-users') return 'Online Users';
   if (pathname.startsWith('/campaigns/') && pathname.endsWith('/setup')) return 'Campaign Setup';
   if (pathname.startsWith('/campaigns/') && pathname.endsWith('/closure')) return 'Campaign Closure';
   if (pathname.startsWith('/campaigns/')) return 'Campaign Detail';

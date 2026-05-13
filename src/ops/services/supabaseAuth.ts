@@ -1,6 +1,6 @@
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { getDepartmentFromMetadata, getRoleFromMetadata, type OpsDepartment, type OpsUser } from '../auth/types';
+import { getDepartmentFromMetadata, getOfficeFromProfile, getRoleFromMetadata, type OpsDepartment, type OpsOffice, type OpsUser } from '../auth/types';
 
 const DEFAULT_MASTER_EMAIL = (import.meta.env.VITE_MASTER_ADMIN_EMAIL || 'admin@trygc.com').trim().toLowerCase();
 
@@ -26,14 +26,17 @@ export function mapSupabaseUser(user: User): OpsUser {
   const role = getRoleFromMetadata(user.app_metadata?.role ?? fallbackRole);
   const status = user.banned_until ? 'suspended' : 'active';
   const department = getDepartmentFromMetadata(user.user_metadata?.department);
+  const displayName = getDisplayName(user);
+  const office = getOfficeFromProfile({ name: displayName, role, office: user.user_metadata?.office });
   const fallbackTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo';
 
   return {
     uid: user.id,
     email: user.email || '',
-    displayName: getDisplayName(user),
+    displayName,
     role,
     status,
+    office,
     department,
     title: getProfileText(user, 'title', role === 'master' ? 'Workspace Admin' : 'Team Member'),
     timezone: getProfileText(user, 'timezone', fallbackTimezone),
@@ -74,6 +77,7 @@ export const supabaseAuth = {
 
   async updateProfile(payload: {
     displayName: string;
+    office: OpsOffice;
     department: OpsDepartment;
     title: string;
     timezone: string;
@@ -82,6 +86,7 @@ export const supabaseAuth = {
       data: {
         display_name: payload.displayName.trim(),
         full_name: payload.displayName.trim(),
+        office: payload.office,
         department: payload.department,
         title: payload.title.trim(),
         timezone: payload.timezone.trim(),

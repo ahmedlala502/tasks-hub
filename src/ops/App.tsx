@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from './components/ui/sonner';
 import { canAccessPath, getHomePath } from './lib/access';
 import { supabaseAuth } from './services/supabaseAuth';
-import type { OpsDepartment, OpsRole, OpsUser } from './auth/types';
+import type { OpsDepartment, OpsOffice, OpsRole, OpsUser } from './auth/types';
 
 import Dashboard from './pages/Dashboard';
 import Blockers from './pages/Blockers';
@@ -13,6 +13,7 @@ import Reporting from './pages/Reporting';
 import Tasks from './pages/Tasks';
 import PriorityBoard from './pages/PriorityBoard';
 import UserProfile from './pages/UserProfile';
+import OnlineUsers from './pages/OnlineUsers';
 import Templates from './pages/Templates';
 import Analytics from './pages/Analytics';
 import AssetRegistry from './pages/AssetRegistry';
@@ -27,7 +28,7 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  updateProfile: (payload: { displayName: string; department: OpsDepartment; title: string; timezone: string }) => Promise<void>;
+  updateProfile: (payload: { displayName: string; office: OpsOffice; department: OpsDepartment; title: string; timezone: string }) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
 }
 
@@ -79,7 +80,7 @@ export default function App() {
     setRole(null);
   };
 
-  const updateProfile = async (payload: { displayName: string; department: OpsDepartment; title: string; timezone: string }) => {
+  const updateProfile = async (payload: { displayName: string; office: OpsOffice; department: OpsDepartment; title: string; timezone: string }) => {
     const updatedUser = await supabaseAuth.updateProfile(payload);
     setUser(updatedUser);
     setRole(updatedUser.role);
@@ -114,10 +115,12 @@ export default function App() {
           >
             <Route index element={allow('/', <Dashboard />)} />
             <Route path="handover" element={allow('/handover', <Handover />)} />
+            <Route path="online-users" element={allow('/online-users', <OnlineUsers />)} />
             <Route path="blockers" element={allow('/blockers', <Blockers />)} />
             <Route path="audit" element={allow('/audit', <AuditLogs />)} />
             <Route path="reporting" element={allow('/reporting', <Reporting />)} />
             <Route path="tasks" element={allow('/tasks', <Tasks />)} />
+            <Route path="tasks/:bucket" element={allow('/tasks', <Tasks />)} />
             <Route path="priority-board" element={allow('/priority-board', <PriorityBoard />)} />
             <Route path="profile" element={allow('/profile', <UserProfile />)} />
             <Route path="templates" element={allow('/templates', <Templates />)} />

@@ -28,11 +28,84 @@ export const INITIAL_USER: User = {
   isSuperAdmin: true,
 };
 
-export const TEAMS: string[] = [];
+export const TEAMS: string[] = [
+  'Operations Team',
+  'Community Team',
+];
 
-export const OFFICES: Office[] = [];
+export const OFFICES: Office[] = [
+  {
+    id: 'office-egypt',
+    name: 'Egypt',
+    country: 'EG',
+    lead: 'Operations Lead',
+    shift: Shift.MORNING,
+    timezone: 'Africa/Cairo',
+  },
+  {
+    id: 'office-ksa',
+    name: 'KSA',
+    country: 'KSA',
+    lead: 'Community Lead',
+    shift: Shift.MORNING,
+    timezone: 'Asia/Riyadh',
+  },
+  {
+    id: 'office-uae',
+    name: 'UAE',
+    country: 'UAE',
+    lead: 'Community Lead',
+    shift: Shift.MORNING,
+    timezone: 'Asia/Dubai',
+  },
+  {
+    id: 'office-kuwait',
+    name: 'Kuwait',
+    country: 'KW',
+    lead: 'Operations Lead',
+    shift: Shift.MORNING,
+    timezone: 'Asia/Kuwait',
+  },
+];
 
-export const INITIAL_MEMBERS: Member[] = [];
+export const INITIAL_MEMBERS: Member[] = [
+  {
+    id: 'member-abdulrahman',
+    name: 'Abdulrahman',
+    team: 'Community Team',
+    office: 'UAE',
+    country: 'UAE',
+    role: 'Community',
+    tasksCompleted: 0,
+    handoversOut: 0,
+    onTime: 100,
+    status: 'active',
+  },
+  {
+    id: 'member-khalid',
+    name: 'Khalid',
+    team: 'Community Team',
+    office: 'UAE',
+    country: 'UAE',
+    role: 'Community',
+    tasksCompleted: 0,
+    handoversOut: 0,
+    onTime: 100,
+    status: 'active',
+  },
+  {
+    id: 'member-nurhan',
+    name: 'Nurhan',
+    team: 'Community Team',
+    office: 'UAE',
+    country: 'UAE',
+    role: 'Community',
+    tasksCompleted: 0,
+    handoversOut: 0,
+    onTime: 100,
+    status: 'active',
+  },
+];
 
 export const INITIAL_TASKS: Task[] = [];
 

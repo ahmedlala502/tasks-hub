@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { dataService, exportAllData, importAllData, downloadJson } from '../services/dataService';
 import { useAuth } from '../App';
-import type { OpsRole } from '../auth/types';
+import { OPS_OFFICES, type OpsOffice, type OpsRole } from '../auth/types';
 import { adminApi } from '../services/adminApi';
 import { DEFAULT_ACCESS_PASSWORD, DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
 
@@ -40,6 +40,7 @@ type AdminUser = {
   name: string;
   email: string;
   role: AdminRole;
+  office: OpsOffice;
   access: AccessLevel;
   status: 'Active' | 'Suspended';
   lastSeen: string;
@@ -81,6 +82,7 @@ const defaultUsers: AdminUser[] = DEFAULT_ACCESS_USERS.map((user) => ({
   name: user.name,
   email: user.email,
   role: seedRoleToAdminRole(user.role),
+  office: user.office,
   access: user.role === 'master' ? 'Full' : 'Scoped',
   status: 'Active',
   lastSeen: 'Never',
@@ -149,6 +151,7 @@ const mapApiUserToAdminUser = (user: {
   email: string;
   displayName: string;
   role: OpsRole;
+  office: OpsOffice;
   status: 'active' | 'suspended';
   lastSignInAt?: string | null;
 }): AdminUser => ({
@@ -156,6 +159,7 @@ const mapApiUserToAdminUser = (user: {
   name: user.displayName,
   email: user.email,
   role: opsRoleToAdminRole(user.role),
+  office: user.office,
   access: user.role === 'master' ? 'Full' : 'Scoped',
   status: user.status === 'suspended' ? 'Suspended' : 'Active',
   lastSeen: formatLastSeen(user.lastSignInAt),
@@ -167,7 +171,7 @@ export default function Admin() {
   const [policies, setPolicies] = useState<ModulePolicy[]>(defaultPolicies);
   const [flags, setFlags] = useState<FeatureFlag[]>(defaultFlags);
   const [dataCounts, setDataCounts] = useState<DataCounts>(getDataCounts);
-  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'Operations' as AdminRole, access: 'Scoped' as AccessLevel });
+  const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'Operations' as AdminRole, office: 'Egypt' as OpsOffice, access: 'Scoped' as AccessLevel });
   const [userCreateError, setUserCreateError] = useState('');
   const [search, setSearch] = useState('');
   const [savedAt, setSavedAt] = useState('Ready');
@@ -244,12 +248,14 @@ export default function Admin() {
     const nextName = patch.name ?? targetUser.name;
     const nextRole = patch.role ?? targetUser.role;
     const nextStatus = patch.status ?? targetUser.status;
+    const nextOffice = patch.office ?? targetUser.office;
 
     try {
       const updated = await adminApi.updateUser({
         id,
         name: nextName,
         role: roleToOpsRole(nextRole),
+        office: nextOffice,
         status: nextStatus === 'Suspended' ? 'suspended' : 'active',
       });
 
@@ -294,13 +300,14 @@ export default function Admin() {
         email,
         password,
         role: roleToOpsRole(newUser.role),
+        office: newUser.office,
         department: newUser.role === 'Community' ? 'Coordination' : 'Operations',
         title: newUser.role === 'Master' ? 'Master Admin' : `${newUser.role} Access`,
       });
 
       setUsers(prev => [mapApiUserToAdminUser(createdUser), ...prev.filter(user => user.email.toLowerCase() !== email)]);
 
-      setNewUser({ name: '', email: '', password: '', role: 'Operations', access: 'Scoped' });
+      setNewUser({ name: '', email: '', password: '', role: 'Operations', office: 'Egypt', access: 'Scoped' });
       setSavedAt('Supabase user created');
     } catch (error: any) {
       setUserCreateError(error.message || 'Unable to create Supabase user.');
@@ -344,6 +351,7 @@ export default function Admin() {
             id: existing.uid,
             name: seed.name,
             role: seed.role,
+            office: seed.office,
             status: 'active',
             department: seed.department,
             title: seed.title,
@@ -358,6 +366,7 @@ export default function Admin() {
           email: seed.email,
           password: DEFAULT_ACCESS_PASSWORD,
           role: seed.role,
+          office: seed.office,
           department: seed.department,
           title: seed.title,
         });
@@ -523,7 +532,7 @@ export default function Admin() {
                 <Users size={17} className="text-muted-foreground" />
               </div>
 
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_0.9fr_0.8fr_0.8fr_auto]">
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_0.85fr_0.75fr_0.75fr_0.75fr_auto]">
                 <input
                   value={newUser.name}
                   onChange={event => setNewUser(prev => ({ ...prev, name: event.target.value }))}
@@ -546,8 +555,17 @@ export default function Admin() {
                 />
                 <Select
                   value={newUser.role}
-                  onChange={value => setNewUser(prev => ({ ...prev, role: value as AdminRole }))}
+                  onChange={value => setNewUser(prev => ({
+                    ...prev,
+                    role: value as AdminRole,
+                    office: value === 'Community' && prev.office === 'Egypt' ? 'KSA' : prev.office,
+                  }))}
                   options={['Master', 'Operations', 'Community']}
+                />
+                <Select
+                  value={newUser.office}
+                  onChange={value => setNewUser(prev => ({ ...prev, office: value as OpsOffice }))}
+                  options={[...OPS_OFFICES]}
                 />
                 <Select
                   value={newUser.access}
@@ -570,7 +588,7 @@ export default function Admin() {
                   {usersLoading ? (
                     <div className="p-5 text-[12px] font-semibold text-muted-foreground">Loading Supabase users...</div>
                   ) : visibleUsers.map(user => (
-                <div key={user.id} className="p-5 grid grid-cols-1 lg:grid-cols-[1.1fr_0.85fr_0.75fr_auto_auto] gap-4 items-center">
+                <div key={user.id} className="p-5 grid grid-cols-1 lg:grid-cols-[1.1fr_1fr_0.75fr_auto_auto] gap-4 items-center">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="h-11 w-11 rounded-lg bg-gc-orange/10 text-gc-orange flex items-center justify-center font-condensed font-black text-[14px]">
                       {user.name.split(' ').map(part => part[0]).join('').slice(0, 2)}
@@ -581,11 +599,16 @@ export default function Admin() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <Select
                       value={user.role}
                       onChange={value => { void updateUser(user.id, { role: value as AdminRole }); }}
                       options={['Master', 'Operations', 'Community']}
+                    />
+                    <Select
+                      value={user.office}
+                      onChange={value => { void updateUser(user.id, { office: value as OpsOffice }); }}
+                      options={[...OPS_OFFICES]}
                     />
                     <Select
                       value={user.access}

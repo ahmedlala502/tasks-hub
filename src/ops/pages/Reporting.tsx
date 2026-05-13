@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle,
   BarChart3,
   Building2,
   CheckSquare,
@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import { dataService } from '../services/dataService';
+import { ATTACHED_EXPORT_USERS, dataService } from '../services/dataService';
 import { exportRows, exportRowsAsCsv, exportWorkbook } from '../services/spreadsheetService';
 import { useAuth } from '../App';
 import {
@@ -36,6 +36,9 @@ import {
   filterTasksByRole,
 } from '../lib/workspace';
 import { INITIAL_MEMBERS, OFFICES, TEAMS } from '../../constants';
+import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
+import { getOfficeFromProfile, OPS_OFFICES, type OpsOffice, type OpsRole, type OpsUser } from '../auth/types';
+import { buildOfficeInsights, type OfficeUser } from '../lib/officeInsights';
 import {
   Bar,
   BarChart,
@@ -66,6 +69,7 @@ type PillarReport = {
   value: string;
   insight: string;
   rows: DataRow[];
+  detailRows?: DataRow[];
 };
 
 const PILLAR_META: Array<{
@@ -86,6 +90,7 @@ const PILLAR_META: Array<{
 ];
 
 const CHART_COLORS = ['#f97316', '#f59e0b', '#8b5cf6', '#14b8a6', '#6366f1', '#22c55e', '#ef4444', '#0ea5e9'];
+const PILLAR_KEYS: PillarKey[] = ['offices', 'teams', 'agents', 'tasks', 'handovers', 'sla', 'blockers', 'campaigns'];
 
 function normalize(value: string | undefined | null) {
   return (value || '').trim();
@@ -115,7 +120,13 @@ function isDueSoon(dueDate: number | undefined, completed: boolean) {
 
 function formatDueDate(dueDate: number | undefined) {
   if (!dueDate) return 'N/A';
-  return new Date(dueDate).toLocaleDateString();
+  return new Date(dueDate).toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 function buildRowsMap<T>(items: T[], getKey: (item: T) => string) {
@@ -126,11 +137,60 @@ function buildRowsMap<T>(items: T[], getKey: (item: T) => string) {
   }, {});
 }
 
+function isPillarKey(value: unknown): value is PillarKey {
+  return PILLAR_KEYS.includes(value as PillarKey);
+}
+
+function normalizeLower(value: string | undefined | null) {
+  return normalize(value).toLowerCase();
+}
+
+function roleFromObservedName(name: string): OpsRole {
+  const text = normalizeLower(name);
+  return text.includes('community') || text.includes('ksa') || text.includes('mona') || text.includes('abdulrahman') || text.includes('khalid') || text.includes('nurhan')
+    ? 'community'
+    : 'operations';
+}
+
+function uniqueOfficeUsers(users: OfficeUser[]): OfficeUser[] {
+  const byName = new Map<string, OfficeUser>();
+  users.forEach((user) => {
+    const key = normalizeLower(user.displayName);
+    if (!key || byName.has(key)) return;
+    byName.set(key, user);
+  });
+  return [...byName.values()];
+}
+
 export default function Reporting() {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedPillar, setSelectedPillar] = useState<PillarKey>('campaigns');
+  const [selectedOffice, setSelectedOffice] = useState<'all' | OpsOffice>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [cloudUsers, setCloudUsers] = useState<OpsUser[]>([]);
   const [, setRefreshNonce] = useState(0);
+
+  useEffect(() => {
+    const pillarParam = searchParams.get('pillar');
+    const officeParam = searchParams.get('office');
+    if (isPillarKey(pillarParam)) setSelectedPillar(pillarParam);
+    if (OPS_OFFICES.includes(officeParam as OpsOffice)) setSelectedOffice(officeParam as OpsOffice);
+    else setSelectedOffice('all');
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (role !== 'master') return;
+    let alive = true;
+    import('../services/adminApi').then(({ adminApi }) => {
+      adminApi.listUsers()
+        .then((users) => {
+          if (alive) setCloudUsers(users);
+        })
+        .catch(() => {});
+    });
+    return () => { alive = false; };
+  }, [role]);
 
   useEffect(() => {
     const refresh = () => setRefreshNonce((value) => value + 1);
@@ -169,59 +229,95 @@ export default function Reporting() {
       campaign.internalOwners.forEach((owner) => observedNames.add(normalize(owner)));
     });
 
-    const memberMap = new Map(directoryFromMembers.map((member) => [member.name, member]));
-
-    const agents = Array.from(observedNames)
-      .filter(Boolean)
-      .map((name) => {
-        const seed = memberMap.get(name);
+    const memberMap = new Map(directoryFromMembers.map((member) => [normalizeLower(member.name), member]));
+    const directoryUsers: OfficeUser[] = [
+      ...DEFAULT_ACCESS_USERS.map((item) => ({
+        uid: `seed-${item.email}`,
+        email: item.email,
+        displayName: item.name,
+        role: item.role,
+        status: 'active' as const,
+        office: item.office,
+        department: item.department,
+        title: item.title,
+        timezone: 'Africa/Cairo',
+      })),
+      ...ATTACHED_EXPORT_USERS,
+      ...cloudUsers,
+      ...(user ? [user] : []),
+      ...Array.from(observedNames).filter(Boolean).map((name) => {
+        const member = memberMap.get(normalizeLower(name));
+        const inferredRole = roleFromObservedName(name);
         return {
-          name,
-          team: seed?.team || (name.toLowerCase().includes('mona') ? 'Community Team' : 'Operations Team'),
-          office: seed?.office || 'Cairo HQ',
-          country: seed?.country || 'EG',
-          role: seed?.role || 'Operator',
-          status: seed?.status || 'active',
+          uid: `observed-${normalizeLower(name)}`,
+          email: '',
+          displayName: name,
+          role: inferredRole,
+          status: 'active' as const,
+          office: getOfficeFromProfile({ name, role: inferredRole, office: member?.office }),
+          department: member?.team || (inferredRole === 'community' ? 'Coordination' : 'Operations'),
+          title: member?.role || 'Workspace Owner',
+          timezone: 'Africa/Cairo',
         };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      }),
+    ];
 
-    const officeLookup = new Map(OFFICES.map((office) => [office.name, office]));
-    const agentLookup = new Map(agents.map((agent) => [agent.name, agent]));
+    const officeInsights = buildOfficeInsights({
+      users: uniqueOfficeUsers(directoryUsers),
+      tasks,
+      handovers,
+      blockers,
+      campaigns,
+    });
+
+    const agents = officeInsights.agentRows
+      .map((row) => ({
+        name: row.name,
+        team: row.department || (row.role === 'community' ? 'Community Team' : 'Operations Team'),
+        office: row.office,
+        country: OFFICES.find((office) => office.name === row.office)?.country || row.office,
+        role: row.title || row.role,
+        status: 'active',
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     const tasksByOwner = buildRowsMap(tasks, (task) => task.ownerId);
     const blockersByOwner = buildRowsMap(blockers, (blocker) => blocker.ownerId);
     const handoversByOutgoing = buildRowsMap(handovers, (handover) => handover.outgoingLead);
     const campaignsByOwner = buildRowsMap(campaigns, (campaign) => campaign.currentOwner);
 
-    const officeRows: DataRow[] = OFFICES.map((office) => {
-      const officeAgents = agents.filter((agent) => agent.office === office.name);
-      const officeAgentNames = new Set(officeAgents.map((agent) => agent.name));
-      const officeTasks = tasks.filter((task) => officeAgentNames.has(normalize(task.ownerId)));
-      const officeHandovers = handovers.filter(
-        (handover) =>
-          officeAgentNames.has(normalize(handover.outgoingLead)) ||
-          officeAgentNames.has(normalize(handover.incomingLead)),
-      );
-      const officeBlockers = blockers.filter((blocker) => officeAgentNames.has(normalize(blocker.ownerId)));
-      const officeCampaigns = campaigns.filter((campaign) => officeAgentNames.has(normalize(campaign.currentOwner)));
-      const doneTasks = officeTasks.filter((task) => task.completed).length;
-      const slaRate = officeTasks.length ? (doneTasks / officeTasks.length) * 100 : 0;
+    const officeRows: DataRow[] = officeInsights.officeRows.map((row) => ({
+      Office: row.office,
+      Country: OFFICES.find((office) => office.name === row.office)?.country || row.office,
+      Agents: row.agents,
+      Community: row.communityAgents,
+      Operations: row.operationsAgents,
+      Tasks: row.tasks,
+      Completed: row.done,
+      Pending: row.pending,
+      Handovers: row.handovers,
+      Blockers: row.blockers,
+      Campaigns: row.campaigns,
+      SLA: `${row.completionRate}%`,
+    }));
 
-      return {
-        Office: office.name,
-        Country: office.country,
-        Lead: office.lead,
-        Agents: officeAgents.length,
-        Teams: new Set(officeAgents.map((agent) => agent.team)).size,
-        Tasks: officeTasks.length,
-        Completed: doneTasks,
-        Handovers: officeHandovers.length,
-        Blockers: officeBlockers.length,
-        Campaigns: officeCampaigns.length,
-        SLA: percent(slaRate),
-      };
-    }).filter((row) => Number(row.Tasks) > 0 || Number(row.Handovers) > 0 || Number(row.Campaigns) > 0);
+    const officeAgentRows: DataRow[] = officeInsights.agentRows
+      .filter((row) => selectedOffice === 'all' || row.office === selectedOffice)
+      .map((row) => ({
+        Agent: row.name,
+        Email: row.email || 'N/A',
+        Office: row.office,
+        Role: row.role,
+        Team: row.department,
+        Title: row.title,
+        Tasks: row.tasks,
+        Done: row.done,
+        Pending: row.pending,
+        Handovers: row.handovers,
+        Blockers: row.blockers,
+        Campaigns: row.campaigns,
+        Rate: `${row.completionRate}%`,
+      }));
 
     const teamRows: DataRow[] = TEAMS.map((team) => {
       const teamAgents = agents.filter((agent) => agent.team === team);
@@ -348,10 +444,17 @@ export default function Reporting() {
       offices: {
         key: 'offices',
         label: 'Offices',
-        description: 'Regional office throughput, staffing spread, and SLA posture.',
-        value: String(officeRows.length),
-        insight: `${officeRows.reduce((sum, row) => sum + Number(row.Tasks || 0), 0)} tracked tasks across all active offices`,
+        description: selectedOffice === 'all'
+          ? 'Regional office throughput, staffing spread, and SLA posture.'
+          : `${selectedOffice} office agent-by-agent performance breakdown.`,
+        value: selectedOffice === 'all'
+          ? String(officeRows.length)
+          : String(officeAgentRows.length),
+        insight: selectedOffice === 'all'
+          ? `${officeRows.reduce((sum, row) => sum + Number(row.Tasks || 0), 0)} tracked tasks across all active offices`
+          : `${officeAgentRows.reduce((sum, row) => sum + Number(row.Done || 0), 0)} completed tasks inside ${selectedOffice}`,
         rows: officeRows,
+        detailRows: officeAgentRows,
       },
       teams: {
         key: 'teams',
@@ -412,16 +515,19 @@ export default function Reporting() {
     };
 
     return reportMap;
-  }, [role]);
+  }, [cloudUsers, role, selectedOffice, user]);
 
   const selectedReport = reports[selectedPillar];
+  const activeReportRows = selectedPillar === 'offices' && selectedOffice !== 'all'
+    ? selectedReport.detailRows || selectedReport.rows
+    : selectedReport.rows;
   const filteredRows = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    if (!query) return selectedReport.rows;
-    return selectedReport.rows.filter((row) =>
+    if (!query) return activeReportRows;
+    return activeReportRows.filter((row) =>
       Object.values(row).some((value) => String(value).toLowerCase().includes(query)),
     );
-  }, [searchTerm, selectedReport.rows]);
+  }, [activeReportRows, searchTerm]);
 
   const chart = useMemo(() => {
     const rows = filteredRows.slice(0, 6);
@@ -436,9 +542,15 @@ export default function Reporting() {
   }, [filteredRows]);
 
   const tableColumns = filteredRows[0] ? Object.keys(filteredRows[0]) : [];
+  const officeSummaryRows = reports.offices.rows;
+  const allOfficeTotals = officeSummaryRows.reduce<{ agents: number; tasks: number; done: number }>((acc, row) => ({
+    agents: acc.agents + Number(row.Agents || 0),
+    tasks: acc.tasks + Number(row.Tasks || 0),
+    done: acc.done + Number(row.Completed || 0),
+  }), { agents: 0, tasks: 0, done: 0 });
   const globalSheets = Object.values(reports).map((report) => ({
     name: toTitle(report.label),
-    rows: report.rows,
+    rows: report.key === 'offices' && report.detailRows ? [...report.rows, ...report.detailRows] : report.rows,
   }));
 
   const exportCurrentXlsx = () => exportRows(`trygc_${selectedPillar}_report.xlsx`, selectedReport.rows);
@@ -449,6 +561,24 @@ export default function Reporting() {
   const totalHandovers = Number(reports.handovers.value || 0);
   const totalBlockers = Number(reports.blockers.value || 0);
   const totalCampaigns = Number(reports.campaigns.value || 0);
+
+  const choosePillar = (pillar: PillarKey) => {
+    setSelectedPillar(pillar);
+    const next = new URLSearchParams(searchParams);
+    next.set('pillar', pillar);
+    if (pillar !== 'offices') next.delete('office');
+    setSearchParams(next);
+  };
+
+  const chooseOffice = (office: 'all' | OpsOffice) => {
+    setSelectedPillar('offices');
+    setSelectedOffice(office);
+    const next = new URLSearchParams(searchParams);
+    next.set('pillar', 'offices');
+    if (office === 'all') next.delete('office');
+    else next.set('office', office);
+    setSearchParams(next);
+  };
 
   return (
     <div className="space-y-6">
@@ -493,7 +623,7 @@ export default function Reporting() {
           return (
             <button
               key={pillar.key}
-              onClick={() => setSelectedPillar(pillar.key)}
+              onClick={() => choosePillar(pillar.key)}
               className={`rounded-2xl border p-4 text-left transition-all ${
                 isActive
                   ? 'border-gc-orange bg-gc-orange/8 shadow-[0_0_0_1px_rgba(249,115,22,0.15)]'
@@ -523,6 +653,28 @@ export default function Reporting() {
           );
         })}
       </div>
+
+      {selectedPillar === 'offices' && (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+          <OfficeFilterCard
+            active={selectedOffice === 'all'}
+            label="All Offices"
+            value={String(allOfficeTotals.agents)}
+            detail={`${allOfficeTotals.tasks} tasks / ${allOfficeTotals.done} done`}
+            onClick={() => chooseOffice('all')}
+          />
+          {officeSummaryRows.map((row) => (
+            <OfficeFilterCard
+              key={String(row.Office)}
+              active={selectedOffice === row.Office}
+              label={String(row.Office)}
+              value={String(row.Agents)}
+              detail={`${row.Tasks} tasks / ${row.Completed} done`}
+              onClick={() => chooseOffice(row.Office as OpsOffice)}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <Card className="border-border bg-card">
@@ -598,7 +750,9 @@ export default function Reporting() {
               {selectedReport.label} Detailed Analysis
             </CardTitle>
             <CardDescription>
-              Search, click through, and export the exact rows behind the selected pillar.
+              {selectedPillar === 'offices' && selectedOffice !== 'all'
+                ? `Showing every person in ${selectedOffice} with workload, handovers, blockers, and campaign ownership.`
+                : 'Search, click through, and export the exact rows behind the selected pillar.'}
             </CardDescription>
           </div>
 
@@ -657,6 +811,22 @@ function SummaryCard({ label, value, tone }: { label: string; value: string; ton
         <p className={`mt-2 font-condensed text-[30px] font-black leading-none ${tone}`}>{value}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function OfficeFilterCard({ active, label, value, detail, onClick }: { active: boolean; label: string; value: string; detail: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border p-4 text-left transition-all ${
+        active ? 'border-gc-orange bg-gc-orange/8 shadow-[0_0_0_1px_rgba(249,115,22,0.14)]' : 'border-border bg-card hover:border-gc-orange/40'
+      }`}
+    >
+      <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</p>
+      <p className="mt-2 font-condensed text-[26px] font-black leading-none text-foreground">{value}</p>
+      <p className="mt-2 text-[11px] font-bold text-muted-foreground">{detail}</p>
+    </button>
   );
 }
 

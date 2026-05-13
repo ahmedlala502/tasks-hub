@@ -3,12 +3,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  ArrowLeft,
+  Archive,
+  Ban,
   Check,
+  CheckCircle2,
   CheckSquare,
-  Clock,
+  CirclePlus,
+  Clock3,
   Flame,
+  Layers3,
+  ListChecks,
   Plus,
   Save,
   Search,
@@ -18,6 +26,16 @@ import {
 import { format, isPast, isValid } from 'date-fns';
 import { useAuth } from '../App';
 import { filterCampaignsByRole, filterOwnerOptionsByRole, filterTasksByRole } from '../lib/workspace';
+import {
+  TASK_BUCKET_LABELS,
+  buildCampaignTaskGroups,
+  buildTaskBucketSummaries,
+  filterTasksByBucket,
+  getTaskBucket,
+  validateTaskCampaign,
+  type CampaignTaskGroup,
+  type TaskBucket,
+} from '../lib/taskInsights';
 import { cn } from '../utils';
 import { dataService, TEAM_MEMBERS } from '../services/dataService';
 import { notify } from '../services/notificationService';
@@ -25,6 +43,7 @@ import { Task } from '../types';
 
 const PRIORITIES: Task['priority'][] = ['Low', 'Medium', 'High', 'Critical'];
 const ONE_DAY = 86400000;
+const BUCKETS: TaskBucket[] = ['all', 'done', 'in-progress', 'pending', 'blocked', 'new'];
 
 const fallbackDueDate = () => Date.now() + ONE_DAY;
 
@@ -39,9 +58,14 @@ const toValidTimestamp = (value: unknown, fallback = fallbackDueDate()) =>
 
 const fmt = (value: unknown, f: string) => format(toValidDate(value), f);
 
-const parseDateInput = (value: string, fallback: unknown) => {
-  if (!value) return toValidTimestamp(fallback);
-  const ts = new Date(`${value}T12:00:00`).getTime();
+const formatDateInput = (value: unknown) => fmt(value, 'yyyy-MM-dd');
+
+const formatTimeInput = (value: unknown) => fmt(value, 'HH:mm');
+
+const parseDateTimeInput = (dateValue: string, timeValue: string, fallback: unknown) => {
+  if (!dateValue) return toValidTimestamp(fallback);
+  const safeTime = timeValue || formatTimeInput(fallback);
+  const ts = new Date(`${dateValue}T${safeTime || '12:00'}`).getTime();
   return Number.isFinite(ts) ? ts : toValidTimestamp(fallback);
 };
 
@@ -57,16 +81,33 @@ const emptyDraft = (): Partial<Task> => ({
   completed: false,
 });
 
-// Priority visual config
 const PRIORITY_CONFIG: Record<string, { dot: string; badge: string }> = {
-  Critical: { dot: 'bg-red-500',    badge: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800' },
-  High:     { dot: 'bg-orange-500', badge: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800' },
-  Medium:   { dot: 'bg-amber-500',  badge: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800' },
-  Low:      { dot: 'bg-green-500',  badge: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' },
+  Critical: { dot: 'bg-red-500', badge: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800' },
+  High: { dot: 'bg-orange-500', badge: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800' },
+  Medium: { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800' },
+  Low: { dot: 'bg-green-500', badge: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' },
 };
+
+const BUCKET_STYLE: Record<TaskBucket, { icon: React.ComponentType<{ size?: number; className?: string }>; tone: string; ring: string }> = {
+  all: { icon: Archive, tone: 'text-slate-700 dark:text-slate-200', ring: 'border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/30' },
+  done: { icon: CheckCircle2, tone: 'text-emerald-700 dark:text-emerald-300', ring: 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20' },
+  'in-progress': { icon: Clock3, tone: 'text-orange-700 dark:text-orange-300', ring: 'border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/20' },
+  pending: { icon: ListChecks, tone: 'text-amber-700 dark:text-amber-300', ring: 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20' },
+  blocked: { icon: Ban, tone: 'text-red-700 dark:text-red-300', ring: 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20' },
+  new: { icon: CirclePlus, tone: 'text-purple-700 dark:text-purple-300', ring: 'border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-900/20' },
+};
+
+function isTaskBucket(value: string | undefined): value is TaskBucket {
+  return Boolean(value && BUCKETS.includes(value as TaskBucket));
+}
 
 export default function TasksCenter() {
   const { role } = useAuth();
+  const { bucket } = useParams();
+  const navigate = useNavigate();
+  const selectedBucket = isTaskBucket(bucket) ? bucket : null;
+  const now = Date.now();
+
   const [tasks, setTasks] = useState<Task[]>(filterTasksByRole(role, dataService.getTasks()));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<Task> | null>(null);
@@ -78,6 +119,9 @@ export default function TasksCenter() {
   const [priorityFilter, setPriorityFilter] = useState<'all' | Task['priority']>('all');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [supabaseUsers, setSupabaseUsers] = useState<string[]>([]);
+  const [formError, setFormError] = useState('');
+
+  const refreshTasks = () => setTasks(filterTasksByRole(role, dataService.getTasks()));
 
   useEffect(() => {
     let alive = true;
@@ -90,16 +134,23 @@ export default function TasksCenter() {
   }, []);
 
   const campaigns = filterCampaignsByRole(role, dataService.getCampaigns());
-  const campaignOptions = campaigns.map(c => c.name);
+  const campaignOptions = Array.from(new Set([
+    ...campaigns.map(c => c.name).filter(Boolean),
+    ...tasks.map(t => t.campaignId?.trim()).filter(Boolean) as string[],
+  ])).sort((a, b) => a.localeCompare(b));
   const owners = filterOwnerOptionsByRole(role, Array.from(new Set([
     ...TEAM_MEMBERS,
     ...supabaseUsers,
     ...tasks.map(t => t.ownerId?.trim()).filter(Boolean) as string[],
   ])));
 
+  const bucketTasks = useMemo(() => (
+    selectedBucket ? filterTasksByBucket(tasks, selectedBucket, now) : tasks
+  ), [tasks, selectedBucket, now]);
+
   const filtered = useMemo(() => {
     const pw: Record<string, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 };
-    return tasks
+    return bucketTasks
       .filter(t => {
         const owner = t.ownerId?.trim() || 'Unassigned';
         const hay = `${t.title} ${t.description} ${owner} ${t.campaignId}`.toLowerCase();
@@ -115,24 +166,34 @@ export default function TasksCenter() {
         if (pw[b.priority] !== pw[a.priority]) return pw[b.priority] - pw[a.priority];
         return toValidTimestamp(a.dueDate) - toValidTimestamp(b.dueDate);
       });
-  }, [tasks, query, ownerFilter, statusFilter, priorityFilter]);
+  }, [bucketTasks, query, ownerFilter, statusFilter, priorityFilter]);
 
-  // ── Inline save ──────────────────────────────────────────────────────────────
+  const summaries = useMemo(() => buildTaskBucketSummaries(tasks, now), [tasks, now]);
+  const campaignGroups = useMemo(() => buildCampaignTaskGroups(selectedBucket ? filtered : tasks, now), [filtered, tasks, selectedBucket, now]);
+
   const startEdit = (task: Task) => {
     setEditingId(task.id);
     setEditDraft({ ...task, dueDate: toValidTimestamp(task.dueDate) });
     setConfirmDeleteId(null);
+    setFormError('');
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setEditDraft(null);
+    setFormError('');
   };
 
   const saveEdit = () => {
     if (!editingId || !editDraft?.title?.trim()) return;
-    const next = filterTasksByRole(role, dataService.updateTask(editingId, {
-      title: editDraft.title!.trim(),
+    const campaignCheck = validateTaskCampaign(editDraft);
+    if (!campaignCheck.ok) {
+      setFormError(campaignCheck.message);
+      return;
+    }
+
+    dataService.updateTask(editingId, {
+      title: editDraft.title.trim(),
       description: editDraft.description || '',
       ownerId: editDraft.ownerId?.trim() || '',
       campaignId: editDraft.campaignId?.trim() || '',
@@ -140,35 +201,42 @@ export default function TasksCenter() {
       dueDate: toValidTimestamp(editDraft.dueDate),
       completed: Boolean(editDraft.completed),
       updatedAt: Date.now(),
-    }));
-    setTasks(next);
-    const saved = next.find(t => t.id === editingId);
-    if (saved) notify('Task Updated', `"${saved.title}" saved`, 'orange', '/tasks');
+    });
+    refreshTasks();
+    notify('Task Updated', `"${editDraft.title.trim()}" saved`, 'orange', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
     setEditingId(null);
     setEditDraft(null);
+    setFormError('');
   };
 
   const toggleComplete = (task: Task) => {
-    const next = filterTasksByRole(role, dataService.updateTask(task.id, { completed: !task.completed, updatedAt: Date.now() }));
-    setTasks(next);
+    dataService.updateTask(task.id, { completed: !task.completed, completedAt: task.completed ? undefined : Date.now(), updatedAt: Date.now() });
+    refreshTasks();
     notify(
       task.completed ? 'Task Reopened' : 'Task Completed',
       `"${task.title}" ${task.completed ? 'returned to active' : 'marked complete'}`,
       task.completed ? 'orange' : 'green',
-      '/tasks',
+      selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all',
     );
   };
 
   const deleteTask = (id: string) => {
     const task = tasks.find(t => t.id === id);
-    setTasks(filterTasksByRole(role, dataService.deleteTask(id)));
-    if (task) notify('Task Deleted', `"${task.title}" removed`, 'red', '/tasks');
+    dataService.deleteTask(id);
+    refreshTasks();
+    if (task) notify('Task Deleted', `"${task.title}" removed`, 'red', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
     if (editingId === id) cancelEdit();
     setConfirmDeleteId(null);
   };
 
   const saveCreate = () => {
     if (!createDraft.title?.trim()) return;
+    const campaignCheck = validateTaskCampaign(createDraft);
+    if (!campaignCheck.ok) {
+      setFormError(campaignCheck.message);
+      return;
+    }
+
     const task: Task = {
       id: `TSK-${Date.now()}`,
       title: createDraft.title.trim(),
@@ -182,219 +250,330 @@ export default function TasksCenter() {
       updatedAt: Date.now(),
       createdBy: 'admin',
     };
-    setTasks(dataService.addTask(task));
-    notify('Task Created', `"${task.title}" added`, 'green', '/tasks');
+    dataService.addTask(task);
+    refreshTasks();
+    notify('Task Created', `"${task.title}" added to ${task.campaignId}`, 'green', '/tasks/new');
     setShowCreate(false);
     setCreateDraft(emptyDraft());
+    setFormError('');
+    navigate('/tasks/new');
   };
 
-  const activeCount = tasks.filter(t => !t.completed).length;
-  const overdueCount = tasks.filter(isOverdue).length;
-  const completedCount = tasks.filter(t => t.completed).length;
-
   return (
-    <div className="max-w-[1360px] mx-auto space-y-6 pb-12 animate-in fade-in duration-500">
-      {/* Header */}
+    <div className="mx-auto max-w-[1360px] space-y-6 pb-12 animate-in fade-in duration-500">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[1.5px] text-gc-orange">Core Operations</div>
-          <h2 className="font-extrabold text-2xl tracking-tight text-foreground">Task Management</h2>
+          <h2 className="text-2xl font-extrabold tracking-tight text-foreground">
+            {selectedBucket ? TASK_BUCKET_LABELS[selectedBucket] : 'Old Tasks'}
+          </h2>
           <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
             <CheckSquare size={15} className="text-gc-orange" />
-            Click a row to edit it inline — all fields are editable directly in the table.
+            {selectedBucket
+              ? 'Work inside this dedicated lane, then review its campaign sequence below.'
+              : 'Choose a clickable widget to open a dedicated task lane.'}
           </p>
         </div>
-        <button
-          onClick={() => { setShowCreate(true); setCreateDraft(emptyDraft()); cancelEdit(); }}
-          className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-sm font-bold text-white hover:bg-gc-orange/90 shrink-0"
-        >
-          <Plus size={16} /> New Task
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedBucket && (
+            <Link
+              to="/tasks"
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-xs font-extrabold uppercase tracking-widest text-muted-foreground hover:border-gc-orange hover:text-gc-orange"
+            >
+              <ArrowLeft size={15} /> Widgets
+            </Link>
+          )}
+          <button
+            onClick={() => { setShowCreate(true); setCreateDraft(emptyDraft()); cancelEdit(); }}
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-gc-orange px-4 text-sm font-bold text-white hover:bg-gc-orange/90"
+          >
+            <Plus size={16} /> New Task
+          </button>
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <StatCard label="Active" value={activeCount} color="text-gc-orange" />
-        <StatCard label="Overdue" value={overdueCount} color="text-red-600" />
-        <StatCard label="Completed" value={completedCount} color="text-green-600" />
-      </div>
-
-      {/* Create form */}
       {showCreate && (
         <CreateForm
           draft={createDraft}
-          setDraft={setCreateDraft}
+          setDraft={(updater) => { setFormError(''); setCreateDraft(updater); }}
           owners={owners}
           campaignOptions={campaignOptions}
+          error={formError}
           onSave={saveCreate}
-          onCancel={() => { setShowCreate(false); setCreateDraft(emptyDraft()); }}
+          onCancel={() => { setShowCreate(false); setCreateDraft(emptyDraft()); setFormError(''); }}
         />
       )}
 
-      {/* Filter bar */}
-      <div className="flex flex-wrap gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
-        <div className="relative flex-1 min-w-48">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-          <input
-            className="settings-input pl-9 w-full"
-            placeholder="Search tasks…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
+      {!selectedBucket ? (
+        <>
+          <TaskWidgetGrid summaries={summaries} />
+          <CampaignSequenceSection groups={campaignGroups} />
+        </>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-3">
+            <MiniMetric label="Lane Tasks" value={filtered.length} />
+            <MiniMetric label="Campaigns" value={campaignGroups.length} />
+            <MiniMetric label="Blocked Here" value={filtered.filter(task => getTaskBucket(task, now) === 'blocked').length} tone="text-red-600" />
+          </div>
+
+          <div className="flex flex-wrap gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
+            <div className="relative min-w-48 flex-1">
+              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                className="settings-input w-full pl-9"
+                placeholder="Search tasks..."
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+              />
+            </div>
+            <select className="settings-input min-w-40" value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
+              <option value="all">All assignees</option>
+              {owners.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+            <select className="settings-input min-w-36" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+            </select>
+            <PrioritySelect value={priorityFilter} onChange={v => setPriorityFilter(v as any)} />
+          </div>
+
+          <TaskTable
+            tasks={filtered}
+            allTaskCount={tasks.length}
+            editingId={editingId}
+            editDraft={editDraft}
+            setEditDraft={(updater) => { setFormError(''); setEditDraft(updater); }}
+            owners={owners}
+            campaignOptions={campaignOptions}
+            confirmDeleteId={confirmDeleteId}
+            formError={formError}
+            onStartEdit={startEdit}
+            onToggleComplete={toggleComplete}
+            onSaveEdit={saveEdit}
+            onCancelEdit={cancelEdit}
+            onDeleteAsk={setConfirmDeleteId}
+            onConfirmDelete={deleteTask}
+            onCancelDelete={() => setConfirmDeleteId(null)}
           />
-        </div>
-        <select className="settings-input min-w-40" value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
-          <option value="all">All assignees</option>
-          {owners.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
-        <select className="settings-input min-w-36" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
-          <option value="all">All statuses</option>
-          <option value="active">Active</option>
-          <option value="completed">Completed</option>
-        </select>
-        <PrioritySelect value={priorityFilter} onChange={v => setPriorityFilter(v as any)} />
+
+          <CampaignSequenceSection groups={campaignGroups} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function TaskWidgetGrid({ summaries }: { summaries: ReturnType<typeof buildTaskBucketSummaries> }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {summaries.map((summary) => {
+        const Icon = BUCKET_STYLE[summary.bucket].icon;
+        return (
+          <Link
+            key={summary.bucket}
+            to={`/tasks/${summary.bucket}`}
+            className={cn(
+              'group rounded-xl border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-gc-orange hover:shadow-md',
+              summary.bucket === 'all' && 'sm:col-span-2 xl:col-span-1',
+            )}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className={cn('flex h-11 w-11 items-center justify-center rounded-lg border', BUCKET_STYLE[summary.bucket].ring)}>
+                <Icon size={20} className={BUCKET_STYLE[summary.bucket].tone} />
+              </div>
+              <span className="text-3xl font-black tabular-nums text-foreground">{summary.count}</span>
+            </div>
+            <div className="mt-5">
+              <h3 className="text-base font-extrabold text-foreground">{summary.label}</h3>
+              <p className="mt-1 min-h-10 text-sm font-medium text-muted-foreground">{summary.description}</p>
+            </div>
+            <div className="mt-4 flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-gc-orange">
+              Open lane <ArrowLeft size={13} className="rotate-180 transition-transform group-hover:translate-x-1" />
+            </div>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function TaskTable({
+  tasks,
+  allTaskCount,
+  editingId,
+  editDraft,
+  setEditDraft,
+  owners,
+  campaignOptions,
+  confirmDeleteId,
+  formError,
+  onStartEdit,
+  onToggleComplete,
+  onSaveEdit,
+  onCancelEdit,
+  onDeleteAsk,
+  onConfirmDelete,
+  onCancelDelete,
+}: {
+  tasks: Task[];
+  allTaskCount: number;
+  editingId: string | null;
+  editDraft: Partial<Task> | null;
+  setEditDraft: React.Dispatch<React.SetStateAction<Partial<Task> | null>>;
+  owners: string[];
+  campaignOptions: string[];
+  confirmDeleteId: string | null;
+  formError: string;
+  onStartEdit: (task: Task) => void;
+  onToggleComplete: (task: Task) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDeleteAsk: (id: string) => void;
+  onConfirmDelete: (id: string) => void;
+  onCancelDelete: () => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="hidden grid-cols-[2rem_1fr_11rem_12rem_9rem_9rem_8rem] items-center gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground md:grid">
+        <span />
+        <span>Task</span>
+        <span>Assignee</span>
+        <span>Campaign *</span>
+        <span>Priority</span>
+        <span>Due Date & Time</span>
+        <span>Status</span>
       </div>
 
-      {/* Task table */}
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-        {/* Table header */}
-        <div className="hidden md:grid grid-cols-[2rem_1fr_11rem_10rem_9rem_9rem_7rem] gap-x-4 items-center border-b border-border bg-muted/40 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-          <span />
-          <span>Task</span>
-          <span>Assignee</span>
-          <span>Campaign</span>
-          <span>Priority</span>
-          <span>Due Date</span>
-          <span>Status</span>
-        </div>
+      <div className="divide-y divide-border">
+        {tasks.length === 0 ? (
+          <div className="py-16 text-center text-sm text-muted-foreground">
+            {allTaskCount === 0 ? 'No tasks yet. Create your first task above.' : 'No tasks match these filters.'}
+          </div>
+        ) : (
+          tasks.map(task => {
+            const editing = editingId === task.id;
+            const overdue = isOverdue(task);
+            const deleting = confirmDeleteId === task.id;
 
-        <div className="divide-y divide-border">
-          {filtered.length === 0 ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">
-              {tasks.length === 0 ? 'No tasks yet — create your first task above.' : 'No tasks match these filters.'}
-            </div>
-          ) : (
-            filtered.map(task => {
-              const editing = editingId === task.id;
-              const overdue = isOverdue(task);
-              const deleting = confirmDeleteId === task.id;
-
-              if (editing && editDraft) {
-                return (
-                  <EditRow
-                    key={task.id}
-                    draft={editDraft}
-                    setDraft={setEditDraft}
-                    owners={owners}
-                    campaignOptions={campaignOptions}
-                    onSave={saveEdit}
-                    onCancel={cancelEdit}
-                    onDelete={() => setConfirmDeleteId(task.id)}
-                    confirmDelete={deleting}
-                    onConfirmDelete={() => deleteTask(task.id)}
-                    onCancelDelete={() => setConfirmDeleteId(null)}
-                  />
-                );
-              }
-
+            if (editing && editDraft) {
               return (
-                <div
+                <EditRow
                   key={task.id}
-                  onClick={() => startEdit(task)}
-                  className={cn(
-                    'grid grid-cols-1 md:grid-cols-[2rem_1fr_11rem_10rem_9rem_9rem_7rem] gap-x-4 gap-y-2 items-center px-4 py-3.5 cursor-pointer transition-colors',
-                    'hover:bg-muted/40',
-                    task.completed && 'opacity-60',
-                    overdue && !task.completed && 'bg-red-50/50 dark:bg-red-950/20',
-                  )}
-                >
-                  {/* Checkbox */}
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); toggleComplete(task); }}
-                    className={cn(
-                      'flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 transition-colors',
-                      task.completed
-                        ? 'border-green-600 bg-green-600 text-white'
-                        : 'border-border hover:border-gc-orange text-transparent',
-                    )}
-                    aria-label={task.completed ? 'Reopen' : 'Complete'}
-                  >
-                    <Check size={13} strokeWidth={3} />
-                  </button>
-
-                  {/* Title + description */}
-                  <div className="min-w-0">
-                    <p className={cn('text-sm font-semibold text-foreground truncate', task.completed && 'line-through text-muted-foreground')}>
-                      {task.title}
-                    </p>
-                    {task.description && (
-                      <p className="mt-0.5 text-xs text-muted-foreground truncate">{task.description}</p>
-                    )}
-                  </div>
-
-                  {/* Assignee */}
-                  <div className="text-sm text-foreground truncate md:block">
-                    <span className="md:hidden text-[10px] font-bold uppercase text-muted-foreground mr-1">Assignee: </span>
-                    {task.ownerId || <span className="text-muted-foreground">—</span>}
-                  </div>
-
-                  {/* Campaign */}
-                  <div className="text-sm text-foreground truncate">
-                    <span className="md:hidden text-[10px] font-bold uppercase text-muted-foreground mr-1">Campaign: </span>
-                    {task.campaignId || <span className="text-muted-foreground">—</span>}
-                  </div>
-
-                  {/* Priority */}
-                  <div>
-                    <span className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold',
-                      PRIORITY_CONFIG[task.priority]?.badge,
-                    )}>
-                      <span className={cn('h-1.5 w-1.5 rounded-full', PRIORITY_CONFIG[task.priority]?.dot)} />
-                      {task.priority}
-                    </span>
-                  </div>
-
-                  {/* Due date */}
-                  <div className={cn('text-sm', overdue && !task.completed ? 'text-red-600 font-semibold' : 'text-foreground')}>
-                    <span className="md:hidden text-[10px] font-bold uppercase text-muted-foreground mr-1">Due: </span>
-                    <span className="inline-flex items-center gap-1">
-                      {overdue && !task.completed && <Clock size={12} />}
-                      {fmt(task.dueDate, 'MMM d, yyyy')}
-                    </span>
-                  </div>
-
-                  {/* Status */}
-                  <div>
-                    <span className={cn(
-                      'inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold',
-                      task.completed
-                        ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800'
-                        : 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800',
-                    )}>
-                      {task.completed ? 'Done' : 'Open'}
-                    </span>
-                  </div>
-                </div>
+                  draft={editDraft}
+                  setDraft={setEditDraft}
+                  owners={owners}
+                  campaignOptions={campaignOptions}
+                  error={formError}
+                  onSave={onSaveEdit}
+                  onCancel={onCancelEdit}
+                  onDelete={() => onDeleteAsk(task.id)}
+                  confirmDelete={deleting}
+                  onConfirmDelete={() => onConfirmDelete(task.id)}
+                  onCancelDelete={onCancelDelete}
+                />
               );
-            })
-          )}
-        </div>
+            }
+
+            return (
+              <TaskDisplayRow
+                key={task.id}
+                task={task}
+                overdue={overdue}
+                onStartEdit={onStartEdit}
+                onToggleComplete={onToggleComplete}
+              />
+            );
+          })
+        )}
       </div>
     </div>
   );
 }
 
-// ── Edit row ─────────────────────────────────────────────────────────────────
+function TaskDisplayRow({
+  task,
+  overdue,
+  onStartEdit,
+  onToggleComplete,
+}: {
+  task: Task;
+  overdue: boolean;
+  onStartEdit: (task: Task) => void;
+  onToggleComplete: (task: Task) => void;
+}) {
+  const bucket = getTaskBucket(task);
+  return (
+    <div
+      onClick={() => onStartEdit(task)}
+      className={cn(
+        'grid cursor-pointer grid-cols-1 items-center gap-x-4 gap-y-2 px-4 py-3.5 transition-colors md:grid-cols-[2rem_1fr_11rem_12rem_9rem_9rem_8rem]',
+        'hover:bg-muted/40',
+        task.completed && 'opacity-60',
+        overdue && !task.completed && 'bg-red-50/50 dark:bg-red-950/20',
+      )}
+    >
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); onToggleComplete(task); }}
+        className={cn(
+          'flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 transition-colors',
+          task.completed ? 'border-green-600 bg-green-600 text-white' : 'border-border text-transparent hover:border-gc-orange',
+        )}
+        aria-label={task.completed ? 'Reopen' : 'Complete'}
+      >
+        <Check size={13} strokeWidth={3} />
+      </button>
+
+      <div className="min-w-0">
+        <p className={cn('truncate text-sm font-semibold text-foreground', task.completed && 'line-through text-muted-foreground')}>
+          {task.title}
+        </p>
+        {task.description && <p className="mt-0.5 truncate text-xs text-muted-foreground">{task.description}</p>}
+      </div>
+
+      <Cell label="Assignee">{task.ownerId || <span className="text-muted-foreground">Unassigned</span>}</Cell>
+      <Cell label="Campaign">{task.campaignId || <span className="font-bold text-red-600">Required</span>}</Cell>
+
+      <div>
+        <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold', PRIORITY_CONFIG[task.priority]?.badge)}>
+          <span className={cn('h-1.5 w-1.5 rounded-full', PRIORITY_CONFIG[task.priority]?.dot)} />
+          {task.priority}
+        </span>
+      </div>
+
+      <div className={cn('text-sm', overdue && !task.completed ? 'font-semibold text-red-600' : 'text-foreground')}>
+        <span className="mr-1 text-[10px] font-bold uppercase text-muted-foreground md:hidden">Due:</span>
+        <span className="inline-flex items-center gap-1">
+          {overdue && !task.completed && <Clock3 size={12} />}
+          {fmt(task.dueDate, 'MMM d, yyyy h:mm a')}
+        </span>
+      </div>
+
+      <StatusBadge bucket={bucket} />
+    </div>
+  );
+}
+
 function EditRow({
-  draft, setDraft, owners, campaignOptions,
-  onSave, onCancel, onDelete,
-  confirmDelete, onConfirmDelete, onCancelDelete,
+  draft,
+  setDraft,
+  owners,
+  campaignOptions,
+  error,
+  onSave,
+  onCancel,
+  onDelete,
+  confirmDelete,
+  onConfirmDelete,
+  onCancelDelete,
 }: {
   draft: Partial<Task>;
   setDraft: React.Dispatch<React.SetStateAction<Partial<Task> | null>>;
   owners: string[];
   campaignOptions: string[];
+  error: string;
   onSave: () => void;
   onCancel: () => void;
   onDelete: () => void;
@@ -405,11 +584,8 @@ function EditRow({
   const rowId = draft.id || 'edit';
   return (
     <div className="border-l-4 border-gc-orange bg-orange-50/40 dark:bg-orange-950/10">
-      {/* Top: editable fields grid */}
-      <div className="grid grid-cols-1 gap-3 px-4 py-4 md:grid-cols-[1fr_11rem_10rem_9rem_9rem_7rem]">
-        {/* Title */}
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Title</span>
+      <div className="grid grid-cols-1 gap-3 px-4 py-4 md:grid-cols-[1fr_11rem_12rem_9rem_9rem_7rem]">
+        <Field label="Title">
           <input
             autoFocus
             className="settings-input"
@@ -417,218 +593,171 @@ function EditRow({
             onChange={e => setDraft(d => ({ ...d!, title: e.target.value }))}
             onKeyDown={e => { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onCancel(); }}
           />
-        </label>
+        </Field>
 
-        {/* Assignee */}
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Assignee</span>
+        <Field label="Assignee">
           <input
             className="settings-input"
             list={`ow-${rowId}`}
-            placeholder="Type or pick…"
+            placeholder="Type or pick..."
             value={draft.ownerId || ''}
             onChange={e => setDraft(d => ({ ...d!, ownerId: e.target.value }))}
           />
-          <datalist id={`ow-${rowId}`}>
-            {owners.map(o => <option key={o} value={o} />)}
-          </datalist>
-        </label>
+          <datalist id={`ow-${rowId}`}>{owners.map(o => <option key={o} value={o} />)}</datalist>
+        </Field>
 
-        {/* Campaign */}
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Campaign</span>
+        <Field label="Campaign *">
           <input
-            className="settings-input"
+            className={cn('settings-input', !draft.campaignId?.trim() && 'border-red-300 focus:border-red-500')}
             list={`cp-${rowId}`}
-            placeholder="Campaign name…"
+            placeholder="Required campaign"
             value={draft.campaignId || ''}
             onChange={e => setDraft(d => ({ ...d!, campaignId: e.target.value }))}
           />
-          <datalist id={`cp-${rowId}`}>
-            {campaignOptions.map(c => <option key={c} value={c} />)}
-          </datalist>
-        </label>
+          <datalist id={`cp-${rowId}`}>{campaignOptions.map(c => <option key={c} value={c} />)}</datalist>
+        </Field>
 
-        {/* Priority */}
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Priority</span>
-          <select
-            className="settings-input"
-            value={draft.priority || 'Medium'}
-            onChange={e => setDraft(d => ({ ...d!, priority: e.target.value as Task['priority'] }))}
-          >
-            {(['Low', 'Medium', 'High', 'Critical'] as Task['priority'][]).map(p => (
-              <option key={p} value={p}>{p}</option>
-            ))}
+        <Field label="Priority">
+          <select className="settings-input" value={draft.priority || 'Medium'} onChange={e => setDraft(d => ({ ...d!, priority: e.target.value as Task['priority'] }))}>
+            {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
-        </label>
+        </Field>
 
-        {/* Due date */}
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Due Date</span>
-          <input
-            className="settings-input"
-            type="date"
-            value={fmt(draft.dueDate, 'yyyy-MM-dd')}
-            onChange={e => setDraft(d => ({ ...d!, dueDate: parseDateInput(e.target.value, d?.dueDate) }))}
-          />
-        </label>
+        <Field label="Due Date & Time">
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              className="settings-input"
+              type="date"
+              value={formatDateInput(draft.dueDate)}
+              onChange={e => setDraft(d => ({ ...d!, dueDate: parseDateTimeInput(e.target.value, formatTimeInput(d?.dueDate), d?.dueDate) }))}
+            />
+            <input
+              className="settings-input"
+              type="time"
+              value={formatTimeInput(draft.dueDate)}
+              onChange={e => setDraft(d => ({ ...d!, dueDate: parseDateTimeInput(formatDateInput(d?.dueDate), e.target.value, d?.dueDate) }))}
+            />
+          </div>
+        </Field>
 
-        {/* Status */}
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Status</span>
-          <select
-            className="settings-input"
-            value={draft.completed ? 'completed' : 'active'}
-            onChange={e => setDraft(d => ({ ...d!, completed: e.target.value === 'completed' }))}
-          >
+        <Field label="Status">
+          <select className="settings-input" value={draft.completed ? 'completed' : 'active'} onChange={e => setDraft(d => ({ ...d!, completed: e.target.value === 'completed' }))}>
             <option value="active">Open</option>
             <option value="completed">Done</option>
           </select>
-        </label>
+        </Field>
       </div>
 
-      {/* Description */}
       <div className="px-4 pb-3">
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Description</span>
-          <textarea
-            className="settings-input min-h-16 resize-none"
-            value={draft.description || ''}
-            onChange={e => setDraft(d => ({ ...d!, description: e.target.value }))}
-            rows={2}
-          />
-        </label>
+        <Field label="Description">
+          <textarea className="settings-input min-h-16 resize-none" value={draft.description || ''} onChange={e => setDraft(d => ({ ...d!, description: e.target.value }))} rows={2} />
+        </Field>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-orange-100 dark:border-orange-900/30 px-4 py-3">
+      {error && <div className="mx-4 mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{error}</div>}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-orange-100 px-4 py-3 dark:border-orange-900/30">
         <div className="flex flex-wrap items-center gap-2">
           {confirmDelete ? (
             <>
               <span className="text-xs font-bold text-destructive">Delete this task?</span>
-              <button onClick={onConfirmDelete} className="rounded-lg bg-destructive px-3 py-1.5 text-xs font-bold text-white hover:bg-destructive/90">
-                Yes, delete
-              </button>
-              <button onClick={onCancelDelete} className="rounded-lg border border-border px-3 py-1.5 text-xs font-bold hover:bg-accent">
-                Cancel
-              </button>
+              <button onClick={onConfirmDelete} className="rounded-lg bg-destructive px-3 py-1.5 text-xs font-bold text-white hover:bg-destructive/90">Yes, delete</button>
+              <button onClick={onCancelDelete} className="rounded-lg border border-border px-3 py-1.5 text-xs font-bold hover:bg-accent">Cancel</button>
             </>
           ) : (
-            <button
-              onClick={onDelete}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400"
-            >
+            <button onClick={onDelete} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
               <Trash2 size={13} /> Delete
             </button>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={onCancel} className="rounded-lg border border-border px-3 py-1.5 text-xs font-bold hover:bg-accent">
-            <X size={13} className="inline mr-1" />Cancel
-          </button>
-          <button
-            onClick={onSave}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-gc-orange px-4 py-1.5 text-xs font-bold text-white hover:bg-gc-orange/90"
-          >
-            <Save size={13} /> Save
-          </button>
+          <button onClick={onCancel} className="rounded-lg border border-border px-3 py-1.5 text-xs font-bold hover:bg-accent"><X size={13} className="mr-1 inline" />Cancel</button>
+          <button onClick={onSave} className="inline-flex items-center gap-1.5 rounded-lg bg-gc-orange px-4 py-1.5 text-xs font-bold text-white hover:bg-gc-orange/90"><Save size={13} /> Save</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Create form ───────────────────────────────────────────────────────────────
-function CreateForm({ draft, setDraft, owners, campaignOptions, onSave, onCancel }: {
+function CreateForm({
+  draft,
+  setDraft,
+  owners,
+  campaignOptions,
+  error,
+  onSave,
+  onCancel,
+}: {
   draft: Partial<Task>;
   setDraft: React.Dispatch<React.SetStateAction<Partial<Task>>>;
   owners: string[];
   campaignOptions: string[];
+  error: string;
   onSave: () => void;
   onCancel: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-orange-200 bg-orange-50/40 dark:border-orange-900/40 dark:bg-orange-950/10 shadow-sm">
-      <div className="flex items-center justify-between border-b border-orange-100 dark:border-orange-900/30 px-4 py-3">
+    <div className="rounded-xl border border-orange-200 bg-orange-50/40 shadow-sm dark:border-orange-900/40 dark:bg-orange-950/10">
+      <div className="flex items-center justify-between border-b border-orange-100 px-4 py-3 dark:border-orange-900/30">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-gc-orange">New Task</p>
-          <p className="text-sm font-bold text-foreground">Fill in the details below</p>
+          <p className="text-sm font-bold text-foreground">Campaign is mandatory before this task can be saved</p>
         </div>
         <button onClick={onCancel} className="icon-btn"><X size={15} /></button>
       </div>
 
       <div className="grid grid-cols-1 gap-3 px-4 py-4 md:grid-cols-2 lg:grid-cols-3">
-        <label className="flex flex-col gap-1 lg:col-span-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Title *</span>
-          <input
-            autoFocus
-            className="settings-input"
-            placeholder="What needs to be done?"
-            value={draft.title || ''}
-            onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
-            onKeyDown={e => { if (e.key === 'Enter') onSave(); }}
-          />
-        </label>
+        <Field label="Title *" className="lg:col-span-2">
+          <input autoFocus className="settings-input" placeholder="What needs to be done?" value={draft.title || ''} onChange={e => setDraft(d => ({ ...d, title: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') onSave(); }} />
+        </Field>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Assignee</span>
-          <input
-            className="settings-input"
-            list="create-owners"
-            placeholder="Type or pick…"
-            value={draft.ownerId || ''}
-            onChange={e => setDraft(d => ({ ...d, ownerId: e.target.value }))}
-          />
-          <datalist id="create-owners">
-            {owners.map(o => <option key={o} value={o} />)}
-          </datalist>
-        </label>
+        <Field label="Assignee">
+          <input className="settings-input" list="create-owners" placeholder="Type or pick..." value={draft.ownerId || ''} onChange={e => setDraft(d => ({ ...d, ownerId: e.target.value }))} />
+          <datalist id="create-owners">{owners.map(o => <option key={o} value={o} />)}</datalist>
+        </Field>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Campaign</span>
+        <Field label="Campaign *">
           <input
-            className="settings-input"
+            className={cn('settings-input', !draft.campaignId?.trim() && 'border-red-300 focus:border-red-500')}
             list="create-campaigns"
-            placeholder="Campaign name…"
+            placeholder="Required campaign"
             value={draft.campaignId || ''}
             onChange={e => setDraft(d => ({ ...d, campaignId: e.target.value }))}
           />
-          <datalist id="create-campaigns">
-            {campaignOptions.map(c => <option key={c} value={c} />)}
-          </datalist>
-        </label>
+          <datalist id="create-campaigns">{campaignOptions.map(c => <option key={c} value={c} />)}</datalist>
+        </Field>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Priority</span>
+        <Field label="Priority">
           <select className="settings-input" value={draft.priority || 'Medium'} onChange={e => setDraft(d => ({ ...d, priority: e.target.value as Task['priority'] }))}>
-            {(['Low', 'Medium', 'High', 'Critical'] as Task['priority'][]).map(p => <option key={p} value={p}>{p}</option>)}
+            {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
-        </label>
+        </Field>
 
-        <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Due Date</span>
-          <input
-            className="settings-input"
-            type="date"
-            value={fmt(draft.dueDate, 'yyyy-MM-dd')}
-            onChange={e => setDraft(d => ({ ...d, dueDate: parseDateInput(e.target.value, d.dueDate) }))}
-          />
-        </label>
+        <Field label="Due Date & Time">
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              className="settings-input"
+              type="date"
+              value={formatDateInput(draft.dueDate)}
+              onChange={e => setDraft(d => ({ ...d, dueDate: parseDateTimeInput(e.target.value, formatTimeInput(d.dueDate), d.dueDate) }))}
+            />
+            <input
+              className="settings-input"
+              type="time"
+              value={formatTimeInput(draft.dueDate)}
+              onChange={e => setDraft(d => ({ ...d, dueDate: parseDateTimeInput(formatDateInput(d.dueDate), e.target.value, d.dueDate) }))}
+            />
+          </div>
+        </Field>
 
-        <label className="flex flex-col gap-1 lg:col-span-3">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Description</span>
-          <textarea
-            className="settings-input min-h-16 resize-none"
-            placeholder="Optional details…"
-            value={draft.description || ''}
-            onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
-            rows={2}
-          />
-        </label>
+        <Field label="Description" className="lg:col-span-3">
+          <textarea className="settings-input min-h-16 resize-none" placeholder="Optional details..." value={draft.description || ''} onChange={e => setDraft(d => ({ ...d, description: e.target.value }))} rows={2} />
+        </Field>
       </div>
 
-      <div className="flex justify-end gap-2 border-t border-orange-100 dark:border-orange-900/30 px-4 py-3">
+      {error && <div className="mx-4 mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{error}</div>}
+
+      <div className="flex justify-end gap-2 border-t border-orange-100 px-4 py-3 dark:border-orange-900/30">
         <button onClick={onCancel} className="rounded-lg border border-border px-4 py-2 text-sm font-bold hover:bg-accent">Cancel</button>
         <button onClick={onSave} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-sm font-bold text-white hover:bg-gc-orange/90">
           <Save size={15} /> Create Task
@@ -638,18 +767,113 @@ function CreateForm({ draft, setDraft, owners, campaignOptions, onSave, onCancel
   );
 }
 
-// ── Small components ──────────────────────────────────────────────────────────
-function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
+function CampaignSequenceSection({ groups }: { groups: CampaignTaskGroup[] }) {
+  return (
+    <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-widest text-gc-orange">
+            <Layers3 size={15} /> Campaign Task Sequence
+          </div>
+          <h3 className="mt-1 text-lg font-extrabold text-foreground">Campaigns with ordered sub-sequences</h3>
+        </div>
+        <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-bold text-muted-foreground">
+          {groups.length} campaign sections
+        </div>
+      </div>
+
+      {groups.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm font-medium text-muted-foreground">
+          No campaigns are attached to this task lane yet.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {groups.map(group => (
+            <div key={group.campaignName} className="overflow-hidden rounded-lg border border-border bg-background">
+              <div className="flex flex-col gap-3 border-b border-border bg-muted/30 px-4 py-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Campaign {group.sequence}</p>
+                  <h4 className="truncate text-sm font-extrabold text-foreground">{group.campaignName}</h4>
+                </div>
+                <div className="flex flex-wrap gap-2 text-[11px] font-bold">
+                  <span className="rounded-full bg-secondary px-2.5 py-1 text-muted-foreground">{group.total} tasks</span>
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">{group.done} done</span>
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{group.pending} pending</span>
+                  <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700 dark:bg-red-900/20 dark:text-red-300">{group.blocked} blocked</span>
+                </div>
+              </div>
+              <div className="divide-y divide-border">
+                {group.tasks.slice(0, 8).map(item => (
+                  <div key={item.task.id} className="grid gap-3 px-4 py-3 text-sm md:grid-cols-[4rem_1fr_8rem_8rem] md:items-center">
+                    <span className="font-mono text-xs font-black text-gc-orange">{item.sequenceLabel}</span>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-foreground">{item.task.title}</p>
+                      <p className="truncate text-xs text-muted-foreground">{item.task.ownerId || 'Unassigned'} - due {fmt(item.task.dueDate, 'MMM d, h:mm a')}</p>
+                    </div>
+                    <StatusBadge bucket={item.bucket} />
+                    <span className={cn('inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold', PRIORITY_CONFIG[item.task.priority]?.badge)}>
+                      <Flame size={12} />
+                      {item.task.priority}
+                    </span>
+                  </div>
+                ))}
+                {group.tasks.length > 8 && (
+                  <div className="px-4 py-3 text-xs font-bold text-muted-foreground">
+                    {group.tasks.length - 8} more task sequence items in this campaign.
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Cell({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="truncate text-sm text-foreground">
+      <span className="mr-1 text-[10px] font-bold uppercase text-muted-foreground md:hidden">{label}: </span>
+      {children}
+    </div>
+  );
+}
+
+function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+  return (
+    <label className={cn('flex flex-col gap-1', className)}>
+      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function MiniMetric({ label, value, tone = 'text-foreground' }: { label: string; value: number; tone?: string }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className={cn('mt-1 text-3xl font-bold tabular-nums', color)}>{value}</p>
+      <p className={cn('mt-1 text-3xl font-bold tabular-nums', tone)}>{value}</p>
+    </div>
+  );
+}
+
+function StatusBadge({ bucket }: { bucket: Exclude<TaskBucket, 'all' | 'new'> }) {
+  const label = TASK_BUCKET_LABELS[bucket];
+  return (
+    <div>
+      <span className={cn('inline-flex w-fit rounded-full border px-2.5 py-0.5 text-[11px] font-bold', BUCKET_STYLE[bucket].ring, BUCKET_STYLE[bucket].tone)}>
+        {label}
+      </span>
     </div>
   );
 }
 
 const PRIORITY_DOT: Record<string, string> = {
-  Critical: '#dc2626', High: '#f97316', Medium: '#d97706', Low: '#16a34a',
+  Critical: '#dc2626',
+  High: '#f97316',
+  Medium: '#d97706',
+  Low: '#16a34a',
 };
 
 function PrioritySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
@@ -657,19 +881,13 @@ function PrioritySelect({ value, onChange }: { value: string; onChange: (v: stri
     <div className="relative min-w-36">
       {value !== 'all' && (
         <span
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full"
+          className="pointer-events-none absolute left-3 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full"
           style={{ background: PRIORITY_DOT[value] }}
         />
       )}
-      <select
-        className={cn('settings-input', value !== 'all' && 'pl-8')}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-      >
+      <select className={cn('settings-input', value !== 'all' && 'pl-8')} value={value} onChange={e => onChange(e.target.value)}>
         <option value="all">All priorities</option>
-        {(['Low', 'Medium', 'High', 'Critical'] as Task['priority'][]).map(p => (
-          <option key={p} value={p}>{p}</option>
-        ))}
+        {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
       </select>
     </div>
   );
