@@ -122,6 +122,6 @@ export function buildOnlineUserRoster({
       const statusRank: Record<OnlineUserStatus, number> = { online: 0, idle: 1, inactive: 2 };
       return statusRank[a.status] - statusRank[b.status]
         || (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0)
-        || a.name.localeCompare(b.name);
+        || String(a.name || '').localeCompare(String(b.name || ''));
     });
 }

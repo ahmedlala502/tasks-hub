@@ -61,7 +61,9 @@ function sameName(a: string | undefined | null, b: string | undefined | null): b
 }
 
 export function buildOfficeInsights(input: OfficeInsightsInput): OfficeInsights {
-  const activeUsers = input.users.filter((user) => user.status !== 'suspended');
+  const activeUsers = input.users.filter(
+    (user) => user && user.status !== 'suspended' && typeof user.displayName === 'string' && user.displayName.trim().length > 0,
+  );
 
   const agentRows = activeUsers
     .map((user) => {
@@ -75,12 +77,12 @@ export function buildOfficeInsights(input: OfficeInsightsInput): OfficeInsights 
       );
 
       return {
-        office: user.office,
+        office: (user.office || 'Egypt') as OpsOffice,
         name: user.displayName,
         email: user.email,
-        role: user.role,
-        department: user.department,
-        title: user.title,
+        role: user.role || 'operations',
+        department: user.department || 'Operations',
+        title: user.title || '',
         tasks: tasks.length,
         done,
         pending: tasks.length - done,
@@ -90,7 +92,12 @@ export function buildOfficeInsights(input: OfficeInsightsInput): OfficeInsights 
         completionRate: tasks.length ? Math.round((done / tasks.length) * 100) : 0,
       };
     })
-    .sort((a, b) => a.office.localeCompare(b.office) || b.tasks - a.tasks || a.name.localeCompare(b.name));
+    .sort((a, b) => {
+      const officeCompare = String(a.office || '').localeCompare(String(b.office || ''));
+      if (officeCompare !== 0) return officeCompare;
+      if (a.tasks !== b.tasks) return b.tasks - a.tasks;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
 
   const officeRows = OPS_OFFICES.map((office) => {
     const users = activeUsers.filter((user) => user.office === office);

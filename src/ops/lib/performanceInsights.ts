@@ -182,6 +182,7 @@ export function buildPerformanceInsights(input: BuildPerformanceInput): Performa
     });
 
   const agentRows: PerformanceRow[] = input.users
+    .filter((user) => typeof user?.name === 'string' && user.name.trim().length > 0)
     .map((user) => ({
       name: user.name,
       role: user.role,
@@ -191,7 +192,7 @@ export function buildPerformanceInsights(input: BuildPerformanceInput): Performa
       summary: agentSummary(user.name, { ...input, now }),
     }))
     .filter((row) => row.summary.tasks || row.summary.campaigns || row.summary.creators || row.summary.handovers || row.summary.blocked)
-    .sort((a, b) => b.summary.tasks - a.summary.tasks || a.name.localeCompare(b.name));
+    .sort((a, b) => b.summary.tasks - a.summary.tasks || String(a.name || '').localeCompare(String(b.name || '')));
 
   return {
     currentUser,

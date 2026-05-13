@@ -14,6 +14,7 @@ import { notificationService, AppNotification } from '../services/notificationSe
 import { exportAllData, downloadJson } from '../services/dataService';
 import { canAccessPath, getRoleLabel } from '../lib/access';
 import { getWorkspaceLabel } from '../lib/workspace';
+import ErrorBoundary from '../../components/ErrorBoundary';
 
 type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
@@ -368,7 +369,9 @@ export default function Layout() {
           density === 'compact' ? 'p-3' : density === 'spacious' ? 'p-7' : 'p-5',
           notificationsOpen && 'xl:pr-[390px]'
         )}>
-          <Outlet />
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </div>
       </main>
 
