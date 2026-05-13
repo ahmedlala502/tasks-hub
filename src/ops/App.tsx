@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from './components/ui/sonner';
 import { canAccessPath, getHomePath } from './lib/access';
 import { supabaseAuth } from './services/supabaseAuth';
+import ErrorBoundary from '../components/ErrorBoundary';
 import type { OpsDepartment, OpsOffice, OpsRole, OpsUser } from './auth/types';
 
 import Dashboard from './pages/Dashboard';
@@ -106,33 +107,35 @@ export default function App() {
 
   return (
     <AuthContext.Provider value={{ user, role, loading, login, logout, updateProfile, updatePassword }}>
-      <Router>
-        <Routes>
-          <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
-          <Route
-            path="/"
-            element={user ? <Layout /> : <Navigate to="/login" />}
-          >
-            <Route index element={allow('/', <Dashboard />)} />
-            <Route path="handover" element={allow('/handover', <Handover />)} />
-            <Route path="online-users" element={allow('/online-users', <OnlineUsers />)} />
-            <Route path="blockers" element={allow('/blockers', <Blockers />)} />
-            <Route path="audit" element={allow('/audit', <AuditLogs />)} />
-            <Route path="reporting" element={allow('/reporting', <Reporting />)} />
-            <Route path="tasks" element={allow('/tasks', <Tasks />)} />
-            <Route path="tasks/:bucket" element={allow('/tasks', <Tasks />)} />
-            <Route path="priority-board" element={allow('/priority-board', <PriorityBoard />)} />
-            <Route path="profile" element={allow('/profile', <UserProfile />)} />
-            <Route path="templates" element={allow('/templates', <Templates />)} />
-            <Route path="analytics" element={allow('/analytics', <Analytics />)} />
-            <Route path="assets" element={allow('/assets', <AssetRegistry />)} />
-            <Route path="settings" element={allow('/settings', <Settings />)} />
-            <Route path="admin" element={allow('/admin', <Admin />)} />
-            <Route path="*" element={redirectHome} />
-          </Route>
-        </Routes>
-      </Router>
-      <Toaster />
+      <ErrorBoundary>
+        <Router>
+          <Routes>
+            <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
+            <Route
+              path="/"
+              element={user ? <Layout /> : <Navigate to="/login" />}
+            >
+              <Route index element={allow('/', <Dashboard />)} />
+              <Route path="handover" element={allow('/handover', <Handover />)} />
+              <Route path="online-users" element={allow('/online-users', <OnlineUsers />)} />
+              <Route path="blockers" element={allow('/blockers', <Blockers />)} />
+              <Route path="audit" element={allow('/audit', <AuditLogs />)} />
+              <Route path="reporting" element={allow('/reporting', <Reporting />)} />
+              <Route path="tasks" element={allow('/tasks', <Tasks />)} />
+              <Route path="tasks/:bucket" element={allow('/tasks', <Tasks />)} />
+              <Route path="priority-board" element={allow('/priority-board', <PriorityBoard />)} />
+              <Route path="profile" element={allow('/profile', <UserProfile />)} />
+              <Route path="templates" element={allow('/templates', <Templates />)} />
+              <Route path="analytics" element={allow('/analytics', <Analytics />)} />
+              <Route path="assets" element={allow('/assets', <AssetRegistry />)} />
+              <Route path="settings" element={allow('/settings', <Settings />)} />
+              <Route path="admin" element={allow('/admin', <Admin />)} />
+              <Route path="*" element={redirectHome} />
+            </Route>
+          </Routes>
+        </Router>
+        <Toaster />
+      </ErrorBoundary>
     </AuthContext.Provider>
   );
 }
