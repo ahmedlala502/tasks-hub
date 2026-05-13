@@ -42,9 +42,8 @@ function normalizeRole(role: unknown): OpsRole {
   return 'operations';
 }
 
-function normalizeOffice(office: unknown): OpsOffice {
-  if (office === 'KSA' || office === 'UAE' || office === 'Kuwait' || office === 'Egypt') return office;
-  return 'Egypt';
+function isOpsOffice(value: unknown): value is OpsOffice {
+  return value === 'KSA' || value === 'UAE' || value === 'Kuwait' || value === 'Egypt';
 }
 
 function normalizeText(value: unknown): string {
@@ -57,9 +56,9 @@ function normalizeText(value: unknown): string {
 }
 
 function inferOffice(input: { name?: unknown; role?: unknown; office?: unknown }): OpsOffice {
-  if (input.office === 'KSA' || input.office === 'UAE' || input.office === 'Kuwait' || input.office === 'Egypt') return input.office;
+  if (isOpsOffice(input.office)) return input.office;
   const normalizedName = normalizeText(input.name);
-  if (['abdulrahman', 'khalid', 'nurhan'].some((name) => normalizedName.includes(name))) return 'UAE';
+  if (['abdulrahman', 'abdelrahman', 'khalid', 'khaled', 'nurhan'].some((name) => normalizedName.includes(name))) return 'UAE';
   if (input.role === 'community') return 'KSA';
   return 'Egypt';
 }
@@ -75,6 +74,7 @@ function mapUser(user: {
 }) {
   const email = user.email ?? '';
   const metadataRole = normalizeRole(user.app_metadata?.role);
+  const effectiveRole = email.toLowerCase() === bootstrapMasterEmail ? 'master' : metadataRole;
   const displayName =
     String(
       user.user_metadata?.display_name ??
@@ -83,17 +83,21 @@ function mapUser(user: {
         email.split('@')[0] ??
         'Workspace User',
     ).trim() || 'Workspace User';
+  const storedOffice = user.user_metadata?.office;
+  const office: OpsOffice = isOpsOffice(storedOffice)
+    ? storedOffice
+    : inferOffice({ name: displayName, role: effectiveRole, office: storedOffice });
 
   return {
     uid: user.id,
     email,
     displayName,
-    role: email.toLowerCase() === bootstrapMasterEmail ? 'master' : metadataRole,
+    role: effectiveRole,
     status: user.banned_until ? 'suspended' : 'active',
-    office: inferOffice({ name: displayName, role: email.toLowerCase() === bootstrapMasterEmail ? 'master' : metadataRole, office: user.user_metadata?.office }),
-    department: user.user_metadata?.department ?? 'Operations',
-    title: user.user_metadata?.title ?? (metadataRole === 'master' ? 'Master Admin' : 'Team Member'),
-    timezone: user.user_metadata?.timezone ?? 'Africa/Cairo',
+    office,
+    department: (user.user_metadata?.department as string) ?? 'Operations',
+    title: (user.user_metadata?.title as string) ?? (effectiveRole === 'master' ? 'Master Admin' : 'Team Member'),
+    timezone: (user.user_metadata?.timezone as string) ?? 'Africa/Cairo',
     createdAt: user.created_at ?? null,
     lastSignInAt: user.last_sign_in_at ?? null,
   };
@@ -157,6 +161,8 @@ Deno.serve(async (request) => {
       case 'createUser': {
         const role = normalizeRole(payload.role);
         const email = payload.email.trim().toLowerCase();
+        const name = payload.name.trim();
+        const office = inferOffice({ name, role, office: payload.office });
 
         const { data, error } = await serviceClient.auth.admin.createUser({
           email,
@@ -166,11 +172,11 @@ Deno.serve(async (request) => {
             role,
           },
           user_metadata: {
-            display_name: payload.name.trim(),
-            full_name: payload.name.trim(),
-            office: inferOffice({ name: payload.name, role, office: payload.office }),
-            department: payload.department ?? 'Operations',
-            title: payload.title ?? (role === 'master' ? 'Master Admin' : 'Team Member'),
+            display_name: name,
+            full_name: name,
+            office,
+            department: payload.department ?? (role === 'community' ? 'Coordination' : 'Operations'),
+            title: payload.title ?? (role === 'master' ? 'Master Admin' : role === 'community' ? 'Community Access' : 'Operations Access'),
             timezone: 'Africa/Cairo',
           },
         });
@@ -180,40 +186,45 @@ Deno.serve(async (request) => {
       }
 
       case 'updateUser': {
+        const { data: existingData, error: existingError } = await serviceClient.auth.admin.getUserById(payload.id);
+        if (existingError || !existingData.user) throw existingError ?? new Error('User not found.');
+        const existing = existingData.user;
+
         const updateData: {
           app_metadata?: { role: OpsRole };
-          user_metadata?: {
-            display_name: string;
-            full_name?: string;
-            office?: OpsOffice;
-            department?: string;
-            title?: string;
-            timezone?: string;
-          };
+          user_metadata?: Record<string, unknown>;
           ban_duration?: 'none' | '876000h';
         } = {};
 
+        const nextRole = payload.role ? normalizeRole(payload.role) : normalizeRole(existing.app_metadata?.role);
+
         if (payload.role) {
-          updateData.app_metadata = { role: normalizeRole(payload.role) };
+          updateData.app_metadata = { role: nextRole };
         }
 
-        if (payload.name?.trim()) {
+        const hasMetadataChange =
+          payload.name !== undefined ||
+          payload.office !== undefined ||
+          payload.department !== undefined ||
+          payload.title !== undefined;
+
+        if (hasMetadataChange) {
+          const existingMeta = (existing.user_metadata ?? {}) as Record<string, unknown>;
+          const nextName = payload.name?.trim() || (existingMeta.display_name as string) || (existingMeta.full_name as string) || (existing.email?.split('@')[0] ?? 'Workspace User');
+          const nextOffice = inferOffice({
+            name: nextName,
+            role: nextRole,
+            office: payload.office !== undefined ? payload.office : existingMeta.office,
+          });
+
           updateData.user_metadata = {
-            display_name: payload.name.trim(),
-            full_name: payload.name.trim(),
-            office: inferOffice({ name: payload.name, role: payload.role, office: payload.office }),
-            department: payload.department ?? 'Operations',
-            title: payload.title ?? 'Team Member',
-            timezone: 'Africa/Cairo',
-          };
-        } else if (payload.department || payload.title) {
-          updateData.user_metadata = {
-            display_name: '',
-            full_name: '',
-            office: inferOffice({ role: payload.role, office: payload.office }),
-            department: payload.department ?? 'Operations',
-            title: payload.title ?? 'Team Member',
-            timezone: 'Africa/Cairo',
+            ...existingMeta,
+            display_name: nextName,
+            full_name: nextName,
+            office: nextOffice,
+            department: payload.department ?? (existingMeta.department as string) ?? (nextRole === 'community' ? 'Coordination' : 'Operations'),
+            title: payload.title ?? (existingMeta.title as string) ?? (nextRole === 'master' ? 'Master Admin' : nextRole === 'community' ? 'Community Access' : 'Operations Access'),
+            timezone: (existingMeta.timezone as string) ?? 'Africa/Cairo',
           };
         }
 
