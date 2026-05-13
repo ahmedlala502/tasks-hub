@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import TaskModal from '../TaskModal';
 import { COUNTRY_FLAGS, TEAMS } from '../../constants';
 import { useLocalData } from '../LocalDataContext';
+import BulkCSVImport from '../BulkCSVImport';
 import { cn } from '../../utils';
 import { addToast } from '../../lib/toast';
 
@@ -31,7 +32,7 @@ const PRIORITY_META: Record<string, { label: string; color: string; border: stri
 const STATUS_FLOW: Status[] = [Status.BACKLOG, Status.IN_PROGRESS, Status.WAITING, Status.BLOCKED, Status.DONE];
 
 export default function TaskBoard({ tasks, initialFilter = '', initialStatus = 'All' }: TaskBoardProps) {
-  const { user, currentTeam, addTask, updateTask, deleteTasks, canUseFeature } = useLocalData();
+  const { user, currentTeam, addTask, updateTask, deleteTasks, canUseFeature, isMasterAdmin } = useLocalData();
   const [filter, setFilter] = useState(initialFilter);
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -211,6 +212,31 @@ export default function TaskBoard({ tasks, initialFilter = '', initialStatus = '
             <Plus className="w-3.5 h-3.5" />
             New Task
           </button>
+          {isMasterAdmin && (
+            <BulkCSVImport
+              label="Import CSV"
+              description="Import tasks from a CSV file. Expected columns: title, priority, status, owner, team, office, country, shift, due, campaign, details"
+              expectedHeaders={['title', 'priority', 'status']}
+              onImport={async (rows) => {
+                for (const row of rows) {
+                  await addTask({
+                    title: row.title || row.Title || 'Untitled',
+                    priority: (row.priority || row.Priority || 'Medium') as any,
+                    status: (row.status || row.Status || 'Backlog') as any,
+                    owner: row.owner || row.Owner || user.name,
+                    team: row.team || row.Team || currentTeam,
+                    office: row.office || row.Office || user.office,
+                    country: row.country || row.Country || user.country,
+                    shift: (row.shift || row.Shift || 'Morning') as any,
+                    due: row.due || row.Due || new Date().toISOString(),
+                    campaign: row.campaign || row.Campaign || '',
+                    details: row.details || row.Details || '',
+                    creatorId: 'local-workspace',
+                  });
+                }
+              }}
+            />
+          )}
           <div className="flex items-center gap-1.5">
             {['All', ...Object.values(Status)].map(s => {
               const meta = STATUS_META[s];

@@ -3,32 +3,42 @@ import {
   AlertCircle,
   Bot,
   CheckCircle2,
+  CheckCircle,
   ChevronDown,
   ChevronRight,
+  Clock,
   Copy,
   Database,
   Download,
+  FileText,
   Globe,
   KeyRound,
   LayoutGrid,
   Loader2,
+  Mail,
+  MapPin,
   Palette,
+  Phone,
   Plus,
   Save,
+  Search,
   Server,
   Settings as SettingsIcon,
+  Shield,
   Sliders,
   Terminal,
   Trash2,
   Upload,
+  UserCheck,
   Users,
   Wifi,
   WifiOff,
   X,
+  XCircle,
   Zap,
 } from 'lucide-react';
 import { useLocalData } from '../LocalDataContext';
-import { CustomProvider, WorkspaceSettings } from '../../lib/localStore';
+import { CustomProvider, WorkspaceSettings, getStorageUsage } from '../../lib/localStore';
 import { APP_PAGES, DEFAULT_ROLE_PERMISSIONS, FEATURE_KEYS, WIDGET_KEYS, resolveRoleName } from '../../lib/accessControl';
 
 interface SettingsProps {
@@ -42,6 +52,9 @@ const settingTabs = [
   { id: 'ai', icon: Bot, label: 'AI & API' },
   { id: 'operations', icon: Sliders, label: 'Ops Engine' },
   { id: 'teams', icon: Users, label: 'Team Roles' },
+  { id: 'users', icon: Shield, label: 'Users & Roles' },
+  { id: 'members', icon: UserCheck, label: 'Members' },
+  { id: 'offices', icon: MapPin, label: 'Offices' },
   { id: 'data', icon: Database, label: 'Data & Audit' },
 ];
 
@@ -96,7 +109,7 @@ const PRESET_ROLES = [
 ];
 
 export default function Settings({ activeTab: controlledTab, setActiveTab: setControlledTab }: SettingsProps) {
-  const { user, settings, members, pendingSignups, tasks, handovers, auditLogs, updateSettings, addMember, updateMember, deleteMember, approveSignup, rejectSignup, exportWorkspace, importData, resetData, isMasterAdmin, hasAdminAccess } = useLocalData();
+  const { user, settings, members, pendingSignups, tasks, handovers, auditLogs, offices, users, updateSettings, addMember, updateMember, deleteMember, addOffice, updateOffice, deleteOffice, approveSignup, rejectSignup, exportWorkspace, importData, resetData, isMasterAdmin, hasAdminAccess } = useLocalData();
   const [internalTab, setInternalTab] = useState(controlledTab || 'general');
   const activeTab = controlledTab || internalTab;
   const setActiveTab = setControlledTab || setInternalTab;
@@ -123,6 +136,39 @@ export default function Settings({ activeTab: controlledTab, setActiveTab: setCo
   const [newProvider, setNewProvider] = useState<Partial<CustomProvider>>({ name: '', baseUrl: '', defaultModel: '' });
   const [copiedMcp, setCopiedMcp] = useState(false);
   const [selectedRole, setSelectedRole] = useState('Super Admin');
+
+  // Users & Roles tab
+  const [userSearch, setUserSearch] = useState('');
+  const [editingUserRole, setEditingUserRole] = useState<Record<string, string>>({});
+
+  // Members tab
+  const [memberSearch, setMemberSearch] = useState('');
+  const [showAddMemberForm, setShowAddMemberForm] = useState(false);
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [newMemberData, setNewMemberData] = useState({ name: '', email: '', password: '', role: 'Operations Agent', team: '', office: '', country: '' });
+  const [editMemberData, setEditMemberData] = useState<Record<string, string>>({});
+
+  // Offices tab
+  const [showAddOfficeForm, setShowAddOfficeForm] = useState(false);
+  const [editingOfficeId, setEditingOfficeId] = useState<string | null>(null);
+  const [newOfficeData, setNewOfficeData] = useState({ name: '', country: 'EG', lead: '', shift: 'Morning', timezone: '', address: '', phone: '' });
+  const [editOfficeData, setEditOfficeData] = useState<Record<string, string>>({});
+
+  // Data & Audit tab
+  const [auditFilter, setAuditFilter] = useState('all');
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditPage, setAuditPage] = useState(1);
+  const ITEMS_PER_PAGE = 15;
+  const filteredAudit = useMemo(() => {
+    let entries = auditLogs || [];
+    if (auditFilter !== 'all') entries = entries.filter(e => e.severity === auditFilter);
+    if (auditSearch.trim()) {
+      const q = auditSearch.toLowerCase();
+      entries = entries.filter(e => e.action.toLowerCase().includes(q) || JSON.stringify(e.details).toLowerCase().includes(q) || (e.userId || '').toLowerCase().includes(q));
+    }
+    return entries;
+  }, [auditLogs, auditFilter, auditSearch]);
+
   const canManageWorkspace = isMasterAdmin;
   const visibleTabs = settingTabs;
 
@@ -748,10 +794,331 @@ export default function Settings({ activeTab: controlledTab, setActiveTab: setCo
             </Panel>
           )}
 
+          {/* ── Users & Roles ── */}
+          {canManageWorkspace && activeTab === 'users' && (
+            <Panel title="Users & Role Assignment" desc="Manage approved users, approve or reject pending signups, and assign roles.">
+              {/* Pending Signups */}
+              <section>
+                <SectionHeading icon={<UserCheck className="w-4 h-4" />} label={`Pending Signups (${pendingSignups.length})`} />
+                {pendingSignups.length === 0 ? (
+                  <p className="text-xs font-bold text-muted/40 text-center py-6">No pending signup requests.</p>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {pendingSignups.map(request => (
+                      <div key={request.id} className="flex items-center justify-between p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                        <div>
+                          <p className="text-sm font-black text-ink">{request.name}</p>
+                          <p className="text-xs font-bold text-muted">{request.email} · {request.team} · {request.office}</p>
+                          <p className="text-[9px] font-bold text-muted/60">Requested {new Date(request.requestedAt).toLocaleDateString()}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => approveSignup(request.id)}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-green-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-green-600 transition-all"
+                          >
+                            <CheckCircle className="w-3 h-3" /> Approve
+                          </button>
+                          <button
+                            onClick={() => rejectSignup(request.id)}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-red-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-600 transition-all"
+                          >
+                            <XCircle className="w-3 h-3" /> Reject
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Approved Users */}
+              <section className="pt-8 border-t border-dawn">
+                <div className="flex items-center justify-between mb-4">
+                  <SectionHeading icon={<Users className="w-4 h-4" />} label={`Approved Users (${users.length})`} />
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
+                    <input
+                      className="pl-9 pr-4 py-2 bg-stone/50 border border-dawn rounded-xl text-xs font-bold focus:border-citrus outline-none w-48"
+                      placeholder="Search users..."
+                      value={userSearch}
+                      onChange={e => setUserSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
+                  {users.filter(u => !userSearch || u.name.toLowerCase().includes(userSearch.toLowerCase()) || u.email.toLowerCase().includes(userSearch.toLowerCase())).map(account => (
+                    <div key={account.id} className="flex items-center justify-between p-4 bg-stone/30 border border-dawn rounded-2xl">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-ink text-white flex items-center justify-center text-xs font-black shrink-0">
+                          {account.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-ink truncate">{account.name}</p>
+                          <p className="text-xs font-bold text-muted truncate">{account.email}</p>
+                          <p className="text-[9px] font-bold text-muted/60">{account.team} · {account.office} {account.isSuperAdmin ? '· 🔒 Master' : ''}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {account.isSuperAdmin ? (
+                          <span className="px-3 py-1.5 bg-citrus/10 border border-citrus/30 rounded-lg text-[9px] font-black uppercase tracking-widest text-citrus">Super Admin</span>
+                        ) : (
+                          <select
+                            value={editingUserRole[account.id] ?? account.role}
+                            onChange={e => {
+                              const newRole = e.target.value;
+                              setEditingUserRole(s => ({ ...s, [account.id]: newRole }));
+                              updateMember(
+                                (members.find(m => m.name === account.name)?.id) || '',
+                                { role: newRole }
+                              );
+                            }}
+                            className="bg-white border border-dawn rounded-xl px-3 py-2 text-xs font-bold focus:border-citrus outline-none"
+                          >
+                            {PRESET_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </Panel>
+          )}
+
+          {/* ── Members ── */}
+          {canManageWorkspace && activeTab === 'members' && (
+            <Panel title="Member Directory" desc="View, add, edit, or remove team members. Changes sync to the user registry.">
+              <div className="flex items-center justify-between">
+                <div className="relative flex-1 max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
+                  <input className="pl-9 pr-4 py-2 bg-stone/50 border border-dawn rounded-xl text-xs font-bold focus:border-citrus outline-none w-full" placeholder="Search members..." value={memberSearch} onChange={e => setMemberSearch(e.target.value)} />
+                </div>
+                <button onClick={() => setShowAddMemberForm(v => !v)} className="flex items-center gap-1.5 px-4 py-2 bg-ink text-white rounded-xl text-[9px] font-black uppercase tracking-widest">
+                  <Plus className="w-3 h-3" /> Add Member
+                </button>
+              </div>
+
+              {showAddMemberForm && (
+                <div className="mt-4 p-6 bg-stone/30 border border-dawn rounded-2xl space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Name"><input className={inputClass} value={newMemberData.name} onChange={e => setNewMemberData(d => ({ ...d, name: e.target.value }))} placeholder="Full name" /></Field>
+                    <Field label="Email"><input className={inputClass} value={newMemberData.email} onChange={e => setNewMemberData(d => ({ ...d, email: e.target.value }))} placeholder="email@trygc.local" /></Field>
+                    <Field label="Password"><input type="password" className={inputClass} value={newMemberData.password} onChange={e => setNewMemberData(d => ({ ...d, password: e.target.value }))} placeholder="Set initial password" /></Field>
+                    <Field label="Role">
+                      <select className={inputClass} value={newMemberData.role} onChange={e => setNewMemberData(d => ({ ...d, role: e.target.value }))}>
+                        {PRESET_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Team"><input className={inputClass} value={newMemberData.team} onChange={e => setNewMemberData(d => ({ ...d, team: e.target.value }))} placeholder={(config.teams || [])[0]} /></Field>
+                    <Field label="Office"><input className={inputClass} value={newMemberData.office} onChange={e => setNewMemberData(d => ({ ...d, office: e.target.value }))} placeholder={user.office} /></Field>
+                    <Field label="Country"><input className={inputClass} value={newMemberData.country} onChange={e => setNewMemberData(d => ({ ...d, country: e.target.value }))} placeholder={user.country} /></Field>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={async () => {
+                        if (!newMemberData.name.trim()) return;
+                        await addMember({
+                          name: newMemberData.name.trim(),
+                          email: newMemberData.email.trim() || undefined,
+                          password: newMemberData.password || undefined,
+                          role: newMemberData.role,
+                          team: newMemberData.team || (config.teams || [])[0],
+                          office: newMemberData.office || user.office,
+                          country: newMemberData.country || user.country,
+                        });
+                        setNewMemberData({ name: '', email: '', password: '', role: 'Operations Agent', team: '', office: '', country: '' });
+                        setShowAddMemberForm(false);
+                      }}
+                      className="px-5 py-2 bg-ink text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                    >Add & Save</button>
+                    <button onClick={() => setShowAddMemberForm(false)} className="px-5 py-2 bg-stone border border-dawn text-muted rounded-xl text-[10px] font-black uppercase tracking-widest">Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 space-y-2 max-h-[480px] overflow-y-auto custom-scrollbar">
+                {members.filter(m => !memberSearch || m.name.toLowerCase().includes(memberSearch.toLowerCase()) || (m.role || '').toLowerCase().includes(memberSearch.toLowerCase()) || m.team.toLowerCase().includes(memberSearch.toLowerCase())).map(member => {
+                  const isEditing = editingMemberId === member.id;
+                  return (
+                    <div key={member.id} className="flex items-center justify-between p-4 bg-stone/30 border border-dawn rounded-2xl group hover:border-citrus/30 transition-all">
+                      {isEditing ? (
+                        <div className="flex-1 grid grid-cols-4 gap-3">
+                          <input className={inputClass} defaultValue={member.name} onChange={e => setEditMemberData(d => ({ ...d, [`${member.id}-name`]: e.target.value }))} />
+                          <input className={inputClass} defaultValue={member.role} onChange={e => setEditMemberData(d => ({ ...d, [`${member.id}-role`]: e.target.value }))} />
+                          <input className={inputClass} defaultValue={member.team} onChange={e => setEditMemberData(d => ({ ...d, [`${member.id}-team`]: e.target.value }))} />
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={async () => {
+                                await updateMember(member.id, {
+                                  name: editMemberData[`${member.id}-name`] || member.name,
+                                  role: editMemberData[`${member.id}-role`] || member.role,
+                                  team: editMemberData[`${member.id}-team`] || member.team,
+                                });
+                                setEditingMemberId(null);
+                                setEditMemberData({});
+                              }}
+                              className="px-3 py-2 bg-green-500 text-white rounded-xl text-[9px] font-black uppercase"
+                            >Save</button>
+                            <button onClick={() => setEditingMemberId(null)} className="px-3 py-2 bg-stone border border-dawn rounded-xl text-[9px] font-black uppercase text-muted">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-ink/5 border border-dawn flex items-center justify-center text-xs font-black text-muted shrink-0">
+                              {member.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-black text-ink">{member.name}</p>
+                              <p className="text-[10px] font-bold text-muted">{member.role} · {member.team} · {member.office}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => { setEditingMemberId(member.id); setEditMemberData({}); }} className="p-2 text-muted hover:text-ink transition-colors" title="Edit">
+                              <FileText className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={async () => { await deleteMember(member.id); }} className="p-2 text-muted hover:text-red-500 transition-colors" title="Delete">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+                {members.length === 0 && (
+                  <p className="text-xs font-bold text-muted/40 text-center py-8">No members found.</p>
+                )}
+              </div>
+            </Panel>
+          )}
+
+          {/* ── Offices ── */}
+          {canManageWorkspace && activeTab === 'offices' && (
+            <Panel title="Office Registry" desc="Manage regional operating hubs, assign leads, and configure timezone and shift settings.">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-muted">{offices.length} offices registered</span>
+                <button onClick={() => setShowAddOfficeForm(v => !v)} className="flex items-center gap-1.5 px-4 py-2 bg-ink text-white rounded-xl text-[9px] font-black uppercase tracking-widest">
+                  <Plus className="w-3 h-3" /> Add Office
+                </button>
+              </div>
+
+              {showAddOfficeForm && (
+                <div className="mt-4 p-6 bg-stone/30 border border-dawn rounded-2xl space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Office Name"><input className={inputClass} value={newOfficeData.name} onChange={e => setNewOfficeData(d => ({ ...d, name: e.target.value }))} placeholder="Cairo HQ" /></Field>
+                    <Field label="Country"><input className={inputClass} value={newOfficeData.country} onChange={e => setNewOfficeData(d => ({ ...d, country: e.target.value }))} placeholder="EG" /></Field>
+                    <Field label="Lead"><input className={inputClass} value={newOfficeData.lead} onChange={e => setNewOfficeData(d => ({ ...d, lead: e.target.value }))} placeholder={user.name} /></Field>
+                    <Field label="Shift">
+                      <select className={inputClass} value={newOfficeData.shift} onChange={e => setNewOfficeData(d => ({ ...d, shift: e.target.value }))}>
+                        <option value="Morning">Morning</option>
+                        <option value="Mid">Mid</option>
+                        <option value="Night">Night</option>
+                      </select>
+                    </Field>
+                    <Field label="Timezone"><input className={inputClass} value={newOfficeData.timezone} onChange={e => setNewOfficeData(d => ({ ...d, timezone: e.target.value }))} placeholder="Africa/Cairo" /></Field>
+                    <Field label="Address"><input className={inputClass} value={newOfficeData.address} onChange={e => setNewOfficeData(d => ({ ...d, address: e.target.value }))} placeholder="Street, City" /></Field>
+                    <Field label="Phone"><input className={inputClass} value={newOfficeData.phone} onChange={e => setNewOfficeData(d => ({ ...d, phone: e.target.value }))} placeholder="+20..." /></Field>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={async () => {
+                        if (!newOfficeData.name.trim()) return;
+                        await addOffice({
+                          name: newOfficeData.name.trim(),
+                          country: newOfficeData.country,
+                          lead: newOfficeData.lead || user.name,
+                          shift: newOfficeData.shift as any,
+                          timezone: newOfficeData.timezone || undefined,
+                          address: newOfficeData.address || undefined,
+                          phone: newOfficeData.phone || undefined,
+                        });
+                        setNewOfficeData({ name: '', country: 'EG', lead: '', shift: 'Morning', timezone: '', address: '', phone: '' });
+                        setShowAddOfficeForm(false);
+                      }}
+                      className="px-5 py-2 bg-ink text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                    >Register Office</button>
+                    <button onClick={() => setShowAddOfficeForm(false)} className="px-5 py-2 bg-stone border border-dawn text-muted rounded-xl text-[10px] font-black uppercase tracking-widest">Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 space-y-3 max-h-[480px] overflow-y-auto custom-scrollbar">
+                {offices.map(office => {
+                  const isEditing = editingOfficeId === office.id;
+                  const eName = editOfficeData[`${office.id}-name`] ?? office.name;
+                  const eLead = editOfficeData[`${office.id}-lead`] ?? office.lead;
+                  const eShift = editOfficeData[`${office.id}-shift`] ?? office.shift;
+                  const eTz = editOfficeData[`${office.id}-tz`] ?? (office.timezone || '');
+                  return (
+                    <div key={office.id} className="flex items-center justify-between p-4 bg-stone/30 border border-dawn rounded-2xl group hover:border-citrus/30 transition-all">
+                      {isEditing ? (
+                        <div className="flex-1 grid grid-cols-5 gap-3 items-end">
+                          <Field label="Name"><input className={inputClass} value={eName} onChange={e => setEditOfficeData(d => ({ ...d, [`${office.id}-name`]: e.target.value }))} /></Field>
+                          <Field label="Lead"><input className={inputClass} value={eLead} onChange={e => setEditOfficeData(d => ({ ...d, [`${office.id}-lead`]: e.target.value }))} /></Field>
+                          <Field label="Shift">
+                            <select className={inputClass} value={eShift} onChange={e => setEditOfficeData(d => ({ ...d, [`${office.id}-shift`]: e.target.value }))}>
+                              <option value="Morning">Morning</option><option value="Mid">Mid</option><option value="Night">Night</option>
+                            </select>
+                          </Field>
+                          <Field label="Timezone"><input className={inputClass} value={eTz} onChange={e => setEditOfficeData(d => ({ ...d, [`${office.id}-tz`]: e.target.value }))} placeholder="Africa/Cairo" /></Field>
+                          <div className="flex items-center gap-2 pb-2">
+                            <button onClick={async () => {
+                              await updateOffice(office.id, { name: eName, lead: eLead, shift: eShift as any, timezone: eTz || undefined });
+                              setEditingOfficeId(null);
+                            }} className="px-3 py-2 bg-green-500 text-white rounded-xl text-[9px] font-black uppercase">Save</button>
+                            <button onClick={() => setEditingOfficeId(null)} className="px-3 py-2 bg-stone border border-dawn rounded-xl text-[9px] font-black uppercase text-muted">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-citrus/10 border border-citrus/20 flex items-center justify-center text-xs font-black text-citrus shrink-0">
+                              {office.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-black text-ink">{office.name}</p>
+                              <p className="text-[10px] font-bold text-muted flex items-center gap-2">
+                                <MapPin className="w-3 h-3" /> {office.country}
+                                <span>·</span>
+                                <Users className="w-3 h-3" /> {office.lead}
+                                <span>·</span>
+                                <Clock className="w-3 h-3" /> {office.shift}{office.timezone ? ` · ${office.timezone}` : ''}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => setEditingOfficeId(office.id)} className="p-2 text-muted hover:text-ink transition-colors" title="Edit">
+                              <FileText className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={async () => { await deleteOffice(office.id); }} className="p-2 text-muted hover:text-red-500 transition-colors" title="Delete">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+                {offices.length === 0 && (
+                  <p className="text-xs font-bold text-muted/40 text-center py-8">No offices registered.</p>
+                )}
+              </div>
+            </Panel>
+          )}
+
           {/* ── Data ── */}
           {canManageWorkspace && activeTab === 'data' && (
             <Panel title="Data Management & Audit" desc="Backup, reset, and review local configuration events.">
-              <div className="grid grid-cols-3 gap-6">
+              {/* System Health */}
+              <div className="grid grid-cols-4 gap-4">
+                <StatBox label="Storage" value={`${getStorageUsage().percentage}%`} sub={`${(getStorageUsage().used / 1024).toFixed(0)} KB / 5 MB`} color="text-ink" />
+                <StatBox label="Tasks" value={tasks.length} sub={`${tasks.filter(t => t.status !== 'Done').length} open`} color="text-blue-600" />
+                <StatBox label="Members" value={members.length} sub={`${users.length} user accounts`} color="text-green-600" />
+                <StatBox label="Audit Events" value={auditLogs.length} sub="Last 200 stored" color="text-amber-600" />
+              </div>
+
+              <div className="grid grid-cols-3 gap-6 mt-8">
                 <button onClick={handleExportData} className="flex flex-col items-center justify-center p-8 bg-white border border-dawn rounded-[32px] hover:border-citrus transition-all group">
                   <Download className="w-8 h-8 text-muted group-hover:text-citrus transition-colors mb-4" />
                   <span className="font-black text-xs uppercase tracking-widest text-ink">Export Workspace</span>
@@ -806,13 +1173,73 @@ export default function Settings({ activeTab: controlledTab, setActiveTab: setCo
                   <button onClick={handleResetData} disabled={saving} className="px-6 py-3 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-50">{saving ? 'Resetting...' : 'Yes, Confirm Deletion'}</button>
                 </div>
               )}
-              <div className="mt-8 space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-muted">Recent Audit</h4>
-                {(auditLogs || []).slice(0, 10).map(event => (
-                  <div key={event.id} className="p-3 bg-stone/30 border border-dawn rounded-xl text-xs font-bold text-muted"><b className="text-ink">{event.action}</b> · {new Date(event.timestamp).toLocaleString()}</div>
-                ))}
-                {(!auditLogs || auditLogs.length === 0) && (
-                  <p className="text-xs font-bold text-muted/40 text-center py-4">No audit events yet.</p>
+
+              {/* Audit log with search, filter, pagination */}
+              <div className="mt-8 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase tracking-[0.2em] text-muted">Audit Trail</h4>
+                  <div className="flex items-center gap-3">
+                    <select
+                      value={auditFilter}
+                      onChange={e => setAuditFilter(e.target.value)}
+                      className="bg-stone/50 border border-dawn rounded-xl px-3 py-2 text-[10px] font-bold focus:border-citrus outline-none"
+                    >
+                      <option value="all">All Severities</option>
+                      <option value="info">Info</option>
+                      <option value="warning">Warning</option>
+                      <option value="error">Error</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-muted" />
+                      <input
+                        className="pl-8 pr-3 py-2 bg-stone/50 border border-dawn rounded-xl text-[10px] font-bold focus:border-citrus outline-none w-44"
+                        placeholder="Search audit..."
+                        value={auditSearch}
+                        onChange={e => setAuditSearch(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {filteredAudit.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {filteredAudit.slice(0, auditPage * ITEMS_PER_PAGE).map(event => (
+                      <div key={event.id} className="flex items-center justify-between p-3 bg-stone/30 border border-dawn rounded-xl text-xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <SeverityDot severity={event.severity} />
+                          <div className="min-w-0">
+                            <b className="text-ink font-black">{event.action}</b>
+                            <span className="text-muted font-bold ml-2">{event.userId ? `by ${event.userId}` : ''}</span>
+                            {typeof event.details === 'object' && event.details && Object.keys(event.details as Record<string, unknown>).length > 0 && (
+                              <span className="text-muted/50 text-[9px] ml-2">{JSON.stringify(event.details).slice(0, 60)}</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold text-muted/50 shrink-0 ml-3">{new Date(event.timestamp).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs font-bold text-muted/40 text-center py-6">No audit events match your filter.</p>
+                )}
+
+                {filteredAudit.length > ITEMS_PER_PAGE && (
+                  <div className="flex items-center justify-center gap-2 pt-2">
+                    <button
+                      disabled={auditPage <= 1}
+                      onClick={() => setAuditPage(p => Math.max(1, p - 1))}
+                      className="px-4 py-2 bg-stone/50 border border-dawn rounded-xl text-[10px] font-bold text-muted disabled:opacity-30"
+                    >Previous</button>
+                    <span className="text-[10px] font-bold text-muted px-3">
+                      Page {auditPage} of {Math.ceil(filteredAudit.length / ITEMS_PER_PAGE)}
+                    </span>
+                    <button
+                      disabled={auditPage >= Math.ceil(filteredAudit.length / ITEMS_PER_PAGE)}
+                      onClick={() => setAuditPage(p => p + 1)}
+                      className="px-4 py-2 bg-stone/50 border border-dawn rounded-xl text-[10px] font-bold text-muted disabled:opacity-30"
+                    >Next</button>
+                  </div>
                 )}
               </div>
             </Panel>
@@ -1026,5 +1453,10 @@ function flagDescription(key: string) {
 }
 
 
+
+function SeverityDot({ severity }: { severity?: string }) {
+  const colors: Record<string, string> = { info: 'bg-blue-400', warning: 'bg-amber-400', error: 'bg-red-400', critical: 'bg-red-600' };
+  return <span className={`w-2 h-2 rounded-full shrink-0 ${colors[severity || 'info'] || 'bg-gray-400'}`} />;
+}
 
 const inputClass = 'w-full bg-stone/50 border border-dawn rounded-xl px-4 py-3 font-bold text-sm focus:border-citrus outline-none';

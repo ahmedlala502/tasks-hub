@@ -253,6 +253,269 @@ function mockFallback(prompt: string, reason?: string): AIResult {
   return { text: text + note, provider: 'mock' };
 }
 
+// ── AI Tool Definitions ────────────────────────────────────────────────────────
+
+export interface AIToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: 'object';
+    properties: Record<string, { type: string; description: string; enum?: string[] }>;
+    required: string[];
+  };
+}
+
+export const AI_TOOLS: AIToolDefinition[] = [
+  {
+    name: 'createTask',
+    description: 'Create a new task',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Task title' },
+        priority: { type: 'string', description: 'Task priority', enum: ['Low', 'Medium', 'High'] },
+        status: { type: 'string', description: 'Task status', enum: ['Backlog', 'In Progress', 'Waiting', 'Blocked', 'Done'] },
+        owner: { type: 'string', description: 'Assigned owner name' },
+        team: { type: 'string', description: 'Team name' },
+        office: { type: 'string', description: 'Office name' },
+        country: { type: 'string', description: 'Country code' },
+        details: { type: 'string', description: 'Task details/notes' },
+        due: { type: 'string', description: 'Due date (ISO string or YYYY-MM-DD)' },
+        campaign: { type: 'string', description: 'Campaign name' },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'updateTask',
+    description: 'Update an existing task by ID',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Task ID' },
+        title: { type: 'string', description: 'New title' },
+        priority: { type: 'string', description: 'New priority', enum: ['Low', 'Medium', 'High'] },
+        status: { type: 'string', description: 'New status', enum: ['Backlog', 'In Progress', 'Waiting', 'Blocked', 'Done'] },
+        owner: { type: 'string', description: 'New owner' },
+        details: { type: 'string', description: 'New details/notes' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'deleteTask',
+    description: 'Delete a task by ID',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Task ID' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'listTasks',
+    description: 'List all tasks with optional filters',
+    parameters: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'Filter by status' },
+        priority: { type: 'string', description: 'Filter by priority' },
+        team: { type: 'string', description: 'Filter by team' },
+        owner: { type: 'string', description: 'Filter by owner' },
+        limit: { type: 'string', description: 'Max number of tasks to return' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'getTask',
+    description: 'Get a single task by ID',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Task ID' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'createHandover',
+    description: 'Create a new handover',
+    parameters: {
+      type: 'object',
+      properties: {
+        fromShift: { type: 'string', description: 'Source shift', enum: ['Morning', 'Mid', 'Night'] },
+        toShift: { type: 'string', description: 'Target shift', enum: ['Morning', 'Mid', 'Night'] },
+        fromOffice: { type: 'string', description: 'Source office' },
+        toOffice: { type: 'string', description: 'Target office' },
+        outgoing: { type: 'string', description: 'Outgoing lead name' },
+        incoming: { type: 'string', description: 'Incoming lead name' },
+        watchouts: { type: 'string', description: 'Handover notes/watchouts' },
+        team: { type: 'string', description: 'Team name' },
+        taskIds: { type: 'string', description: 'Comma-separated task IDs' },
+      },
+      required: ['fromShift', 'toShift'],
+    },
+  },
+  {
+    name: 'updateHandover',
+    description: 'Update an existing handover',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Handover ID' },
+        status: { type: 'string', description: 'New status', enum: ['Pending', 'Acknowledged'] },
+        incoming: { type: 'string', description: 'Incoming lead name' },
+        watchouts: { type: 'string', description: 'Updated notes' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'acknowledgeHandover',
+    description: 'Acknowledge a handover',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Handover ID' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'deleteHandover',
+    description: 'Delete a handover',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Handover ID' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'listHandovers',
+    description: 'List handovers with optional filters',
+    parameters: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'Filter by status' },
+        team: { type: 'string', description: 'Filter by team' },
+        limit: { type: 'string', description: 'Max results' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'createMember',
+    description: 'Add a new member',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Member name' },
+        role: { type: 'string', description: 'Role name' },
+        team: { type: 'string', description: 'Team name' },
+        office: { type: 'string', description: 'Office name' },
+        country: { type: 'string', description: 'Country code' },
+        email: { type: 'string', description: 'Email address' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'updateMember',
+    description: 'Update a member',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Member ID' },
+        role: { type: 'string', description: 'New role' },
+        team: { type: 'string', description: 'New team' },
+        office: { type: 'string', description: 'New office' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'deleteMember',
+    description: 'Delete a member',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Member ID' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'createOffice',
+    description: 'Register a new office',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Office name' },
+        country: { type: 'string', description: 'Country code' },
+        lead: { type: 'string', description: 'Office lead name' },
+        shift: { type: 'string', description: 'Default shift', enum: ['Morning', 'Mid', 'Night'] },
+        timezone: { type: 'string', description: 'Timezone (e.g. Africa/Cairo)' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'updateOffice',
+    description: 'Update an office',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Office ID' },
+        name: { type: 'string', description: 'New name' },
+        lead: { type: 'string', description: 'New lead' },
+        shift: { type: 'string', description: 'New shift', enum: ['Morning', 'Mid', 'Night'] },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'deleteOffice',
+    description: 'Delete an office',
+    parameters: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Office ID' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'getWorkspaceStats',
+    description: 'Get workspace statistics (task counts, member counts, etc.)',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'getMemberByName',
+    description: 'Find a member by name',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Member name to search for' },
+      },
+      required: ['name'],
+    },
+  },
+];
+
+export interface ToolCallResult {
+  tool: string;
+  args: Record<string, string>;
+  result: string;
+}
+
 // ── public API ────────────────────────────────────────────────────────────────
 
 export async function improveTaskContent({ content, type, campaign, team }: {
@@ -306,4 +569,126 @@ export async function analyzeRisks(tasks: Array<{ title: string; priority: strin
 export async function suggestTaskBreakdown(title: string, details?: string): Promise<AIResult> {
   const prompt = `Break down this task into actionable sub-tasks:\nTitle: ${title}${details ? `\nDetails: ${details}` : ''}\n\nProvide 3-5 concrete steps. Return as a bullet list only.`;
   return callProvider(prompt);
+}
+
+// ── AI Tool-Calling Chat ──────────────────────────────────────────────────────
+
+export async function chatWithWorkspaceTools({
+  history,
+  tasksSummary,
+  handoverSummary,
+  memberStats,
+  tools = AI_TOOLS,
+}: {
+  history: ChatMessage[];
+  tasksSummary: string;
+  handoverSummary: string;
+  memberStats?: string;
+  tools?: AIToolDefinition[];
+}): Promise<{ text: string; toolCalls?: ToolCallResult[]; provider: AIProviderName }> {
+  const settings = getSettings() as {
+    aiProvider?: string; aiModel?: string; aiEndpoint?: string;
+    providerModels?: Record<string, string>; providerEndpoints?: Record<string, string>;
+  } | null;
+
+  const provider = settings?.aiProvider || 'openai';
+  const providerModels = settings?.providerModels || {};
+  const providerEndpoints = settings?.providerEndpoints || {};
+  const model = settings?.aiModel || providerModels[provider] || 'gpt-4o-mini';
+  const endpoint = settings?.aiEndpoint || providerEndpoints[provider] || '';
+
+  const systemPrompt = [
+    'You are the AI operations copilot for TryGC Hub Manager. You have access to tools that let you create, read, update, and delete workspace data.',
+    `Current task context: ${tasksSummary}`,
+    `Current handover context: ${handoverSummary}`,
+    memberStats ? `Team context: ${memberStats}` : '',
+    'When the user asks you to do something (create a task, update a handover, add a member, etc.), use the appropriate tool.',
+    'For listing/finding data, use the list tools. For questions, answer directly.',
+    'Be concise and operational. If a tool call fails, explain what happened.',
+  ].filter(Boolean).join('\n');
+
+  const apiMessages = [
+    { role: 'system', content: systemPrompt },
+    ...history.map(m => ({ role: m.role, content: m.content })),
+  ];
+
+  // Only OpenAI-compatible tool calling supported
+  const isOpenAICompat = ['openai', 'groq', 'alibaba'].includes(provider) || provider.startsWith('custom');
+
+  if (isOpenAICompat) {
+    try {
+      const key = sessionStorage.getItem('trygc_api_keys_v1');
+      const apiKey = key ? JSON.parse(key)[provider] || '' : '';
+      const url = endpoint || (provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' :
+        provider === 'groq' ? 'https://api.groq.com/openai/v1/chat/completions' :
+        provider === 'alibaba' ? 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions' :
+        '');
+
+      if (!url || !apiKey) {
+        return { text: mockToolResponse(history, tasksSummary, handoverSummary), provider: provider as AIProviderName };
+      }
+
+      const res = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          messages: apiMessages,
+          tools: tools.map(t => ({
+            type: 'function',
+            function: { name: t.name, description: t.description, parameters: t.parameters },
+          })),
+          tool_choice: 'auto',
+          max_tokens: 1000,
+          temperature: 0.5,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        return { text: mockToolResponse(history, tasksSummary, handoverSummary, `API error: ${res.status}`), provider: provider as AIProviderName };
+      }
+
+      const data = await res.json();
+      const choice = data?.choices?.[0];
+      const message = choice?.message;
+
+      if (message?.tool_calls && message.tool_calls.length > 0) {
+        const toolCalls: ToolCallResult[] = message.tool_calls.map((tc: { id: string; function: { name: string; arguments: string } }) => ({
+          tool: tc.function.name,
+          args: JSON.parse(tc.function.arguments || '{}'),
+          result: '',
+        }));
+        return { text: '', toolCalls, provider: provider as AIProviderName };
+      }
+
+      return { text: message?.content || '', provider: provider as AIProviderName };
+    } catch {
+      return { text: mockToolResponse(history, tasksSummary, handoverSummary, 'Provider error, using offline mode.'), provider: 'mock' as AIProviderName };
+    }
+  }
+
+  // Non-compatible provider fallback
+  return { text: mockToolResponse(history, tasksSummary, handoverSummary), provider: provider as AIProviderName };
+}
+
+function mockToolResponse(history: ChatMessage[], tasksSummary: string, handoverSummary: string, reason?: string): string {
+  const lastMsg = history[history.length - 1]?.content?.toLowerCase() || '';
+  const note = reason ? `\n\n_Note: ${reason}_` : '';
+
+  if (lastMsg.includes('create') || lastMsg.includes('add') || lastMsg.includes('new')) {
+    let entity = 'item';
+    if (lastMsg.includes('task')) entity = 'task';
+    else if (lastMsg.includes('handover') || lastMsg.includes('shift')) entity = 'handover';
+    else if (lastMsg.includes('member') || lastMsg.includes('person')) entity = 'member';
+    else if (lastMsg.includes('office') || lastMsg.includes('hub')) entity = 'office';
+
+    return `I would create a new ${entity}, but I need a connected AI provider to execute tools. Please configure an API key in Settings → AI & API to enable full agent capabilities.${note}`;
+  }
+
+  if (lastMsg.includes('list') || lastMsg.includes('show') || lastMsg.includes('all')) {
+    return `## Current Workspace State\n\n**Tasks:** ${tasksSummary}\n**Handovers:** ${handoverSummary}\n\nConfigure an API key in Settings → AI & API to enable direct tool execution.${note}`;
+  }
+
+  return `I understand your request. To execute changes directly, please configure an API key in Settings → AI & API. For now, I can provide guidance based on the current workspace state.\n\n${tasksSummary}\n${handoverSummary}${note}`;
 }

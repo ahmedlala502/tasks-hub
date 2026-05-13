@@ -63,6 +63,8 @@ interface LocalDataContextType extends LocalWorkspace {
   logAction: (action: string, details?: unknown, severity?: 'info' | 'warning' | 'error' | 'critical') => Promise<void>;
   restoreSession: () => boolean;
   changePassword: (currentPassword: string, newPassword: string) => Promise<AuthResult>;
+  executeAITool: (toolName: string, args: Record<string, string>) => Promise<string>;
+  getWorkspaceSummary: () => { tasksSummary: string; handoverSummary: string; memberStats: string };
 }
 
 const LocalDataContext = createContext<LocalDataContextType | undefined>(undefined);
@@ -647,6 +649,166 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
       },
       logAction: async (action, details, severity) => {
         commit(current => appendAudit(current, action, details, severity));
+      },
+      executeAITool: async (toolName, args) => {
+        const notAllowed = 'Permission denied: your role does not have access to this action.';
+        const now = new Date().toISOString();
+
+        switch (toolName) {
+          case 'createTask':
+            if (!canUsePrivilegedFeature('task.create')) return notAllowed;
+            commit(current => appendAudit({
+              ...current,
+              tasks: [normalizeTask({ ...args, title: args.title || 'AI Task', creatorId: 'ai-agent' }, workspace.user), ...current.tasks],
+            }, 'TASK_CREATE', { title: args.title }));
+            return `Task "${args.title}" created.`;
+          case 'updateTask':
+            if (!canUsePrivilegedFeature('task.edit')) return notAllowed;
+            if (!args.id) return 'Missing task ID.';
+            commit(current => appendAudit({
+              ...current,
+              tasks: current.tasks.map(t => t.id === args.id ? { ...t, ...args, updatedAt: now } : t),
+            }, 'TASK_UPDATE', { id: args.id }));
+            return `Task ${args.id} updated.`;
+          case 'deleteTask':
+            if (!canUsePrivilegedFeature('task.delete')) return notAllowed;
+            if (!args.id) return 'Missing task ID.';
+            commit(current => appendAudit({
+              ...current, tasks: current.tasks.filter(t => t.id !== args.id),
+            }, 'TASK_DELETE', { id: args.id }));
+            return `Task ${args.id} deleted.`;
+          case 'listTasks': {
+            let filtered = workspace.tasks;
+            if (args.status) filtered = filtered.filter(t => t.status === args.status);
+            if (args.priority) filtered = filtered.filter(t => t.priority === args.priority);
+            if (args.team) filtered = filtered.filter(t => t.team === args.team);
+            if (args.owner) filtered = filtered.filter(t => t.owner === args.owner);
+            const limit = args.limit ? parseInt(args.limit) : 20;
+            return JSON.stringify(filtered.slice(0, limit).map(t => ({ id: t.id, title: t.title, status: t.status, priority: t.priority, owner: t.owner, team: t.team })));
+          }
+          case 'getTask': {
+            const task = workspace.tasks.find(t => t.id === args.id);
+            return task ? JSON.stringify(task) : 'Task not found.';
+          }
+          case 'createHandover':
+            if (!canUsePrivilegedFeature('handover.create')) return notAllowed;
+            commit(current => appendAudit({
+              ...current,
+              handovers: [{
+                id: createId('handover'), date: now.split('T')[0],
+                fromShift: (args.fromShift || 'Morning') as any,
+                toShift: (args.toShift || 'Mid') as any,
+                fromOffice: args.fromOffice || workspace.user.office,
+                toOffice: args.toOffice || workspace.user.office,
+                outgoing: args.outgoing || workspace.user.name,
+                incoming: args.incoming || 'TBD', status: 'Pending' as const,
+                watchouts: args.watchouts || '', taskIds: args.taskIds ? args.taskIds.split(',').map(s => s.trim()).filter(Boolean) : [],
+                createdAt: now, creatorId: 'ai-agent',
+              }, ...current.handovers],
+            }, 'HANDOVER_INITIATE', { fromShift: args.fromShift, toShift: args.toShift }));
+            return `Handover created (${args.fromShift} → ${args.toShift}).`;
+          case 'updateHandover':
+            if (!canUsePrivilegedFeature('handover.edit')) return notAllowed;
+            if (!args.id) return 'Missing handover ID.';
+            commit(current => appendAudit({
+              ...current, handovers: current.handovers.map(h => h.id === args.id ? { ...h, status: args.status as any || h.status, incoming: args.incoming || h.incoming, watchouts: args.watchouts ?? h.watchouts } : h),
+            }, 'HANDOVER_UPDATE', { id: args.id }));
+            return `Handover ${args.id} updated.`;
+          case 'acknowledgeHandover':
+            if (!canUsePrivilegedFeature('handover.ack')) return notAllowed;
+            if (!args.id) return 'Missing handover ID.';
+            commit(current => appendAudit({
+              ...current, handovers: current.handovers.map(h => h.id === args.id ? { ...h, status: 'Acknowledged' as const, ackAt: now } : h),
+            }, 'HANDOVER_ACK', { id: args.id }));
+            return `Handover ${args.id} acknowledged.`;
+          case 'deleteHandover':
+            if (!canUsePrivilegedFeature('handover.delete')) return notAllowed;
+            if (!args.id) return 'Missing handover ID.';
+            commit(current => appendAudit({
+              ...current, handovers: current.handovers.filter(h => h.id !== args.id),
+            }, 'HANDOVER_DELETE', { id: args.id }));
+            return `Handover ${args.id} deleted.`;
+          case 'listHandovers': {
+            let filtered = workspace.handovers;
+            if (args.status) filtered = filtered.filter(h => h.status === args.status);
+            if (args.team) filtered = filtered.filter(h => h.team === args.team);
+            const limit = args.limit ? parseInt(args.limit) : 20;
+            return JSON.stringify(filtered.slice(0, limit).map(h => ({ id: h.id, date: h.date, fromShift: h.fromShift, toShift: h.toShift, outgoing: h.outgoing, incoming: h.incoming, status: h.status })));
+          }
+          case 'createMember':
+            if (!canUsePrivilegedFeature('members.manage')) return notAllowed;
+            commit(current => appendAudit({
+              ...current,
+              members: [{
+                id: createId('member'), name: args.name || 'New Member', role: args.role || 'Operations Agent',
+                team: args.team || currentTeam, office: args.office || workspace.user.office,
+                country: args.country || workspace.user.country, tasksCompleted: 0, handoversOut: 0, onTime: 0,
+                updatedAt: now, status: 'active' as const,
+              }, ...current.members],
+            }, 'MEMBER_CREATE', { name: args.name }));
+            return `Member "${args.name}" added.`;
+          case 'updateMember':
+            if (!canUsePrivilegedFeature('members.manage')) return notAllowed;
+            if (!args.id) return 'Missing member ID.';
+            commit(current => appendAudit({
+              ...current, members: current.members.map(m => m.id === args.id ? { ...m, role: args.role || m.role, team: args.team || m.team, office: args.office || m.office, updatedAt: now } : m),
+            }, 'MEMBER_UPDATE', { id: args.id }));
+            return `Member ${args.id} updated.`;
+          case 'deleteMember':
+            if (!canUsePrivilegedFeature('members.manage')) return notAllowed;
+            if (!args.id) return 'Missing member ID.';
+            commit(current => appendAudit({
+              ...current, members: current.members.filter(m => m.id !== args.id),
+            }, 'MEMBER_DELETE', { id: args.id }));
+            return `Member ${args.id} deleted.`;
+          case 'createOffice':
+            if (!canUsePrivilegedFeature('offices.manage')) return notAllowed;
+            commit(current => appendAudit({
+              ...current,
+              offices: [{ id: createId('office'), name: args.name || 'New Office', country: args.country || 'EG', lead: args.lead || workspace.user.name, shift: (args.shift || 'Morning') as any, timezone: args.timezone || undefined }, ...current.offices],
+            }, 'OFFICE_REGISTER', { name: args.name }));
+            return `Office "${args.name}" created.`;
+          case 'updateOffice':
+            if (!canUsePrivilegedFeature('offices.manage')) return notAllowed;
+            if (!args.id) return 'Missing office ID.';
+            commit(current => appendAudit({
+              ...current, offices: current.offices.map(o => o.id === args.id ? { ...o, name: args.name || o.name, lead: args.lead || o.lead, shift: (args.shift as any) || o.shift } : o),
+            }, 'OFFICE_UPDATE', { id: args.id }));
+            return `Office ${args.id} updated.`;
+          case 'deleteOffice':
+            if (!canUsePrivilegedFeature('offices.manage')) return notAllowed;
+            if (!args.id) return 'Missing office ID.';
+            commit(current => appendAudit({
+              ...current, offices: current.offices.filter(o => o.id !== args.id),
+            }, 'OFFICE_DELETE', { id: args.id }));
+            return `Office ${args.id} deleted.`;
+          case 'getWorkspaceStats':
+            return JSON.stringify({
+              totalTasks: workspace.tasks.length, openTasks: workspace.tasks.filter(t => t.status !== 'Done').length,
+              riskTasks: workspace.tasks.filter(t => t.status === 'Blocked').length,
+              totalHandovers: workspace.handovers.length, pendingHandovers: workspace.handovers.filter(h => h.status === 'Pending').length,
+              totalMembers: workspace.members.length, totalOffices: workspace.offices.length,
+              teams: [...new Set(workspace.members.map(m => m.team))],
+            });
+          case 'getMemberByName': {
+            const member = workspace.members.find(m => m.name.toLowerCase() === (args.name || '').toLowerCase());
+            return member ? JSON.stringify(member) : `Member "${args.name}" not found.`;
+          }
+          default:
+            return `Unknown tool: ${toolName}`;
+        }
+      },
+      getWorkspaceSummary: () => {
+        const openCount = workspace.tasks.filter(t => t.status !== 'Done').length;
+        const riskCount = workspace.tasks.filter(t => t.status !== 'Done' && (t.priority === 'High' || t.status === 'Blocked')).length;
+        const carryCount = workspace.tasks.filter(t => t.carry && t.status !== 'Done').length;
+        const pendingHandovers = workspace.handovers.filter(h => h.status === 'Pending').length;
+        const ackHandovers = workspace.handovers.filter(h => h.status === 'Acknowledged').length;
+        return {
+          tasksSummary: `${openCount} open tasks, ${riskCount} risk tasks, ${carryCount} carry-over tasks for ${currentTeam}.`,
+          handoverSummary: `${pendingHandovers} pending handovers, ${ackHandovers} acknowledged.`,
+          memberStats: `${workspace.members.length} members across ${workspace.offices.length} offices.`,
+        };
       },
     };
   }, [workspace, auth, login, requestSignup, logout, lock, restoreSession, changePassword, currentTeam, isMasterAdmin, isSuperAdmin, hasAdminAccess, scopedTasks, scopedHandovers, scopedMembers, scopedOffices, permissionProfile, commit, appendAudit, sanitizeUserPatch, isMasterAccount]);

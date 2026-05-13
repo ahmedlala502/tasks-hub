@@ -4,6 +4,7 @@ import { RefreshCw, Calendar, MapPin, User, AlertTriangle, Send, CheckCircle2, C
 import { generateHandoverSummary, analyzeRisks } from '../../lib/apiService';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLocalData } from '../LocalDataContext';
+import BulkCSVImport from '../BulkCSVImport';
 import { COUNTRY_FLAGS, TEAMS, HANDOVER_TEMPLATES } from '../../constants';
 import { cn, formatTime } from '../../utils';
 import { addToast } from '../../lib/toast';
@@ -23,7 +24,7 @@ interface HandoverFlowProps {
 const DRAFT_KEY = 'trygc_handover_draft_v1';
 
 export default function HandoverFlow({ handovers, tasks, stats, aiInteractions }: HandoverFlowProps) {
-  const { addHandover, updateHandover, offices, settings, user, members, currentTeam, canUseFeature, isWidgetEnabled } = useLocalData();
+  const { addHandover, updateHandover, offices, settings, user, members, currentTeam, canUseFeature, isWidgetEnabled, isMasterAdmin } = useLocalData();
   const [step, setStep] = useState(1);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -325,10 +326,38 @@ export default function HandoverFlow({ handovers, tasks, stats, aiInteractions }
                 <span className="px-3 py-2 bg-citrus/10 text-citrus rounded-xl">{currentTeam}</span>
                 <span className="px-3 py-2 bg-white border border-dawn text-muted rounded-xl">{user.country}</span>
               </div>
-              <button onClick={() => setStep(2)} className="flex items-center gap-3 px-10 py-4 bg-ink text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:scale-105 transition-all shadow-2xl shadow-ink/20 active:scale-95">
-                <span>Start Builder</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setStep(2)} className="flex items-center gap-3 px-10 py-4 bg-ink text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:scale-105 transition-all shadow-2xl shadow-ink/20 active:scale-95">
+                  <span>Start Builder</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                {isMasterAdmin && (
+                  <BulkCSVImport
+                    label="Import CSV"
+                    description="Import handovers from CSV. Expected columns: date, fromShift, toShift, fromOffice, toOffice, outgoing, incoming, status, watchouts, team, country"
+                    expectedHeaders={['fromShift', 'toShift', 'outgoing', 'incoming']}
+                    onImport={async (rows) => {
+                      for (const row of rows) {
+                        await addHandover({
+                          date: row.date || row.Date || new Date().toISOString().split('T')[0],
+                          fromShift: (row.fromShift || row.fromshift || row.FromShift || 'Morning') as any,
+                          toShift: (row.toShift || row.toshift || row.ToShift || 'Mid') as any,
+                          fromOffice: row.fromOffice || row.FromOffice || offices[0]?.name || '',
+                          toOffice: row.toOffice || row.ToOffice || offices[1]?.name || '',
+                          outgoing: row.outgoing || row.Outgoing || user.name,
+                          incoming: row.incoming || row.Incoming || 'TBD',
+                          status: (row.status || row.Status || 'Pending') as any,
+                          watchouts: row.watchouts || row.Watchouts || '',
+                          team: row.team || row.Team || currentTeam,
+                          country: row.country || row.Country || user.country,
+                          taskIds: [],
+                          creatorId: 'local-workspace',
+                        });
+                      }
+                    }}
+                  />
+                )}
+              </div>
             </motion.div>
           )}
 
@@ -372,7 +401,7 @@ export default function HandoverFlow({ handovers, tasks, stats, aiInteractions }
                     <div>
                       <label className="text-[9px] font-bold text-muted mb-1.5 block uppercase">Outgoing Lead</label>
                       <select value={newHo.outgoing || ''} onChange={e => setNewHo(prev => ({ ...prev, outgoing: e.target.value }))} className="w-full bg-white border border-dawn rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none">
-                        {assignableMembers.map(m => <option key={m.id} value={m.name}>{m.name} — {m.role || 'Viewer'}</option>)}
+                        {assignableMembers.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
                       </select>
                     </div>
                   </div>
@@ -402,7 +431,7 @@ export default function HandoverFlow({ handovers, tasks, stats, aiInteractions }
                       <label className="text-[9px] font-bold text-white/50 mb-1.5 block uppercase">Incoming Lead *</label>
                       <select value={newHo.incoming || ''} onChange={e => setNewHo(prev => ({ ...prev, incoming: e.target.value }))} className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none text-white">
                         <option value="" className="text-ink">Select receiver</option>
-                        {assignableMembers.map(m => <option key={m.id} value={m.name} className="text-ink">{m.name} — {m.role || 'Viewer'}</option>)}
+                        {assignableMembers.map(m => <option key={m.id} value={m.name} className="text-ink">{m.name}</option>)}
                       </select>
                       {!newHo.incoming && <p className="text-[9px] text-red-400 mt-1 font-bold">Required before deployment</p>}
                     </div>
@@ -569,7 +598,7 @@ export default function HandoverFlow({ handovers, tasks, stats, aiInteractions }
                         <span className="block text-[10px] font-black uppercase tracking-widest text-ink mb-2">Incoming Lead</span>
                         <select value={newHo.incoming || ''} onChange={e => setNewHo(prev => ({ ...prev, incoming: e.target.value }))} className="w-full bg-transparent text-sm font-bold text-ink focus:outline-none">
                           <option value="">Select receiver</option>
-                          {assignableMembers.map(m => <option key={m.id} value={m.name}>{m.name} — {m.role || 'Viewer'}</option>)}
+                          {assignableMembers.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
                         </select>
                         {!newHo.incoming && <p className="text-xs text-red-500 font-bold mt-2">Incoming lead must be selected before deploying</p>}
                       </div>

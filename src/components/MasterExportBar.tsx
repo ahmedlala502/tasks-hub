@@ -4,6 +4,7 @@ import {
   X, Loader2, Shield, CheckCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Task, Handover, Member, Office } from '../types';
 import { useLocalData } from './LocalDataContext';
 import { exportWorkspaceAsJSON } from '../lib/localStore';
 import { addToast } from '../lib/toast';
@@ -125,9 +126,16 @@ function buildExports(activePage: string): ExportEntry[] {
 // ── Component ────────────────────────────────────────────────────────────────
 interface MasterExportBarProps {
   activePage: string;
+  filteredData?: {
+    tasks?: Task[];
+    handovers?: Handover[];
+    members?: Member[];
+    offices?: Office[];
+    label?: string;
+  };
 }
 
-export default function MasterExportBar({ activePage }: MasterExportBarProps) {
+export default function MasterExportBar({ activePage, filteredData }: MasterExportBarProps) {
   const ctx = useLocalData();
   const { isMasterAdmin, importData, logAction } = ctx;
 
@@ -140,6 +148,49 @@ export default function MasterExportBar({ activePage }: MasterExportBarProps) {
   if (!isMasterAdmin) return null;
 
   const exports = buildExports(activePage);
+
+  // If filtered data is provided, add a filtered export entry
+  const hasFiltered = filteredData && (
+    filteredData.tasks || filteredData.handovers || filteredData.members || filteredData.offices
+  );
+  const allExports = hasFiltered
+    ? [
+        ...exports,
+        {
+          label: `Export Filtered (${filteredData!.label || 'current view'})`,
+          icon: Download,
+          run: () => {
+            if (filteredData!.tasks) {
+              const csv = toCSV(
+                ['ID', 'Title', 'Status', 'Priority', 'Owner', 'Team', 'Office', 'Country', 'Shift', 'Due', 'Carry', 'Created'],
+                filteredData!.tasks!.map((t: Task) => [t.id, t.title, t.status, t.priority, t.owner, t.team, t.office, t.country, t.shift, t.due, t.carry, t.createdAt])
+              );
+              downloadBlob(csv, `trygc-filtered-tasks-${today()}.csv`, 'text/csv');
+              ctx.logAction('EXPORT_FILTERED_TASKS_CSV', { count: filteredData!.tasks!.length, page: activePage });
+              addToast(`${filteredData!.tasks!.length} filtered tasks exported.`, 'success', 3000);
+            } else if (filteredData!.handovers) {
+              const csv = toCSV(
+                ['ID', 'Date', 'From Shift', 'To Shift', 'Outgoing', 'Incoming', 'Status', 'Team'],
+                filteredData!.handovers!.map((h: Handover) => [h.id, h.date, h.fromShift, h.toShift, h.outgoing, h.incoming, h.status, h.team])
+              );
+              downloadBlob(csv, `trygc-filtered-handovers-${today()}.csv`, 'text/csv');
+            } else if (filteredData!.members) {
+              const csv = toCSV(
+                ['ID', 'Name', 'Role', 'Team', 'Office', 'Country', 'Tasks Completed', 'Handovers Out'],
+                filteredData!.members!.map((m: Member) => [m.id, m.name, m.role, m.team, m.office, m.country, m.tasksCompleted, m.handoversOut])
+              );
+              downloadBlob(csv, `trygc-filtered-members-${today()}.csv`, 'text/csv');
+            } else if (filteredData!.offices) {
+              const csv = toCSV(
+                ['ID', 'Name', 'Country', 'Lead', 'Shift', 'Timezone'],
+                filteredData!.offices!.map((o: Office) => [o.id, o.name, o.country, o.lead, o.shift, o.timezone])
+              );
+              downloadBlob(csv, `trygc-filtered-offices-${today()}.csv`, 'text/csv');
+            }
+          },
+        },
+      ]
+    : exports;
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -197,7 +248,7 @@ export default function MasterExportBar({ activePage }: MasterExportBarProps) {
               {/* Export items */}
               <div className="py-1.5">
                 <p className="px-4 pt-1.5 pb-0.5 text-[9px] font-black uppercase tracking-widest text-muted/50">Export</p>
-                {exports.map((exp) => {
+                {allExports.map((exp) => {
                   const Icon = exp.icon;
                   return (
                     <button

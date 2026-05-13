@@ -20,7 +20,7 @@ import {
   Wand2,
 } from 'lucide-react';
 import { Handover, Task } from '../../types';
-import { chatWithWorkspaceAI } from '../../lib/apiService';
+import { chatWithWorkspaceAI, chatWithWorkspaceTools, ToolCallResult } from '../../lib/apiService';
 import { useLocalData } from '../LocalDataContext';
 
 interface Message {
@@ -60,7 +60,7 @@ function Md({ content }: { content: string }) {
 }
 
 export default function AICopilot({ tasks, handovers, messages, setMessages }: AICopilotProps) {
-  const { settings, canUseFeature, isWidgetEnabled, currentTeam } = useLocalData();
+  const { settings, canUseFeature, isWidgetEnabled, currentTeam, isMasterAdmin, executeAITool, getWorkspaceSummary } = useLocalData();
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -111,19 +111,62 @@ export default function AICopilot({ tasks, handovers, messages, setMessages }: A
     setLoading(true);
 
     try {
-      const result = await chatWithWorkspaceAI({
-        history: [...messages, userMessage].map(message => ({ role: message.role, content: message.content })),
-        tasksSummary,
-        handoverSummary,
-      });
+      if (isMasterAdmin) {
+        // Agent mode with tool execution
+        const summary = getWorkspaceSummary();
+        let currentHistory = [...messages, userMessage];
+        let finalContent = '';
+        let maxRounds = 6;
 
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: result.provider === 'mock'
-          ? `${result.text}\n\nFallback path used: ${fallbackProviders}`
-          : `${result.text}\n\nProvider: ${result.provider}`,
-        timestamp: Date.now(),
-      }]);
+        while (maxRounds > 0) {
+          maxRounds--;
+          const result = await chatWithWorkspaceTools({
+            history: currentHistory.map(m => ({ role: m.role, content: m.content })),
+            tasksSummary: summary.tasksSummary,
+            handoverSummary: summary.handoverSummary,
+            memberStats: summary.memberStats,
+          });
+
+          if (result.toolCalls && result.toolCalls.length > 0) {
+            for (const tc of result.toolCalls) {
+              const toolResult = await executeAITool(tc.tool, tc.args);
+              currentHistory = [
+                ...currentHistory,
+                { role: 'assistant' as const, content: `Calling tool: ${tc.tool}(${JSON.stringify(tc.args)})`, timestamp: Date.now() },
+                { role: 'user' as const, content: `Tool result: ${toolResult}`, timestamp: Date.now() },
+              ];
+            }
+          } else {
+            finalContent = result.text;
+            break;
+          }
+        }
+
+        if (!finalContent) {
+          finalContent = 'Action completed. Check the workspace for the updated state.';
+        }
+
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: finalContent,
+          timestamp: Date.now(),
+        }]);
+      } else {
+        // Regular chat mode for non-master users
+        const result = await chatWithWorkspaceAI({
+          history: [...messages, userMessage].map(message => ({ role: message.role, content: message.content })),
+          tasksSummary,
+          handoverSummary,
+        });
+
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: result.provider === 'mock'
+            ? `${result.text}\n\nFallback path used: ${fallbackProviders}`
+            : `${result.text}\n\nProvider: ${result.provider}`,
+          timestamp: Date.now(),
+        }]);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unexpected AI error';
       setError(message);

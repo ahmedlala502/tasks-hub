@@ -4,6 +4,7 @@ import { INITIAL_MEMBERS, COUNTRY_FLAGS, TEAMS } from '../../constants';
 import { Award, CheckCircle2, Clock, Edit, Plus, Search, ShieldAlert, Trash2, UserRound, Users, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLocalData } from '../LocalDataContext';
+import BulkCSVImport from '../BulkCSVImport';
 
 interface TeamPerformanceProps {
   members: Member[];
@@ -202,13 +203,33 @@ export default function TeamPerformance({ members, offices, tasks, handovers }: 
           />
         </div>
         {isMasterAdmin && (
-          <button
-            onClick={openCreate}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-ink text-white rounded-xl font-bold text-xs shadow-lg shadow-ink/10 hover:scale-[1.02] transition-all"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Member</span>
-          </button>
+          <>
+            <button
+              onClick={openCreate}
+              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-ink text-white rounded-xl font-bold text-xs shadow-lg shadow-ink/10 hover:scale-[1.02] transition-all"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Member</span>
+            </button>
+            <BulkCSVImport
+              label="Import CSV"
+              description="Import members from CSV. Expected columns: name, role, team, office, country, email, password"
+              expectedHeaders={['name', 'role', 'team']}
+              onImport={async (rows) => {
+                for (const row of rows) {
+                  await addMember({
+                    name: row.name || row.Name || 'Unknown',
+                    role: row.role || row.Role || 'Operations Agent',
+                    team: row.team || row.Team || TEAMS[0],
+                    office: row.office || row.Office || 'Cairo HQ',
+                    country: row.country || row.Country || 'EG',
+                    email: row.email || row.Email || undefined,
+                    password: row.password || row.Password || undefined,
+                  });
+                }
+              }}
+            />
+          </>
         )}
       </section>
 

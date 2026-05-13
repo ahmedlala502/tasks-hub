@@ -231,7 +231,7 @@ export default function TaskModal({ isOpen, onClose, onSave, initialTask }: Task
                     <option value="">Select assignee</option>
                     {assignableMembers.map(member => (
                       <option key={member.id} value={member.name}>
-                        {member.name} - {member.role || 'Viewer'} - {member.office}
+                        {member.name}
                       </option>
                     ))}
                   </select>

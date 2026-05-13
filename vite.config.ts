@@ -38,7 +38,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      hmr: process.env.DISABLE_HMR !== 'true',
+      hmr: process.env.DISABLE_HMR !== 'false',
       proxy: {
         '/api/ai': {
           target: 'http://localhost:8787',

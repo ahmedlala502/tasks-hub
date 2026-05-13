@@ -4,6 +4,7 @@ import { COUNTRY_FLAGS } from '../../constants';
 import { Search, Plus, MapPin, User, ChevronRight, MoreHorizontal, Globe, Trash2, Edit } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLocalData } from '../LocalDataContext';
+import BulkCSVImport from '../BulkCSVImport';
 
 interface OfficeRegisterProps {
   offices: Office[];
@@ -11,7 +12,7 @@ interface OfficeRegisterProps {
 }
 
 export default function OfficeRegister({ offices, tasks }: OfficeRegisterProps) {
-  const { addOffice, updateOffice, deleteOffice } = useLocalData();
+  const { addOffice, updateOffice, deleteOffice, isMasterAdmin } = useLocalData();
   const [filter, setFilter] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOffice, setEditingOffice] = useState<Office | null>(null);
@@ -71,16 +72,38 @@ export default function OfficeRegister({ offices, tasks }: OfficeRegisterProps) 
             className="pl-10 pr-4 py-2.5 bg-white border border-dawn rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-citrus/20 w-64 shadow-sm"
           />
         </div>
-        <button 
-          onClick={() => {
-            setEditingOffice(null);
-            setIsModalOpen(true);
-          }}
-          className="flex items-center gap-2 px-6 py-2.5 bg-ink text-white rounded-xl font-bold text-xs shadow-lg shadow-ink/10 hover:scale-[1.02] transition-all"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Add Hub</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => {
+              setEditingOffice(null);
+              setIsModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-6 py-2.5 bg-ink text-white rounded-xl font-bold text-xs shadow-lg shadow-ink/10 hover:scale-[1.02] transition-all"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Hub</span>
+          </button>
+          {isMasterAdmin && (
+            <BulkCSVImport
+              label="Import CSV"
+              description="Import offices from CSV. Expected columns: name, country, lead, shift, timezone, address, phone"
+              expectedHeaders={['name', 'country', 'lead']}
+              onImport={async (rows) => {
+                for (const row of rows) {
+                  await addOffice({
+                    name: row.name || row.Name || 'New Hub',
+                    country: row.country || row.Country || 'EG',
+                    lead: row.lead || row.Lead || '',
+                    shift: (row.shift || row.Shift || 'Morning') as any,
+                    timezone: row.timezone || row.Timezone || undefined,
+                    address: row.address || row.Address || undefined,
+                    phone: row.phone || row.Phone || undefined,
+                  });
+                }
+              }}
+            />
+          )}
+        </div>
       </div>
 
       <div className="glass-card p-0 overflow-hidden">
