@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle, ArrowUpCircle, BellRing, CheckCircle2, Circle,
-  Clock, Flag, Flame, FolderKanban, Layers3, Plus, RefreshCw,
-  Save, Search, Trash2, X, LayoutGrid, Check,
+  Clock, Edit2, Flag, FolderKanban, Layers3, Plus, RefreshCw,
+  Save, Search, Trash2, X, LayoutGrid, Check, ChevronDown, ChevronUp,
+  User, Calendar, MapPin, DollarSign, Target
 } from 'lucide-react';
 import { format, isPast, isValid } from 'date-fns';
 import { useAuth } from '../App';
@@ -10,7 +11,7 @@ import { filterCampaignsByRole, filterOwnerOptionsByRole, filterTasksByRole } fr
 import { cn } from '../utils';
 import { dataService, TEAM_MEMBERS } from '../services/dataService';
 import { notify } from '../services/notificationService';
-import { Task } from '../types';
+import { Task, Campaign } from '../types';
 import { completeDailyTask, getDueReminderCandidates } from '../lib/dailyOperatingTasks';
 
 const PRIORITIES: Task['priority'][] = ['Critical', 'High', 'Medium', 'Low'];
@@ -40,18 +41,6 @@ const parseDateInput = (value: string, fallback: unknown) => {
 const isTaskOverdue = (task: Task) =>
   !task.completed && isPast(toValidDate(task.dueDate));
 
-const loadNotifiedReminderKeys = (): Set<string> => {
-  try {
-    const raw = localStorage.getItem(REMINDER_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(parsed) ? parsed : []);
-  } catch { return new Set(); }
-};
-
-const saveNotifiedReminderKeys = (keys: Set<string>) => {
-  try { localStorage.setItem(REMINDER_STORAGE_KEY, JSON.stringify([...keys].slice(-300))); } catch {}
-};
-
 const emptyDraft = (): Partial<Task> => ({
   title: '', description: '', ownerId: '', campaignId: '',
   priority: 'Medium', dueDate: fallbackDueDate(), completed: false,
@@ -59,42 +48,32 @@ const emptyDraft = (): Partial<Task> => ({
 
 const PRIORITY_CONFIG: Record<Task['priority'], {
   label: string; icon: React.ComponentType<{ size?: number; className?: string }>;
-  color: string; bg: string; border: string; badge: string; headerBg: string; dot: string;
+  color: string; bg: string; border: string; badge: string; dot: string;
 }> = {
-  Critical: { label: 'Critical', icon: Flame, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/10', border: 'border-red-200 dark:border-red-900/30', badge: 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400', headerBg: 'bg-red-50/80 dark:bg-red-950/40 border-b-2 border-red-200 dark:border-red-800', dot: 'bg-red-500' },
-  High: { label: 'High', icon: AlertCircle, color: 'text-gc-orange', bg: 'bg-orange-50 dark:bg-orange-900/10', border: 'border-orange-200 dark:border-orange-900/30', badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400', headerBg: 'bg-orange-50/80 dark:bg-orange-950/40 border-b-2 border-orange-200 dark:border-orange-800', dot: 'bg-gc-orange' },
-  Medium: { label: 'Medium', icon: ArrowUpCircle, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/10', border: 'border-amber-200 dark:border-amber-900/30', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400', headerBg: 'bg-amber-50/80 dark:bg-amber-950/40 border-b-2 border-amber-200 dark:border-amber-800', dot: 'bg-amber-500' },
-  Low: { label: 'Low', icon: Circle, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/10', border: 'border-green-200 dark:border-green-900/30', badge: 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400', headerBg: 'bg-green-50/80 dark:bg-green-950/40 border-b-2 border-green-200 dark:border-green-800', dot: 'bg-green-500' },
+  Critical: { label: 'Critical', icon: AlertCircle, color: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/10', border: 'border-red-200 dark:border-red-900/30', badge: 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400', dot: 'bg-red-500' },
+  High: { label: 'High', icon: AlertCircle, color: 'text-gc-orange', bg: 'bg-orange-50 dark:bg-orange-900/10', border: 'border-orange-200 dark:border-orange-900/30', badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400', dot: 'bg-gc-orange' },
+  Medium: { label: 'Medium', icon: ArrowUpCircle, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/10', border: 'border-amber-200 dark:border-amber-900/30', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400', dot: 'bg-amber-500' },
+  Low: { label: 'Low', icon: Circle, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/10', border: 'border-green-200 dark:border-green-900/30', badge: 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400', dot: 'bg-green-500' },
 };
+
+interface TaskWithEdit extends Task {
+  isEditing?: boolean;
+}
 
 export default function PriorityBoard() {
   const { role } = useAuth();
   const [tasks, setTasks] = useState<Task[]>(filterTasksByRole(role, dataService.getTasks()));
+  const [campaigns, setCampaigns] = useState<Campaign[]>(filterCampaignsByRole(role, dataService.getCampaigns()));
   const [query, setQuery] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [campaignFilter, setCampaignFilter] = useState('all');
   const [showCompleted, setShowCompleted] = useState(false);
-  const [viewMode, setViewMode] = useState<'kanban' | 'campaign'>('kanban');
+  const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set());
+  const [editingTask, setEditingTask] = useState<TaskWithEdit | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [draft, setDraft] = useState<Partial<Task>>(emptyDraft());
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [supabaseUsers, setSupabaseUsers] = useState<string[]>([]);
-  const [lastDailySync, setLastDailySync] = useState('');
-  const [changingPriority, setChangingPriority] = useState<{ taskId: string; priority: Task['priority'] } | null>(null);
-
-  const syncDailyTasks = useCallback((mode: 'auto' | 'manual' = 'auto') => {
-    const result = dataService.ensureDailyOperatingTasks();
-    const scoped = filterTasksByRole(role, result.tasks);
-    setTasks(scoped);
-    setLastDailySync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-    if (result.createdCount > 0) {
-      notify('Daily Operating Sheet Ready', `${result.createdCount} recurring tasks created for today`, 'purple', '/priority-board');
-    } else if (mode === 'manual') {
-      notify('Daily Tasks Already Current', 'No duplicate tasks were added for today', 'green', '/priority-board');
-    }
-  }, [role]);
-
-  useEffect(() => { syncDailyTasks('auto'); }, [syncDailyTasks]);
 
   useEffect(() => {
     let mounted = true;
@@ -106,23 +85,11 @@ export default function PriorityBoard() {
     return () => { mounted = false; };
   }, []);
 
-  useEffect(() => {
-    const notifiedKeys = loadNotifiedReminderKeys();
-    const due = getDueReminderCandidates(tasks, Date.now(), notifiedKeys);
-    if (due.length === 0) return;
-    due.forEach(({ task, reminder, notificationKey }) => {
-      notifiedKeys.add(notificationKey);
-      notify('Task Reminder', `${reminder.label} · ${task.ownerId}: ${task.title}`, task.priority === 'Critical' ? 'red' : 'orange', '/priority-board');
-    });
-    saveNotifiedReminderKeys(notifiedKeys);
-  }, [tasks]);
-
-  const campaigns = filterCampaignsByRole(role, dataService.getCampaigns());
-  const campaignNames = useMemo(() => campaigns.map((c) => c.name).sort(), [campaigns]);
-
   const owners = filterOwnerOptionsByRole(role, Array.from(new Set([
     ...TEAM_MEMBERS, ...supabaseUsers, ...tasks.map((t) => t.ownerId?.trim()).filter(Boolean) as string[],
   ])));
+
+  const campaignNames = useMemo(() => campaigns.map((c) => c.name).sort(), [campaigns]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
@@ -134,15 +101,6 @@ export default function PriorityBoard() {
         && (showCompleted ? true : !task.completed);
     });
   }, [tasks, query, ownerFilter, campaignFilter, showCompleted]);
-
-  const tasksByPriority = useMemo(() =>
-    PRIORITIES.reduce((acc, priority) => {
-      acc[priority] = filteredTasks.filter((t) => t.priority === priority).sort((a, b) => {
-        if (a.completed !== b.completed) return a.completed ? 1 : -1;
-        return toValidTimestamp(a.dueDate) - toValidTimestamp(b.dueDate);
-      });
-      return acc;
-    }, {} as Record<Task['priority'], Task[]>), [filteredTasks]);
 
   const tasksByCampaign = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -158,7 +116,6 @@ export default function PriorityBoard() {
   const totalActive = tasks.filter((t) => !t.completed).length;
   const totalOverdue = tasks.filter(isTaskOverdue).length;
   const criticalCount = tasks.filter((t) => t.priority === 'Critical' && !t.completed).length;
-  const dailyCount = tasks.filter((t) => t.dailyTaskDate).length;
 
   const openCreate = () => { setDraft(emptyDraft()); setShowCreate(true); };
 
@@ -178,17 +135,37 @@ export default function PriorityBoard() {
 
   const toggleComplete = (task: Task) => {
     const next = !task.completed;
-    const patch = next ? completeDailyTask(task) : { ...task, completed: false, completedAt: undefined, updatedAt: Date.now(), flags: (task.flags || []).map((flag) => ({ ...flag, resolved: false })) };
+    const patch = next ? completeDailyTask(task) : { ...task, completed: false, completedAt: undefined, updatedAt: Date.now() };
     const updated = filterTasksByRole(role, dataService.updateTask(task.id, patch));
     setTasks(updated);
-    notify(next ? 'Task Done' : 'Task Reopened', next ? `"${task.title}" completed by ${task.ownerId}` : `"${task.title}" returned to active`, next ? 'green' : 'orange', '/priority-board');
+    notify(next ? 'Task Done' : 'Task Reopened', next ? `"${task.title}" completed` : `"${task.title}" reopened`, next ? 'green' : 'orange', '/priority-board');
   };
 
-  const changePriority = (task: Task, newPriority: Task['priority']) => {
-    const updated = filterTasksByRole(role, dataService.updateTask(task.id, { priority: newPriority, updatedAt: Date.now() }));
+  const startEdit = (task: Task) => {
+    setEditingTask({ ...task, isEditing: true });
+    setDraft({ ...task });
+  };
+
+  const saveEdit = () => {
+    if (!editingTask || !draft.title?.trim()) return;
+    const updated = filterTasksByRole(role, dataService.updateTask(editingTask.id, {
+      title: draft.title.trim(),
+      description: draft.description || '',
+      ownerId: draft.ownerId?.trim() || '',
+      campaignId: draft.campaignId?.trim() || '',
+      priority: draft.priority || 'Medium',
+      dueDate: toValidTimestamp(draft.dueDate),
+      updatedAt: Date.now(),
+    }));
     setTasks(updated);
-    setChangingPriority(null);
-    notify('Priority Changed', `"${task.title}" → ${newPriority}`, 'orange', '/priority-board');
+    notify('Task Updated', `"${draft.title.trim()}" saved`, 'orange', '/priority-board');
+    setEditingTask(null);
+    setDraft(emptyDraft());
+  };
+
+  const cancelEdit = () => {
+    setEditingTask(null);
+    setDraft(emptyDraft());
   };
 
   const deleteTask = (id: string) => {
@@ -198,37 +175,42 @@ export default function PriorityBoard() {
     setConfirmDeleteId(null);
   };
 
+  const toggleCampaignExpand = (campaignName: string) => {
+    const next = new Set(expandedCampaigns);
+    if (next.has(campaignName)) {
+      next.delete(campaignName);
+    } else {
+      next.add(campaignName);
+    }
+    setExpandedCampaigns(next);
+  };
+
+  const getCampaignDetails = (campaignName: string): Campaign | undefined => {
+    return campaigns.find((c) => c.name === campaignName);
+  };
+
   return (
-    <div className="mx-auto max-w-[1560px] space-y-5 pb-12 animate-in fade-in duration-500">
+    <div className="mx-auto max-w-[1680px] space-y-6 pb-12 animate-in fade-in duration-500">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[1.5px] text-gc-orange">Core Operations</div>
+          <div className="text-[11px] font-bold uppercase tracking-[1.5px] text-gc-orange">Campaign-Centric Operations</div>
           <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Priority Board</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Organize, prioritize, and action tasks by urgency. Click priority dots to quickly re-classify.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Campaign-focused task management. Click campaigns to expand task checklists.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-lg border border-border bg-muted/40 p-0.5">
-            <button onClick={() => setViewMode('kanban')} className={cn('rounded-md px-3 py-1.5 text-xs font-bold transition-colors', viewMode === 'kanban' ? 'bg-gc-orange text-white' : 'text-muted-foreground hover:text-foreground')}>
-              <LayoutGrid size={13} className="mr-1.5 inline" />Kanban
-            </button>
-            <button onClick={() => setViewMode('campaign')} className={cn('rounded-md px-3 py-1.5 text-xs font-bold transition-colors', viewMode === 'campaign' ? 'bg-gc-orange text-white' : 'text-muted-foreground hover:text-foreground')}>
-              <FolderKanban size={13} className="mr-1.5 inline" />Campaigns
-            </button>
-          </div>
-          <button onClick={() => syncDailyTasks('manual')} className="inline-flex h-9 items-center gap-2 rounded-lg bg-gc-orange px-3 text-xs font-extrabold uppercase tracking-widest text-white hover:bg-gc-orange/90" title={lastDailySync ? `Last synced ${lastDailySync}` : 'Sync daily tasks'}>
-            <RefreshCw size={13} /> Sync Daily
-          </button>
-          <button onClick={openCreate} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gc-orange bg-gc-orange/10 px-3 text-xs font-bold text-gc-orange hover:bg-gc-orange/20">
+          <button onClick={openCreate} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-gc-orange px-3 text-xs font-bold text-white hover:bg-gc-orange/90">
             <Plus size={14} /> New Task
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Active" value={totalActive} color="text-gc-orange" />
+        <StatCard label="Active Tasks" value={totalActive} color="text-gc-orange" />
         <StatCard label="Overdue" value={totalOverdue} color="text-red-600" />
         <StatCard label="Critical" value={criticalCount} color="text-red-600" />
-        <StatCard label="Daily Tasks" value={dailyCount} color="text-purple-600 dark:text-purple-400" />
+        <StatCard label="Campaigns" value={campaigns.length} color="text-purple-600 dark:text-purple-400" />
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
@@ -248,7 +230,7 @@ export default function PriorityBoard() {
           <button type="button" onClick={() => setShowCompleted((v) => !v)} className={cn('h-5 w-9 rounded-full p-0.5 transition-colors', showCompleted ? 'bg-gc-orange' : 'bg-border')}>
             <span className={cn('block h-4 w-4 rounded-full bg-white shadow-sm transition-transform', showCompleted && 'translate-x-4')} />
           </button>
-          Completed
+          Show Completed
         </label>
       </div>
 
@@ -282,161 +264,299 @@ export default function PriorityBoard() {
         </div>
       )}
 
-      {viewMode === 'kanban' ? (
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-          {PRIORITIES.map((priority) => {
-            const cfg = PRIORITY_CONFIG[priority];
-            const Icon = cfg.icon;
-            const columnTasks = tasksByPriority[priority] || [];
-            const activeInColumn = columnTasks.filter((t) => !t.completed).length;
+      <div className="space-y-4">
+        {tasksByCampaign.length === 0 ? (
+          <div className="rounded-xl border-2 border-dashed border-border py-12 text-center">
+            <FolderKanban size={48} className="mx-auto mb-4 text-gc-orange/50" />
+            <h3 className="text-lg font-bold text-foreground">No Tasks Found</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Create tasks or adjust your filters</p>
+          </div>
+        ) : (
+          tasksByCampaign.map(([campaignName, campaignTasks]) => {
+            const isExpanded = expandedCampaigns.has(campaignName);
+            const campaign = getCampaignDetails(campaignName);
+            const completedCount = campaignTasks.filter((t) => t.completed).length;
+            const progress = campaignTasks.length > 0 ? Math.round((completedCount / campaignTasks.length) * 100) : 0;
+            
             return (
-              <div key={priority} className="flex flex-col rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-                <div className={cn('px-4 py-3', cfg.headerBg)}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Icon size={15} className={cfg.color} />
-                      <span className={cn('text-sm font-extrabold tracking-tight', cfg.color)}>{cfg.label}</span>
-                      <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold', cfg.badge)}>{activeInColumn}</span>
+              <div key={campaignName} className="rounded-xl border border-border bg-card overflow-hidden shadow-sm transition-all">
+                <div
+                  className={cn(
+                    'flex items-center justify-between px-5 py-4 cursor-pointer transition-colors',
+                    isExpanded ? 'bg-gc-orange/5 border-b border-border' : 'hover:bg-muted/30'
+                  )}
+                  onClick={() => toggleCampaignExpand(campaignName)}
+                >
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className={cn(
+                      'w-14 h-14 rounded-xl flex items-center justify-center font-condensed font-black text-lg shadow-sm',
+                      campaign?.status === 'Active' ? 'bg-gc-orange text-white' :
+                      campaign?.status === 'Blocked' ? 'bg-red-500 text-white' :
+                      'bg-secondary text-foreground'
+                    )}>
+                      {campaignName.substring(0, 2).toUpperCase()}
+                    </div>
+                    
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-lg font-extrabold text-foreground truncate">{campaignName}</h3>
+                        {campaign && (
+                          <span className={cn(
+                            'rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider',
+                            campaign.status === 'Active' ? 'bg-green-50 text-green-700' :
+                            campaign.status === 'Blocked' ? 'bg-red-50 text-red-700' :
+                            campaign.status === 'Closed' ? 'bg-secondary text-muted-foreground' :
+                            'bg-amber-50 text-amber-700'
+                          )}>
+                            {campaign.status}
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="mt-1.5 flex items-center gap-4 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-1.5">
+                          <Target size={14} />
+                          <span>{campaignTasks.length} tasks</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <CheckCircle2 size={14} />
+                          <span>{completedCount} completed</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Clock size={14} />
+                          <span>{campaignTasks.length - completedCount} pending</span>
+                        </div>
+                        {campaign && (
+                          <>
+                            <div className="flex items-center gap-1.5">
+                              <MapPin size={14} />
+                              <span>{campaign.city}, {campaign.country}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <DollarSign size={14} />
+                              <span>${campaign.budget?.toLocaleString()}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex-1 divide-y divide-border overflow-y-auto max-h-[600px]">
-                  {columnTasks.length === 0 ? (
-                    <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
-                      <div className={cn('flex h-10 w-10 items-center justify-center rounded-full', cfg.bg)}><Icon size={18} className={cfg.color} /></div>
-                      <p className="text-xs font-semibold text-muted-foreground">No {priority.toLowerCase()} tasks</p>
+                  
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <div className="text-2xl font-bold text-gc-orange">{progress}%</div>
+                      <div className="text-[10px] font-bold uppercase text-muted-foreground">Complete</div>
                     </div>
-                  ) : (
-                    columnTasks.map((task) => (
-                      <TaskCard key={task.id} task={task} cfg={cfg} overdue={isTaskOverdue(task)}
-                        confirmDeleteId={confirmDeleteId} setConfirmDeleteId={setConfirmDeleteId}
-                        changingPriority={changingPriority} setChangingPriority={setChangingPriority}
-                        onChangePriority={(p) => changePriority(task, p)}
-                        onToggle={() => toggleComplete(task)}
-                        onDelete={() => deleteTask(task.id)} />
-                    ))
-                  )}
+                    <div className="w-24 h-2 bg-border rounded-full overflow-hidden">
+                      <div className="h-full bg-gc-orange transition-all" style={{ width: `${progress}%` }} />
+                    </div>
+                    {isExpanded ? <ChevronUp size={20} className="text-muted-foreground" /> : <ChevronDown size={20} className="text-muted-foreground" />}
+                  </div>
                 </div>
+
+                {isExpanded && (
+                  <div className="border-t border-border">
+                    <div className="bg-muted/30 px-5 py-2.5">
+                      <div className="grid grid-cols-12 gap-4 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        <div className="col-span-1 text-center">Status</div>
+                        <div className="col-span-5">Task</div>
+                        <div className="col-span-2 text-center">Assignee</div>
+                        <div className="col-span-2 text-center">Priority</div>
+                        <div className="col-span-2 text-right">Due Date</div>
+                      </div>
+                    </div>
+                    
+                    <div className="divide-y divide-border max-h-[600px] overflow-y-auto">
+                      {campaignTasks.map((task) => {
+                        const cfg = PRIORITY_CONFIG[task.priority];
+                        const isEditing = editingTask?.id === task.id;
+                        
+                        if (isEditing && editingTask) {
+                          return (
+                            <div key={task.id} className="px-5 py-3 bg-orange-50/40 dark:bg-orange-900/10">
+                              <div className="grid grid-cols-12 gap-4 items-center">
+                                <div className="col-span-5 space-y-2">
+                                  <input
+                                    className="settings-input text-sm font-semibold"
+                                    value={draft.title || ''}
+                                    onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                                    placeholder="Task title"
+                                  />
+                                  <textarea
+                                    className="settings-input text-xs"
+                                    value={draft.description || ''}
+                                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                                    placeholder="Description"
+                                    rows={2}
+                                  />
+                                </div>
+                                
+                                <div className="col-span-2">
+                                  <select
+                                    className="settings-input text-xs"
+                                    value={draft.ownerId || ''}
+                                    onChange={(e) => setDraft({ ...draft, ownerId: e.target.value })}
+                                  >
+                                    <option value="">Select assignee...</option>
+                                    {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+                                  </select>
+                                </div>
+                                
+                                <div className="col-span-2">
+                                  <select
+                                    className="settings-input text-xs"
+                                    value={draft.priority || 'Medium'}
+                                    onChange={(e) => setDraft({ ...draft, priority: e.target.value as Task['priority'] })}
+                                  >
+                                    {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                                  </select>
+                                </div>
+                                
+                                <div className="col-span-2">
+                                  <input
+                                    className="settings-input text-xs"
+                                    type="date"
+                                    value={formatDueDate(draft.dueDate, 'yyyy-MM-dd')}
+                                    onChange={(e) => setDraft({ ...draft, dueDate: parseDateInput(e.target.value, draft.dueDate) })}
+                                  />
+                                </div>
+                                
+                                <div className="col-span-1 flex justify-end gap-2">
+                                  <button onClick={saveEdit} className="rounded-lg bg-gc-orange p-2 text-white hover:bg-gc-orange/90">
+                                    <Save size={14} />
+                                  </button>
+                                  <button onClick={cancelEdit} className="rounded-lg border border-border p-2 hover:bg-accent">
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+                        
+                        return (
+                          <div
+                            key={task.id}
+                            className={cn(
+                              'grid grid-cols-12 gap-4 px-5 py-3 items-center transition-colors hover:bg-muted/30',
+                              task.completed && 'opacity-50 bg-muted/20',
+                              isTaskOverdue(task) && !task.completed && 'bg-red-50/40 dark:bg-red-900/10'
+                            )}
+                          >
+                            <div className="col-span-1 flex justify-center">
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); toggleComplete(task); }}
+                                className={cn(
+                                  'flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors',
+                                  task.completed
+                                    ? 'border-green-500 bg-green-500 text-white'
+                                    : `border-current ${cfg.color} hover:bg-current/10`
+                                )}
+                              >
+                                {task.completed && <Check size={12} />}
+                              </button>
+                            </div>
+                            
+                            <div className="col-span-5 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={cn('inline-block h-2 w-2 rounded-full', cfg.dot)} />
+                                <p className={cn(
+                                  'truncate text-sm font-semibold',
+                                  task.completed ? 'line-through text-muted-foreground' : 'text-foreground'
+                                )}>
+                                  {task.title}
+                                </p>
+                              </div>
+                              {task.description && (
+                                <p className="mt-0.5 truncate text-xs text-muted-foreground">{task.description}</p>
+                              )}
+                            </div>
+                            
+                            <div className="col-span-2 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <User size={12} className="text-muted-foreground" />
+                                <span className="text-xs font-semibold">{task.ownerId || 'Unassigned'}</span>
+                              </div>
+                            </div>
+                            
+                            <div className="col-span-2 text-center">
+                              <span className={cn('inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold', cfg.badge)}>
+                                <cfg.icon size={10} />
+                                {task.priority}
+                              </span>
+                            </div>
+                            
+                            <div className="col-span-2 flex items-center justify-end gap-2">
+                              <div className="text-right">
+                                <div className={cn(
+                                  'text-xs font-semibold',
+                                  isTaskOverdue(task) && !task.completed ? 'text-red-600' : 'text-foreground'
+                                )}>
+                                  {formatDueDate(task.dueDate, 'MMM d')}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  {formatDueDate(task.dueDate, 'h:mm a')}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); startEdit(task); }}
+                                  className="rounded-lg border border-border p-1.5 hover:bg-accent transition-colors"
+                                  title="Edit task"
+                                >
+                                  <Edit2 size={12} />
+                                </button>
+                                {role === 'master' && (
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(task.id); }}
+                                    className="rounded-lg border border-red-200 p-1.5 text-red-600 hover:bg-red-50 transition-colors"
+                                    title="Delete task"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {confirmDeleteId === task.id && (
+                              <div className="col-span-12 flex items-center justify-end gap-2 py-2 bg-red-50 dark:bg-red-900/20 -mx-5 px-5">
+                                <span className="text-xs font-bold text-red-600">Delete this task?</span>
+                                <button onClick={() => deleteTask(task.id)} className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700">
+                                  Yes, Delete
+                                </button>
+                                <button onClick={() => setConfirmDeleteId(null)} className="rounded-lg border border-border px-3 py-1.5 text-xs font-bold hover:bg-accent">
+                                  Cancel
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="border-t border-border bg-muted/30 px-5 py-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-4">
+                          <span className="font-bold text-foreground">{campaignTasks.length} total tasks</span>
+                          <span className="text-green-600 font-bold">{completedCount} completed</span>
+                          <span className="text-amber-600 font-bold">{campaignTasks.length - completedCount} pending</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">Progress:</span>
+                          <div className="w-32 h-2 bg-border rounded-full overflow-hidden">
+                            <div className="h-full bg-gc-orange transition-all" style={{ width: `${progress}%` }} />
+                          </div>
+                          <span className="font-bold text-gc-orange">{progress}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
-          })}
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {tasksByCampaign.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">No tasks match current filters.</div>
-          ) : (
-            tasksByCampaign.map(([campaignName, campaignTasks]) => (
-              <div key={campaignName} className="rounded-xl border border-border bg-card overflow-hidden">
-                <div className="flex items-center justify-between border-b border-border bg-muted/30 px-5 py-3">
-                  <div className="flex items-center gap-3">
-                    <FolderKanban size={16} className="text-gc-orange" />
-                    <h3 className="text-sm font-extrabold text-foreground">{campaignName}</h3>
-                    <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[10px] font-bold text-muted-foreground">{campaignTasks.length} tasks</span>
-                    <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">{campaignTasks.filter((t) => t.completed).length} done</span>
-                  </div>
-                </div>
-                <div className="divide-y divide-border">
-                  {campaignTasks.map((task) => {
-                    const cfg = PRIORITY_CONFIG[task.priority];
-                    return (
-                      <TaskCard key={task.id} task={task} cfg={cfg} overdue={isTaskOverdue(task)}
-                        confirmDeleteId={confirmDeleteId} setConfirmDeleteId={setConfirmDeleteId}
-                        changingPriority={changingPriority} setChangingPriority={setChangingPriority}
-                        onChangePriority={(p) => changePriority(task, p)}
-                        onToggle={() => toggleComplete(task)}
-                        onDelete={() => deleteTask(task.id)} />
-                    );
-                  })}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TaskCard({
-  task, cfg, overdue, confirmDeleteId, setConfirmDeleteId,
-  changingPriority, setChangingPriority, onChangePriority, onToggle, onDelete,
-}: {
-  task: Task; cfg: typeof PRIORITY_CONFIG[Task['priority']]; overdue: boolean;
-  confirmDeleteId: string | null; setConfirmDeleteId: (id: string | null) => void;
-  changingPriority: { taskId: string; priority: Task['priority'] } | null;
-  setChangingPriority: (v: { taskId: string; priority: Task['priority'] } | null) => void;
-  onChangePriority: (p: Task['priority']) => void;
-  onToggle: () => void; onDelete: () => void;
-}) {
-  const ownerId = task.ownerId?.trim() || 'Unassigned';
-  const nextReminder = task.reminders?.filter((reminder) => reminder.dueAt >= Date.now()).sort((a, b) => a.dueAt - b.dueAt)[0];
-  const openFlags = task.flags?.filter((flag) => !flag.resolved).slice(0, 3) || [];
-
-  return (
-    <div className={cn('group px-4 py-3 transition-colors', task.completed && 'opacity-50', overdue && !task.completed && 'bg-red-50/40 dark:bg-red-900/10')}>
-      <div className="flex items-start gap-2.5">
-        <button type="button" onClick={onToggle}
-          className={cn('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-            task.completed ? 'border-green-500 bg-green-500 text-white' : `border-current ${cfg.color} hover:bg-current/10`)}
-          aria-label={task.completed ? 'Reopen' : 'Complete'}>
-          {task.completed && <CheckCircle2 size={12} />}
-        </button>
-        <div className="min-w-0 flex-1">
-          <p className={cn('text-sm font-bold leading-snug', task.completed ? 'line-through text-muted-foreground' : 'text-foreground')}>{task.title}</p>
-          {task.description && <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{task.description}</p>}
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold text-foreground">{ownerId}</span>
-            <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold',
-              overdue && !task.completed ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400' : 'bg-secondary text-muted-foreground')}>
-              <Clock size={9} />{format(isValid(new Date(task.dueDate)) ? new Date(task.dueDate) : new Date(), 'MMM dd')}
-              {overdue && !task.completed && ' · Overdue'}
-            </span>
-            {nextReminder && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700 dark:bg-purple-900/20 dark:text-purple-300">
-                <BellRing size={9} />{format(new Date(nextReminder.dueAt), 'HH:mm')}
-              </span>
-            )}
-          </div>
-          {openFlags.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {openFlags.map((flag) => (
-                <span key={flag.id} className="inline-flex items-center gap-1 rounded-md border border-orange-100 bg-orange-50 px-1.5 py-0.5 text-[9.5px] font-bold text-orange-700 dark:border-orange-900/40 dark:bg-orange-900/20 dark:text-orange-300">
-                  <Flag size={8} />{flag.label}
-                </span>
-              ))}
-            </div>
-          )}
-          {task.campaignId && (
-            <p className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-              <FolderKanban size={10} />{task.campaignId}
-            </p>
-          )}
-          <div className="mt-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {PRIORITIES.filter((p) => p !== task.priority).map((p) => {
-              const dotColor = p === 'Critical' ? 'bg-red-500' : p === 'High' ? 'bg-gc-orange' : p === 'Medium' ? 'bg-amber-500' : 'bg-green-500';
-              return (
-                <button key={p} onClick={(e) => { e.stopPropagation(); onChangePriority(p); }}
-                  className={cn('rounded-full border border-border p-1 transition-colors hover:scale-110', dotColor)}
-                  title={`Move to ${p}`} aria-label={`Move to ${p}`}>
-                  <span className={cn('block h-2.5 w-2.5 rounded-full', dotColor)} />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {confirmDeleteId === task.id ? (
-            <>
-              <button onClick={onDelete} className="rounded bg-destructive px-2 py-1 text-[10px] font-bold text-white hover:bg-destructive/90">Yes</button>
-              <button onClick={() => setConfirmDeleteId(null)} className="rounded border border-border px-2 py-1 text-[10px] font-bold hover:bg-accent">No</button>
-            </>
-          ) : (
-            <button onClick={() => setConfirmDeleteId(task.id)} className="rounded-lg p-1 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100" aria-label="Delete">
-              <Trash2 size={13} />
-            </button>
-          )}
-        </div>
+          })
+        )}
       </div>
     </div>
   );
