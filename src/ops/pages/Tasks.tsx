@@ -596,25 +596,17 @@ function EditRow({
         </Field>
 
         <Field label="Assignee">
-          <input
-            className="settings-input"
-            list={`ow-${rowId}`}
-            placeholder="Type or pick..."
-            value={draft.ownerId || ''}
-            onChange={e => setDraft(d => ({ ...d!, ownerId: e.target.value }))}
-          />
-          <datalist id={`ow-${rowId}`}>{owners.map(o => <option key={o} value={o} />)}</datalist>
+          <select className="settings-input" value={draft.ownerId || ''} onChange={e => setDraft(d => ({ ...d!, ownerId: e.target.value }))}>
+            <option value="">Select assignee...</option>
+            {owners.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
         </Field>
 
         <Field label="Campaign *">
-          <input
-            className={cn('settings-input', !draft.campaignId?.trim() && 'border-red-300 focus:border-red-500')}
-            list={`cp-${rowId}`}
-            placeholder="Required campaign"
-            value={draft.campaignId || ''}
-            onChange={e => setDraft(d => ({ ...d!, campaignId: e.target.value }))}
-          />
-          <datalist id={`cp-${rowId}`}>{campaignOptions.map(c => <option key={c} value={c} />)}</datalist>
+          <select className={cn('settings-input', !draft.campaignId?.trim() && 'border-red-300 focus:border-red-500')} value={draft.campaignId || ''} onChange={e => setDraft(d => ({ ...d!, campaignId: e.target.value }))}>
+            <option value="">Select campaign...</option>
+            {campaignOptions.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </Field>
 
         <Field label="Priority">

@@ -6,7 +6,7 @@ import {
   Settings, ShieldCheck, AlertTriangle, History,
   Shield, BarChart3, MessageSquare, CheckSquare, Flame,
   Sun, Moon, RefreshCw, Download,
-  ChevronRight,
+  ChevronRight, FolderKanban,
   Search, X, SlidersHorizontal, Check, Clock, CircleAlert, CheckCircle2, UserRound
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -25,6 +25,7 @@ type NavItem = {
 // ── Nav items ─────────────────────────────────────────────
 const OPS_NAV: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard',      path: '/' },
+  { icon: FolderKanban,    label: 'Campaigns',      path: '/campaigns' },
   { icon: RefreshCw,       label: 'Handover',       path: '/handover' },
   { icon: CheckSquare,     label: 'Tasks',          path: '/tasks' },
   { icon: Flame,           label: 'Priority Board', path: '/priority-board' },
@@ -64,9 +65,11 @@ function getPageLabel(pathname: string): string {
   if (exact) return exact.label;
   if (pathname.startsWith('/tasks/')) return 'Tasks';
   if (pathname === '/online-users') return 'Online Users';
+  if (pathname === '/campaigns/new') return 'New Campaign';
   if (pathname.startsWith('/campaigns/') && pathname.endsWith('/setup')) return 'Campaign Setup';
   if (pathname.startsWith('/campaigns/') && pathname.endsWith('/closure')) return 'Campaign Closure';
   if (pathname.startsWith('/campaigns/')) return 'Campaign Detail';
+  if (pathname === '/campaigns') return 'Campaigns';
   if (pathname.startsWith('/influencers/')) return 'Influencer Profile';
   return 'Dashboard';
 }
@@ -203,7 +206,13 @@ export default function Layout() {
         <nav className="flex-1 py-2 overflow-y-auto scrollbar-hide relative z-10">
           {!compactSidebar && workspaceNav.length > 0 && <NavSection label={workspaceLabel} />}
           {workspaceNav.map(item => (
-            <NavLink key={item.path} item={item} active={location.pathname === item.path} compact={compactSidebar} />
+            <NavLink key={item.path} item={item} active={
+              item.path === '/' 
+                ? location.pathname === '/'
+                : item.path === '/campaigns'
+                  ? location.pathname.startsWith('/campaigns')
+                  : location.pathname === item.path || location.pathname.startsWith(item.path + '/')
+            } compact={compactSidebar} />
           ))}
 
           {systemNav.length > 0 && (

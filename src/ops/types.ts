@@ -178,11 +178,13 @@ export interface Handover extends BaseEntity {
   toShift: 'Morning' | 'Mid' | 'Night';
   team: string;
   region: string;
-  outgoingLead: string;
-  incomingLead: string;
-  status: 'Pending' | 'Acknowledged' | 'Reviewed';
+  outgoingLead: string;  // Deprecated - kept for backward compatibility
+  incomingLead: string;  // Deprecated - kept for backward compatibility
+  assignFrom: string[];  // New multiselect field (replaces outgoingLead)
+  assignTo: string[];    // New multiselect field (replaces incomingLead)
   notes: string;
   taskIds: string[];
+  status: 'Pending' | 'Acknowledged' | 'Reviewed';
   reviewedAt?: number;
   acknowledgedAt?: number;
 }

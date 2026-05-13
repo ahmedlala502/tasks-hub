@@ -21,6 +21,11 @@ import AssetRegistry from './pages/AssetRegistry';
 import Handover from './pages/Handover';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
+import CampaignList from './pages/CampaignList';
+import CampaignIntake from './pages/CampaignIntake';
+import CampaignDetail from './pages/CampaignDetail';
+import CampaignSetup from './pages/CampaignSetup';
+import CampaignClosure from './pages/CampaignClosure';
 import Layout from './components/Layout';
 
 interface AuthContextType {
@@ -130,6 +135,11 @@ export default function App() {
               <Route path="assets" element={allow('/assets', <AssetRegistry />)} />
               <Route path="settings" element={allow('/settings', <Settings />)} />
               <Route path="admin" element={allow('/admin', <Admin />)} />
+              <Route path="campaigns" element={allow('/', <CampaignList />)} />
+              <Route path="campaigns/new" element={allow('/', <CampaignIntake />)} />
+              <Route path="campaigns/:id" element={allow('/', <CampaignDetail />)} />
+              <Route path="campaigns/:id/setup" element={allow('/', <CampaignSetup />)} />
+              <Route path="campaigns/:id/closure" element={allow('/', <CampaignClosure />)} />
               <Route path="*" element={redirectHome} />
             </Route>
           </Routes>
