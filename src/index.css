@@ -257,6 +257,21 @@
   .glow-orange { box-shadow: 0 0 10px rgba(232,99,12,0.45); }
   .glow-purple { box-shadow: 0 0 10px rgba(82,53,140,0.45); }
   .glow-green  { box-shadow: 0 0 10px rgba(5,150,105,0.45); }
+
+  .animate-marquee {
+    animation: marquee 120s linear infinite;
+  }
+  .animate-marquee-reverse {
+    animation: marquee 120s linear infinite reverse;
+  }
+  .animate-marquee:hover, .animate-marquee-reverse:hover {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-33.3333%); }
 }
 
 /* --- Hub Manager compatibility layer --- */

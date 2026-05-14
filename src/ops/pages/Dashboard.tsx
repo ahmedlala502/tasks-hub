@@ -222,12 +222,39 @@ function EmployeeCard({
 export default function Dashboard() {
   const navigate = useNavigate();
   const { role } = useAuth();
+
+  const [pinnedMessage, setPinnedMessage] = React.useState('');
+  const [tickerDirection, setTickerDirection] = React.useState('left');
+  React.useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('trygc-settings') || '{}');
+      if (stored.settings?.pinnedMessage) {
+        setPinnedMessage(stored.settings.pinnedMessage);
+      }
+      if (stored.settings?.tickerDirection) {
+        setTickerDirection(stored.settings.tickerDirection);
+      }
+    } catch {}
+  }, []);
+
   const campaigns = filterCampaignsByRole(role, dataService.getCampaigns());
   const tasks = filterTasksByRole(role, dataService.getTasks());
   const influencers = filterInfluencersByRole(role, dataService.getInfluencers());
   const blockers = filterBlockersByRole(role, dataService.getBlockers());
   const handovers = filterHandoversByRole(role, dataService.getHandovers());
-  const recentEvents = buildUpdatesFeed(campaigns, tasks, blockers, handovers).slice(0, 8);
+  const allEvents = buildUpdatesFeed(campaigns, tasks, blockers, handovers);
+  const recentEvents = allEvents.slice(0, 8);
+  
+  const pinnedFeedItem: any = pinnedMessage ? {
+    id: 'pinned-message',
+    kind: 'blocker',
+    title: '📌 PINNED ANNOUNCEMENT',
+    detail: pinnedMessage,
+    owner: 'Admin',
+    at: Date.now(),
+    tone: 'orange'
+  } : null;
+  const tickerEvents = (pinnedFeedItem ? [pinnedFeedItem, ...allEvents] : allEvents).slice(0, 15);
 
   const activeCampaigns = campaigns.filter(c => c.status === 'Active').length;
   const totalTasks = tasks.length;
@@ -386,6 +413,30 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div className="w-full bg-card border border-border rounded-xl overflow-hidden shadow-sm flex items-center h-11 relative">
+        <div className="px-4 py-2 bg-gc-orange text-white text-[10px] font-black uppercase tracking-widest z-10 h-full flex items-center shadow-[4px_0_12px_rgba(0,0,0,0.1)] shrink-0">
+          Live Feed
+        </div>
+        <div className="flex-1 overflow-hidden h-full relative flex items-center">
+          <div className={`flex items-center h-full whitespace-nowrap absolute left-0 w-max ${tickerDirection === 'right' ? 'animate-marquee-reverse' : 'animate-marquee'}`}>
+            {[...tickerEvents, ...tickerEvents, ...tickerEvents].map((event, i) => (
+              <button
+                key={`${event.id}-${i}`}
+                type="button"
+                onClick={() => navigate(event.kind === 'handover' ? '/handover' : event.kind === 'task' ? '/tasks/all' : event.kind === 'campaign' ? '/campaigns' : '/blockers')}
+                className="flex items-center gap-2.5 mx-6 text-sm text-foreground hover:text-gc-orange transition-colors cursor-pointer group"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${event.tone === 'red' ? 'bg-red-500' : event.tone === 'orange' ? 'bg-gc-orange' : event.tone === 'green' ? 'bg-green-500' : 'bg-purple-500'}`} />
+                <span className="font-bold text-[11px] uppercase text-muted-foreground">{event.owner}:</span>
+                <span className="font-semibold">{event.title}</span>
+                <span className="text-muted-foreground opacity-70 group-hover:opacity-100 text-[12px]">({event.detail})</span>
+                <span className="text-[10px] text-muted-foreground ml-1">{timeAgo(event.at)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <HeaderWidget label="Employees Online" value={onlineEmployees.toLocaleString()} detail="Active within 12h" tone="green" active={onlineEmployees > 0} onClick={() => navigate('/online-users')} />
         <HeaderWidget label="All Campaigns" value={campaigns.length.toLocaleString()} detail="Portfolio load" onClick={() => navigate('/campaigns')} />
@@ -412,7 +463,10 @@ export default function Dashboard() {
                 <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-muted-foreground">{event.kind}</span>
                 <span className="text-[10px] font-semibold text-muted-foreground">{timeAgo(event.at)}</span>
               </div>
-              <p className="mt-2 truncate text-sm font-bold text-foreground">{event.title}</p>
+              <div className="mt-2">
+                <p className="text-[10px] font-bold text-gc-orange uppercase tracking-wider mb-0.5">{event.owner}</p>
+                <p className="truncate text-sm font-bold text-foreground">{event.title}</p>
+              </div>
               <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{event.detail}</p>
             </button>
           ))}
@@ -500,63 +554,6 @@ export default function Dashboard() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white dark:bg-card border border-gray-100 dark:border-gray-800 rounded-xl p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-5 gap-4">
-              <div>
-                <p className="text-[9.5px] font-bold uppercase tracking-[1.5px] text-muted-foreground mb-0.5">Stage Mapping</p>
-                <h3 className="font-condensed font-extrabold text-[17px] text-foreground">Global Lifecycle Radar</h3>
-              </div>
-              <Button variant="outline" size="sm" className="h-7 text-[11px] font-semibold" onClick={() => navigate('/analytics')}>
-                Performance View
-              </Button>
-            </div>
-            <div className="flex items-end gap-[3px] h-20">
-              {RADAR_LABELS.map((label, index) => {
-                const count = barCounts[index];
-                const heightPct = maxBar > 0 ? Math.max((count / maxBar) * 100, count > 0 ? 15 : 8) : 8;
-                const isPeak = index === activeBarIndex && count > 0;
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => navigate('/analytics')}
-                    className="flex-1 group cursor-pointer flex flex-col items-center justify-end h-full gap-1"
-                    title={`${label}: ${count} campaign${count !== 1 ? 's' : ''}`}
-                  >
-                    <div
-                      className={`w-1.5 rounded-full transition-all duration-500 group-hover:w-2.5 ${
-                        isPeak ? 'bg-gc-orange shadow-[0_0_12px_rgba(232,99,12,0.5)]' : count > 0 ? 'bg-gc-purple/60' : 'bg-muted'
-                      }`}
-                      style={{ height: `${heightPct}%` }}
-                    />
-                  </button>
-                );
-              })}
-            </div>
-            {executionCount > 0 ? (
-              <div className="mt-4 flex items-start gap-3 p-4 bg-orange-50 border border-orange-100 rounded-lg dark:bg-orange-900/10 dark:border-orange-900/30">
-                <ShieldAlert className="h-4 w-4 text-gc-orange shrink-0 mt-0.5" />
-                <p className="text-[12px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">Relay obstruction:</strong> {executionCount} campaign{executionCount !== 1 ? 's' : ''} inside execution pressure.
-                  {' '}
-                  <button onClick={() => navigate('/handover')} className="text-gc-orange font-semibold hover:underline">Check handover coverage</button>
-                </p>
-              </div>
-            ) : campaigns.length === 0 ? (
-              <div className="mt-4 flex items-start gap-3 p-4 bg-muted/30 border border-border rounded-lg">
-                <ShieldCheck className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                <p className="text-[12px] text-muted-foreground">No campaigns in the pipeline yet.</p>
-              </div>
-            ) : (
-              <div className="mt-4 flex items-start gap-3 p-4 bg-green-50 border border-green-100 rounded-lg dark:bg-green-900/10 dark:border-green-900/30">
-                <ShieldCheck className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />
-                <p className="text-[12px] text-muted-foreground leading-relaxed">
-                  <strong className="text-foreground">Pipeline clear:</strong> no campaign is jammed in active execution right now.
-                </p>
               </div>
             )}
           </div>
