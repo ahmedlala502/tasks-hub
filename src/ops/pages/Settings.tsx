@@ -101,7 +101,7 @@ export default function SettingsWorkspace() {
   const activeMeta = useMemo(() => SETTING_SECTIONS.find((section) => section.id === activeRoot), [activeRoot]);
 
   const updateSetting = (key: keyof typeof settings, value: string) => {
-    setSettings((current) => ({ ...current, [key]: value }));
+    setSettings((current: typeof settings) => ({ ...current, [key]: value }));
   };
 
   const saveSettings = () => {
@@ -123,7 +123,7 @@ export default function SettingsWorkspace() {
       apiKey: '',
       mode: 'demo',
     }));
-    setSettings((current) => ({
+    setSettings((current: typeof settings) => ({
       ...current,
       apiProvider: preset.label,
       apiMode: preset.supportsSearch ? 'Search-grounded discovery' : 'Structured JSON discovery',
