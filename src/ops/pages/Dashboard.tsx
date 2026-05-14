@@ -267,7 +267,32 @@ export default function Dashboard() {
   }];
   const primaryTickerUpdate = onlineTickerUpdates[0];
   const tickerDirection = primaryTickerUpdate?.tickerDirection || 'left';
-  const tickerSpeedSeconds = primaryTickerUpdate?.tickerSpeedSeconds || 38;
+  const tickerSpeedSetting = primaryTickerUpdate?.tickerSpeedSeconds || 70;
+  const tickerRepeatCount = 4;
+  const tickerTrackRef = React.useRef<HTMLDivElement | null>(null);
+  const [tickerDuration, setTickerDuration] = React.useState(80);
+  const [tickerPaused, setTickerPaused] = React.useState(false);
+
+  React.useEffect(() => {
+    const track = tickerTrackRef.current;
+    if (!track) return;
+
+    const updateDuration = () => {
+      const cycleWidth = track.scrollWidth / tickerRepeatCount;
+      const normalized = Math.min(Math.max(tickerSpeedSetting, 20), 160);
+      const pixelsPerSecond = 120 - ((normalized - 20) / 140) * 96;
+      setTickerDuration(Math.max(18, Math.round(cycleWidth / pixelsPerSecond)));
+    };
+
+    updateDuration();
+    const observer = new ResizeObserver(updateDuration);
+    observer.observe(track);
+    window.addEventListener('resize', updateDuration);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateDuration);
+    };
+  }, [tickerSpeedSetting, visibleTickerEvents.length]);
 
   const activeCampaigns = campaigns.filter(c => c.status === 'Active').length;
   const totalTasks = tasks.length;
@@ -432,12 +457,23 @@ export default function Dashboard() {
         </div>
         <div className="flex-1 overflow-hidden h-full relative flex items-center">
           <div
+            ref={tickerTrackRef}
             tabIndex={0}
-            aria-label="Moving updates feed. Focus or hover to pause."
-            className={`flex items-center h-full whitespace-nowrap absolute left-0 w-max focus:outline-none focus:[animation-play-state:paused] ${tickerDirection === 'right' ? 'animate-marquee-reverse' : 'animate-marquee'}`}
-            style={{ animationDuration: `${tickerSpeedSeconds}s` }}
+            aria-label="Moving updates feed. Press Space to pause or resume."
+            data-paused={tickerPaused ? 'true' : 'false'}
+            onKeyDown={(event) => {
+              if (event.key === ' ' || event.key === 'Enter') {
+                event.preventDefault();
+                setTickerPaused((value) => !value);
+              }
+            }}
+            className={`flex items-center h-full whitespace-nowrap absolute left-0 w-max focus:outline-none focus:ring-2 focus:ring-gc-orange/30 ${tickerDirection === 'right' ? 'animate-marquee-reverse' : 'animate-marquee'}`}
+            style={{
+              '--marquee-duration': `${tickerDuration}s`,
+              '--marquee-distance': `-${100 / tickerRepeatCount}%`,
+            } as React.CSSProperties}
           >
-            {Array.from({ length: 8 }).flatMap(() => visibleTickerEvents).map((event, i) => (
+            {Array.from({ length: tickerRepeatCount }).flatMap(() => visibleTickerEvents).map((event, i) => (
               <button
                 key={`${event.id}-${i}`}
                 type="button"

@@ -260,12 +260,12 @@
   .glow-green  { box-shadow: 0 0 10px rgba(5,150,105,0.45); }
 
   .animate-marquee {
-    animation: marquee 120s linear infinite;
+    animation: marquee var(--marquee-duration, 120s) linear infinite;
   }
   .animate-marquee-reverse {
-    animation: marquee 120s linear infinite reverse;
+    animation: marquee var(--marquee-duration, 120s) linear infinite reverse;
   }
-  .animate-marquee:hover, .animate-marquee:focus-within, .animate-marquee-reverse:hover, .animate-marquee-reverse:focus-within {
+  .animate-marquee:hover, .animate-marquee-reverse:hover, .animate-marquee[data-paused="true"], .animate-marquee-reverse[data-paused="true"] {
     animation-play-state: paused;
   }
 
@@ -279,7 +279,7 @@
 
 @keyframes marquee {
   0% { transform: translateX(0%); }
-  100% { transform: translateX(-33.3333%); }
+  100% { transform: translateX(var(--marquee-distance, -25%)); }
 }
 
 /* --- Hub Manager compatibility layer --- */
