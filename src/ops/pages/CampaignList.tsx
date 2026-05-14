@@ -14,7 +14,8 @@ import { buildAssignmentOptions } from '../lib/assignmentOptions';
 import { buildMyCampaignMatrix, getOperationalTaskStatus } from '../lib/opsPageInsights';
 import { dataService, TEAM_MEMBERS } from '../services/dataService';
 import { notify } from '../services/notificationService';
-import { exportCampaigns, readSpreadsheet, rowsToCampaigns } from '../services/spreadsheetService';
+import { exportCampaigns, rowsToCampaigns } from '../services/spreadsheetService';
+import { BulkUploadButton } from '../components/BulkUploadDialog';
 
 type CampaignTaskDraft = {
   id?: string;
@@ -167,17 +168,12 @@ export default function CampaignList() {
     notify('Campaign Deleted', `"${campaign.name}" removed`, 'red', '/campaigns');
   };
 
-  const handleBulkUpload = async (file?: File) => {
-    if (!file) return;
-    try {
-      const rows = await readSpreadsheet(file);
-      const imported = rowsToCampaigns(rows);
-      setCampaigns(dataService.addCampaigns(imported));
-      setBulkMessage(`${imported.length} campaigns imported from ${file.name}`);
-    } catch (error) {
-      console.error(error);
-      setBulkMessage('Import failed. Check your CSV/XLSX columns and try again.');
-    }
+  const commitCampaigns = async (items: Campaign[]) => {
+    const { campaigns: next, inserted, updated } = dataService.upsertCampaigns(items);
+    setCampaigns(next);
+    setBulkMessage(`${inserted} added, ${updated} updated.`);
+    notify('Campaigns Imported', `${inserted} added, ${updated} updated.`, 'green', '/campaigns');
+    return { inserted, updated };
   };
 
   return (
@@ -213,10 +209,19 @@ export default function CampaignList() {
             {Object.entries(STAGE_NAMES).map(([key, label]) => <option key={key} value={key}>{key}. {label}</option>)}
           </select>
           <div className="flex flex-wrap gap-2">
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">
-              <Upload size={15} /> Import
-              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(event) => handleBulkUpload(event.target.files?.[0])} />
-            </label>
+            <BulkUploadButton<Campaign>
+              label="Import"
+              title="Bulk Import Campaigns"
+              templateHeaders={['id','name','clientId','brandId','country','city','objective','platforms','type','budget','budgetType','targetInfluencers','targetPostingCoverage','startDate','endDate','status','stage','currentOwner']}
+              parse={rowsToCampaigns}
+              validate={c => {
+                const errs: string[] = [];
+                if (!c.name) errs.push('Missing name');
+                if (!c.country) errs.push('Missing country');
+                return errs;
+              }}
+              commit={commitCampaigns}
+            />
             <button onClick={() => exportCampaigns(filteredCampaigns)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">
               <Download size={15} /> Export
             </button>

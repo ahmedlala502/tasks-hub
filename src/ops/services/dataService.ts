@@ -184,6 +184,58 @@ export const dataService = {
     saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
     return [...CAMPAIGNS_DATA];
   },
+  upsertCampaigns: (incoming: Campaign[]) => {
+    const byId = new Map(CAMPAIGNS_DATA.map(c => [c.id, c]));
+    let inserted = 0;
+    let updated = 0;
+    incoming.forEach(item => {
+      if (item.id && byId.has(item.id)) {
+        byId.set(item.id, { ...byId.get(item.id)!, ...item, updatedAt: Date.now() });
+        updated++;
+      } else {
+        const id = item.id || buildCampaignId(byId.size + 1);
+        byId.set(id, { ...item, id, createdAt: Date.now(), updatedAt: Date.now() });
+        inserted++;
+      }
+    });
+    CAMPAIGNS_DATA = Array.from(byId.values());
+    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+    return { campaigns: [...CAMPAIGNS_DATA], inserted, updated };
+  },
+  upsertInfluencers: (incoming: CampaignInfluencer[]) => {
+    const byId = new Map(INFLUENCERS_DATA.map(i => [i.id, i]));
+    let inserted = 0;
+    let updated = 0;
+    incoming.forEach(item => {
+      if (item.id && byId.has(item.id)) {
+        byId.set(item.id, { ...byId.get(item.id)!, ...item, updatedAt: Date.now() });
+        updated++;
+      } else {
+        byId.set(item.id, { ...item, createdAt: Date.now(), updatedAt: Date.now() });
+        inserted++;
+      }
+    });
+    INFLUENCERS_DATA = Array.from(byId.values());
+    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+    return { influencers: [...INFLUENCERS_DATA], inserted, updated };
+  },
+  upsertTasks: (incoming: Task[]) => {
+    const byId = new Map(TASKS_DATA.map(t => [t.id, t]));
+    let inserted = 0;
+    let updated = 0;
+    incoming.forEach(item => {
+      if (item.id && byId.has(item.id)) {
+        byId.set(item.id, { ...byId.get(item.id)!, ...item, updatedAt: Date.now() });
+        updated++;
+      } else {
+        byId.set(item.id, { ...item, createdAt: Date.now(), updatedAt: Date.now() });
+        inserted++;
+      }
+    });
+    TASKS_DATA = Array.from(byId.values());
+    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+    return { tasks: [...TASKS_DATA], inserted, updated };
+  },
   addCampaigns: (campaigns: Campaign[]) => {
     const usedIds = new Set(CAMPAIGNS_DATA.map((item) => item.id));
     const safeCampaigns = campaigns.map((campaign, index) => {

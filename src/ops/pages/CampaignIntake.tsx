@@ -1,14 +1,31 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, ArrowRight, PlusCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ArrowRight, PlusCircle, X } from 'lucide-react';
 import { CampaignStage } from '../constants';
 import { validateCampaign, cn } from '../utils';
 import { Campaign } from '../types';
 import { dataService } from '../services/dataService';
 import { notify } from '../services/notificationService';
+import { adminApi } from '../services/adminApi';
+import { useAuth } from '../App';
+import type { OpsUser } from '../auth/types';
+
+const OWNER_COLORS = ['bg-gc-orange', 'bg-gc-purple', 'bg-emerald-500', 'bg-sky-500', 'bg-rose-500'];
+
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(p => p[0]?.toUpperCase() ?? '')
+    .join('') || '??';
+}
 
 export default function CampaignIntake() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [employees, setEmployees] = useState<OpsUser[]>([]);
+  const [strategicOwners, setStrategicOwners] = useState<string[]>(['']);
   const [formData, setFormData] = useState<Partial<Campaign>>({
     stage: CampaignStage.INTAKE,
     status: 'Active',
@@ -16,6 +33,19 @@ export default function CampaignIntake() {
     internalOwners: [],
     clientOwners: [],
   });
+
+  useEffect(() => {
+    let alive = true;
+    adminApi
+      .listUsers()
+      .then(users => {
+        if (alive) setEmployees(users.filter(u => u.status === 'active'));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const { isValid, missingFields } = validateCampaign(formData);
 
@@ -38,14 +68,17 @@ export default function CampaignIntake() {
 
   const handleDeploy = () => {
     if (!isValid) return;
+    const ownerNames = strategicOwners.map(s => s.trim()).filter(Boolean);
+    const creatorName = user?.displayName || user?.email || 'admin';
     const newCampaign: Campaign = {
       ...(formData as Campaign),
       id: `C-${Date.now()}`,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      createdBy: 'admin',
+      createdBy: creatorName,
+      internalOwners: Array.from(new Set([creatorName, ...ownerNames])),
       recordHealth: 'Healthy',
-      currentOwner: 'Ahmed E.',
+      currentOwner: ownerNames[0] || creatorName,
       nextAction: 'Validate campaign data',
     };
     dataService.addCampaign(newCampaign);
@@ -270,28 +303,68 @@ export default function CampaignIntake() {
             )}
           </div>
 
-          {/* Internal Resource Roster */}
+          {/* Created By & Owners */}
           <div className="bg-foreground rounded-xl p-6 relative overflow-hidden">
             <div className="absolute -bottom-4 -right-4 pointer-events-none opacity-5">
               <PlusCircle size={120} className="text-white" />
             </div>
-            <h4 className="font-condensed font-bold text-[10px] uppercase tracking-widest text-background/50 mb-5">Internal Resource Roster</h4>
+            <h4 className="font-condensed font-bold text-[10px] uppercase tracking-widest text-background/50 mb-5">Created By &amp; Owners</h4>
             <div className="space-y-4 relative z-10">
-              {[
-                { initials: 'AE', name: 'Ahmed Essmat', role: 'Mission Lead', color: 'bg-gc-orange' },
-                { initials: 'MK', name: 'Mona Khalid', role: 'Account Strategy', color: 'bg-gc-purple' },
-              ].map(person => (
-                <div key={person.initials} className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full ${person.color} flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0`}>
-                    {person.initials}
-                  </div>
-                  <div>
-                    <p className="text-[13px] font-bold text-background">{person.name}</p>
-                    <p className="text-[9.5px] font-mono uppercase tracking-widest text-background/50 mt-0.5">{person.role}</p>
-                  </div>
+              {/* Creator (current user, read-only) */}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gc-orange flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
+                  {getInitials(user?.displayName || user?.email || 'NA')}
                 </div>
-              ))}
-              <button className="w-full mt-2 py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-background/10 transition-colors border border-background/15">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-bold text-background truncate">{user?.displayName || user?.email || 'Current user'}</p>
+                  <p className="text-[9.5px] font-mono uppercase tracking-widest text-background/50 mt-0.5">Created By</p>
+                </div>
+              </div>
+
+              {/* Strategic owner dropdowns */}
+              {strategicOwners.map((selected, idx) => {
+                const employee = employees.find(e => e.displayName === selected);
+                const color = OWNER_COLORS[(idx + 1) % OWNER_COLORS.length];
+                return (
+                  <div key={idx} className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full ${employee ? color : 'bg-background/10'} flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0`}>
+                      {employee ? getInitials(employee.displayName) : '?'}
+                    </div>
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      <select
+                        value={selected}
+                        onChange={e =>
+                          setStrategicOwners(prev => prev.map((v, i) => (i === idx ? e.target.value : v)))
+                        }
+                        className="flex-1 min-w-0 px-3 py-2 bg-background/10 border border-background/15 rounded-lg text-[12px] font-medium text-background outline-none focus:ring-2 focus:ring-gc-orange/40 transition-all"
+                      >
+                        <option value="" className="text-foreground">Select strategic owner…</option>
+                        {employees
+                          .filter(emp => emp.displayName === selected || !strategicOwners.includes(emp.displayName))
+                          .map(emp => (
+                            <option key={emp.uid} value={emp.displayName} className="text-foreground">
+                              {emp.displayName}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setStrategicOwners(prev => prev.filter((_, i) => i !== idx))}
+                        className="w-8 h-8 rounded-md flex items-center justify-center text-background/60 hover:text-background hover:bg-background/10 transition-colors flex-shrink-0"
+                        aria-label="Remove owner"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setStrategicOwners(prev => [...prev, ''])}
+                className="w-full mt-2 py-3 rounded-lg flex items-center justify-center gap-2 hover:bg-background/10 transition-colors border border-background/15"
+              >
                 <PlusCircle size={14} className="text-gc-orange" />
                 <span className="text-[10px] font-condensed font-bold uppercase tracking-widest text-background/70">Add Strategic Owner</span>
               </button>

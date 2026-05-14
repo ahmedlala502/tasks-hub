@@ -25,7 +25,8 @@ import { cn } from '../utils';
 import { dataService } from '../services/dataService';
 import { notify } from '../services/notificationService';
 import { CampaignInfluencer } from '../types';
-import { exportInfluencers, readSpreadsheet, rowsToInfluencers } from '../services/spreadsheetService';
+import { exportInfluencers, rowsToInfluencers } from '../services/spreadsheetService';
+import { BulkUploadButton } from '../components/BulkUploadDialog';
 
 export default function InfluencerList() {
   const navigate = useNavigate();
@@ -139,18 +140,11 @@ export default function InfluencerList() {
     }, 800);
   };
 
-  const handleBulkUpload = async (file?: File) => {
-    if (!file) return;
-    try {
-      const rows = await readSpreadsheet(file);
-      const imported = rowsToInfluencers(rows);
-      const updated = dataService.addInfluencers(imported);
-      setInfluencers(updated);
-      setBulkMessage(`${imported.length} influencers imported from ${file.name}`);
-    } catch (error) {
-      console.error(error);
-      setBulkMessage('Import failed. Check your CSV/XLSX columns and try again.');
-    }
+  const commitInfluencers = async (items: CampaignInfluencer[]) => {
+    const { influencers: next, inserted, updated } = dataService.upsertInfluencers(items);
+    setInfluencers(next);
+    setBulkMessage(`${inserted} added, ${updated} updated.`);
+    return { inserted, updated };
   };
 
   const handleRecruitInfluencer = () => {
@@ -327,16 +321,19 @@ export default function InfluencerList() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:bg-card dark:text-gray-300 dark:hover:bg-gray-800">
-            <Upload size={15} />
-            Import
-            <input
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="hidden"
-              onChange={(event) => handleBulkUpload(event.target.files?.[0])}
-            />
-          </label>
+          <BulkUploadButton<CampaignInfluencer>
+            label="Import"
+            title="Bulk Import Influencers"
+            templateHeaders={['id','campaignId','influencerId','username','platform','status','city','country','niche','followerRange','ownerId']}
+            parse={rowsToInfluencers}
+            validate={i => {
+              const errs: string[] = [];
+              if (!i.username) errs.push('Missing username');
+              if (!i.campaignId) errs.push('Missing campaignId');
+              return errs;
+            }}
+            commit={commitInfluencers}
+          />
           <button
             onClick={() => exportInfluencers(sortedInfluencers)}
             className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-3 py-2 text-xs font-bold text-white hover:bg-gc-orange/90"

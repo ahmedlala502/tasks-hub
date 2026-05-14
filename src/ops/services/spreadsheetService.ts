@@ -4,7 +4,17 @@
  */
 
 import { CampaignStage } from '../constants';
-import { Campaign, CampaignInfluencer } from '../types';
+import { Campaign, CampaignInfluencer, Task } from '../types';
+
+export interface UserImportRow {
+  email: string;
+  name: string;
+  password: string;
+  role: 'master' | 'operations' | 'community';
+  office?: 'Egypt' | 'KSA' | 'UAE' | 'Kuwait';
+  department?: string;
+  title?: string;
+}
 
 type Row = Record<string, any>;
 
@@ -123,6 +133,54 @@ export function rowsToInfluencers(rows: Row[]): CampaignInfluencer[] {
     updatedAt: now(),
     createdBy: 'bulk-upload',
   }));
+}
+
+export function rowsToTasks(rows: Row[]): Task[] {
+  return rows.map((row, index): Task => {
+    const dueRaw = text(pick(row, ['dueDate', 'due date', 'deadline']));
+    const dueDate = (() => {
+      if (!dueRaw) return Date.now() + 7 * 86400_000;
+      const parsed = new Date(dueRaw);
+      return Number.isFinite(parsed.getTime()) ? parsed.getTime() : Date.now() + 7 * 86400_000;
+    })();
+    return {
+      id: text(pick(row, ['id', 'task id']), `T-BULK-${now()}-${index + 1}`),
+      title: text(pick(row, ['title', 'task', 'name']), `Imported Task ${index + 1}`),
+      description: text(pick(row, ['description', 'details']), ''),
+      ownerId: text(pick(row, ['ownerId', 'owner', 'assignee']), 'Ops'),
+      dueDate,
+      campaignId: text(pick(row, ['campaignId', 'campaign id', 'campaign']), ''),
+      priority: normalizeValue(pick(row, ['priority']), ['Low', 'Medium', 'High', 'Critical'], 'Medium'),
+      completed: bool(pick(row, ['completed', 'done'])),
+      status: normalizeValue<'Pending' | 'In Progress' | 'Blocked' | 'Done'>(pick(row, ['status']), ['Pending', 'In Progress', 'Blocked', 'Done'], 'Pending'),
+      department: text(pick(row, ['department']), ''),
+      category: text(pick(row, ['category']), ''),
+      createdAt: now(),
+      updatedAt: now(),
+      createdBy: 'bulk-upload',
+    };
+  });
+}
+
+export function rowsToUsers(rows: Row[]): UserImportRow[] {
+  return rows.map((row, index) => {
+    const role = String(pick(row, ['role'], 'operations')).trim().toLowerCase();
+    const normalizedRole: UserImportRow['role'] =
+      role === 'master' || role === 'community' || role === 'operations' ? role : 'operations';
+    const office = String(pick(row, ['office', 'hub'], '')).trim();
+    const normalizedOffice = (['Egypt', 'KSA', 'UAE', 'Kuwait'] as const).find(
+      o => o.toLowerCase() === office.toLowerCase(),
+    );
+    return {
+      email: text(pick(row, ['email', 'username'])).toLowerCase(),
+      name: text(pick(row, ['name', 'display name', 'full name']), `Imported User ${index + 1}`),
+      password: text(pick(row, ['password', 'initial password']), ''),
+      role: normalizedRole,
+      office: normalizedOffice,
+      department: text(pick(row, ['department']), '') || undefined,
+      title: text(pick(row, ['title', 'job title']), '') || undefined,
+    };
+  });
 }
 
 export async function exportRows(filename: string, rows: Row[]) {

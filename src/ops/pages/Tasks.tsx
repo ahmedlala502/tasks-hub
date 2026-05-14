@@ -43,6 +43,8 @@ import { cn } from '../utils';
 import { dataService, TEAM_MEMBERS } from '../services/dataService';
 import { notify } from '../services/notificationService';
 import { Task } from '../types';
+import { BulkUploadButton } from '../components/BulkUploadDialog';
+import { rowsToTasks } from '../services/spreadsheetService';
 
 const PRIORITIES: Task['priority'][] = ['Low', 'Medium', 'High', 'Critical'];
 const ONE_DAY = 86400000;
@@ -293,6 +295,23 @@ export default function TasksCenter() {
           >
             <Plus size={16} /> New Task
           </button>
+          <BulkUploadButton<Task>
+            title="Bulk Import Tasks"
+            templateHeaders={['id','title','description','ownerId','dueDate','campaignId','priority','status','department','category']}
+            parse={rowsToTasks}
+            validate={t => {
+              const errs: string[] = [];
+              if (!t.title) errs.push('Missing title');
+              if (!t.ownerId) errs.push('Missing ownerId');
+              return errs;
+            }}
+            commit={async items => {
+              const { inserted, updated } = dataService.upsertTasks(items);
+              refreshTasks();
+              notify('Tasks Imported', `${inserted} added, ${updated} updated.`, 'green', '/tasks');
+              return { inserted, updated };
+            }}
+          />
         </div>
       </div>
 

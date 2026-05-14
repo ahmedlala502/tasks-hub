@@ -28,6 +28,8 @@ import { dataService, exportAllData, importAllData, downloadJson } from '../serv
 import { useAuth } from '../App';
 import { OPS_OFFICES, type OpsOffice, type OpsRole } from '../auth/types';
 import { adminApi } from '../services/adminApi';
+import { BulkUploadButton } from '../components/BulkUploadDialog';
+import { rowsToUsers, type UserImportRow } from '../services/spreadsheetService';
 import { DEFAULT_ACCESS_PASSWORD, DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
 
 type AdminRole = 'Master' | 'Operations' | 'Community';
@@ -504,6 +506,49 @@ export default function Admin() {
                 >
                   <Key size={14} /> {generatingAccess ? 'Generating...' : 'Generate Access'}
                 </button>
+                <BulkUploadButton<UserImportRow>
+                  label="Bulk Upload"
+                  title="Bulk Import Users"
+                  templateHeaders={['email','name','password','role','office','department','title']}
+                  parse={rowsToUsers}
+                  validate={u => {
+                    const errs: string[] = [];
+                    if (!u.email || !/.+@.+\..+/.test(u.email)) errs.push('Invalid email');
+                    if (!u.name) errs.push('Missing name');
+                    if (!u.password || u.password.length < 8) errs.push('Password must be 8+ chars');
+                    return errs;
+                  }}
+                  commit={async items => {
+                    let inserted = 0;
+                    const errors: string[] = [];
+                    for (const u of items) {
+                      try {
+                        await adminApi.createUser({
+                          email: u.email,
+                          name: u.name,
+                          password: u.password,
+                          role: u.role,
+                          office: u.office ?? 'Egypt',
+                          department: u.department as any,
+                          title: u.title,
+                        });
+                        inserted++;
+                      } catch (err) {
+                        errors.push(`${u.email}: ${err instanceof Error ? err.message : 'failed'}`);
+                      }
+                    }
+                    try {
+                      const latest = await adminApi.listUsers();
+                      setUsers(latest.map(mapApiUserToAdminUser));
+                    } catch {
+                      /* refresh failed; UI will re-sync on next page load */
+                    }
+                    if (errors.length > 0) {
+                      console.warn('Bulk user import errors', errors);
+                    }
+                    return { inserted, updated: 0 };
+                  }}
+                />
               </div>
             </div>
 
