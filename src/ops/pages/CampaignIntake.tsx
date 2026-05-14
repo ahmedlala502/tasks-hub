@@ -7,6 +7,7 @@ import { Campaign } from '../types';
 import { dataService } from '../services/dataService';
 import { notify } from '../services/notificationService';
 import { adminApi } from '../services/adminApi';
+import { opsCampaignsService } from '../services/opsCampaignsService';
 import { useAuth } from '../App';
 import type { OpsUser } from '../auth/types';
 
@@ -26,6 +27,7 @@ export default function CampaignIntake() {
   const { user } = useAuth();
   const [employees, setEmployees] = useState<OpsUser[]>([]);
   const [strategicOwners, setStrategicOwners] = useState<string[]>(['']);
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<Campaign>>({
     stage: CampaignStage.INTAKE,
     status: 'Active',
@@ -66,8 +68,9 @@ export default function CampaignIntake() {
     }));
   };
 
-  const handleDeploy = () => {
-    if (!isValid) return;
+  const handleDeploy = async () => {
+    if (!isValid || saving) return;
+    setSaving(true);
     const ownerNames = strategicOwners.map(s => s.trim()).filter(Boolean);
     const creatorName = user?.displayName || user?.email || 'admin';
     const newCampaign: Campaign = {
@@ -81,9 +84,19 @@ export default function CampaignIntake() {
       currentOwner: ownerNames[0] || creatorName,
       nextAction: 'Validate campaign data',
     };
-    dataService.addCampaign(newCampaign);
-    notify('Campaign Created', `"${newCampaign.name}" added to the registry`, 'green', '/campaigns');
-    navigate('/campaigns');
+    try {
+      await opsCampaignsService.create(newCampaign);
+      dataService.addCampaign(newCampaign);
+      notify('Campaign Created Online', `"${newCampaign.name}" added for the team`, 'green', '/campaigns');
+      navigate('/campaigns');
+    } catch (error) {
+      console.error(error);
+      dataService.addCampaign(newCampaign);
+      notify('Campaign Saved Locally', `"${newCampaign.name}" saved here, but online sync failed`, 'red', '/campaigns');
+      navigate('/campaigns');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const inputClass = "w-full px-4 py-3 bg-background border border-border rounded-lg text-[13px] font-medium text-foreground outline-none focus:ring-2 focus:ring-gc-orange/30 focus:border-gc-orange transition-all placeholder:text-muted-foreground/40";
@@ -107,10 +120,10 @@ export default function CampaignIntake() {
           </button>
           <button
             onClick={handleDeploy}
-            disabled={!isValid}
+            disabled={!isValid || saving}
             className="px-5 py-2.5 text-[11px] font-condensed font-bold uppercase tracking-widest bg-gc-orange text-white rounded-lg hover:bg-gc-orange/90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 transition-all shadow-sm group"
           >
-            Deploy Mission
+            {saving ? 'Publishing...' : 'Deploy Mission'}
             <ArrowRight size={14} className="group-hover:translate-x-0.5 transition-transform" />
           </button>
         </div>

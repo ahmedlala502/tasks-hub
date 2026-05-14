@@ -45,6 +45,59 @@ export type Database = {
         }
         Relationships: []
       }
+      ops_campaigns: {
+        Row: {
+          city: string
+          country: string
+          created_at: string
+          created_by: string | null
+          current_owner: string
+          id: string
+          name: string
+          payload: Json
+          record_health: string
+          stage: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          city?: string
+          country?: string
+          created_at?: string
+          created_by?: string | null
+          current_owner?: string
+          id: string
+          name: string
+          payload?: Json
+          record_health?: string
+          stage?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          city?: string
+          country?: string
+          created_at?: string
+          created_by?: string | null
+          current_owner?: string
+          id?: string
+          name?: string
+          payload?: Json
+          record_health?: string
+          stage?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ops_campaigns_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ops_updates: {
         Row: {
           active: boolean

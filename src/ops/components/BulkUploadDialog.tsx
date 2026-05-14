@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Upload, X, CheckCircle2, AlertCircle, FileSpreadsheet } from 'lucide-react';
+import { Download, Upload, X, CheckCircle2, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import { useAuth } from '../App';
 import { readSpreadsheet } from '../services/spreadsheetService';
 
@@ -71,6 +71,7 @@ function BulkUploadDialog<T>({
   const [preview, setPreview] = useState<PreviewRow<T>[]>([]);
   const [error, setError] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [result, setResult] = useState<{ inserted: number; updated: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -121,7 +122,27 @@ function BulkUploadDialog<T>({
   };
 
   const downloadTemplate = () => {
-    const csv = templateHeaders.join(',') + '\n';
+    const sampleValues = templateHeaders.map((header) => {
+      const key = header.toLowerCase();
+      if (key === 'id') return 'C-BULK-001';
+      if (key === 'name') return 'Ramadan Launch KSA';
+      if (key === 'country') return 'KSA';
+      if (key === 'city') return 'Riyadh';
+      if (key === 'platforms') return 'Instagram; TikTok';
+      if (key === 'type') return 'Influencer Marketing';
+      if (key === 'budget') return '50000';
+      if (key === 'budgettype') return 'SAR';
+      if (key === 'targetinfluencers') return '25';
+      if (key === 'targetpostingcoverage') return '50';
+      if (key === 'startdate') return '2026-06-01';
+      if (key === 'enddate') return '2026-06-30';
+      if (key === 'status') return 'Active';
+      if (key === 'stage') return '1';
+      if (key === 'currentowner') return 'Operations Lead';
+      if (key === 'objective') return 'Brand Awareness';
+      return '';
+    });
+    const csv = `${templateHeaders.join(',')}\n${sampleValues.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')}\n`;
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -147,27 +168,49 @@ function BulkUploadDialog<T>({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-foreground hover:bg-accent">
-              <Upload size={14} />
-              {fileName ? 'Choose another file' : 'Choose CSV or XLSX file'}
-              <input
-                ref={inputRef}
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                className="hidden"
-                onChange={e => onFile(e.target.files?.[0])}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={downloadTemplate}
-              className="text-xs font-bold uppercase tracking-wide text-gc-orange hover:underline"
-            >
-              Download CSV template
-            </button>
+          <div
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              onFile(event.dataTransfer.files?.[0]);
+            }}
+            className={`rounded-xl border border-dashed p-5 transition-colors ${
+              dragging ? 'border-gc-orange bg-gc-orange/10' : 'border-border bg-background'
+            }`}
+          >
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-black text-foreground">Drop a CSV or Excel file here</p>
+                <p className="mt-1 text-xs text-muted-foreground">Rows are previewed first. Only clean rows are imported.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-foreground hover:bg-accent">
+                  <Upload size={14} />
+                  {fileName ? 'Choose another' : 'Choose file'}
+                  <input
+                    ref={inputRef}
+                    type="file"
+                    accept=".csv,.xlsx,.xls"
+                    className="hidden"
+                    onChange={e => onFile(e.target.files?.[0])}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={downloadTemplate}
+                  className="inline-flex items-center gap-2 rounded-lg border border-gc-orange/30 bg-gc-orange/10 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-gc-orange hover:bg-gc-orange/15"
+                >
+                  <Download size={14} /> Template
+                </button>
+              </div>
+            </div>
             {fileName && (
-              <span className="text-xs text-muted-foreground truncate max-w-xs">
+              <span className="mt-3 block truncate text-xs font-semibold text-muted-foreground">
                 {fileName}
               </span>
             )}

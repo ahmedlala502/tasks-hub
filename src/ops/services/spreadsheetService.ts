@@ -26,6 +26,13 @@ const num = (value: any, fallback = 0) => {
 };
 const bool = (value: any) => ['true', 'yes', '1', 'y'].includes(String(value ?? '').toLowerCase());
 const list = (value: any) => text(value).split(/[;,|]/).map((item) => item.trim()).filter(Boolean);
+const asDateText = (value: any, fallback = new Date().toISOString().slice(0, 10)) => {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const raw = text(value);
+  if (!raw) return fallback;
+  const parsed = new Date(raw);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : raw;
+};
 
 function pick(row: Row, keys: string[], fallback = '') {
   const normalized = Object.fromEntries(Object.entries(row).map(([key, value]) => [key.toLowerCase().trim(), value]));
@@ -67,23 +74,39 @@ export async function readSpreadsheet(file: File): Promise<Row[]> {
 export function rowsToCampaigns(rows: Row[]): Campaign[] {
   return rows.map((row, index) => {
     const id = text(pick(row, ['id', 'campaign id', 'reference']), `C-BULK-${now()}-${index + 1}`);
+    const totalList = num(pick(row, ['total list', 'list size', 'total influencers']), 0);
+    const confirmations = num(pick(row, ['confirmations', 'confirmation']), 0);
+    const target = num(pick(row, ['target', 'targetInfluencers', 'target influencers']), 0);
+    const visited = num(pick(row, ['visited', 'visits']), 0);
+    const coverage = num(pick(row, ['coverage', 'covered']), 0);
+    const approved = num(pick(row, ['approved', 'approval']), 0);
+    const rejected = num(pick(row, ['reject', 'rejected']), 0);
+    const targetRate = num(pick(row, ['% of target', 'target rate', 'target %']), 0);
+    const confirmationRate = num(pick(row, ['conf rate %', 'confirmation rate', 'confirmation rate %']), 0);
+    const coverageRate = num(pick(row, ['cov rate %', 'coverage rate', 'coverage rate %']), 0);
+    const defaultCountry = text(pick(row, ['country', 'market']), 'KSA');
+    const defaultCity = defaultCountry.toLowerCase().includes('uae')
+      ? 'Dubai'
+      : defaultCountry.toLowerCase().includes('kuwait')
+        ? 'Kuwait City'
+        : 'Riyadh';
     return {
       id,
       name: text(pick(row, ['name', 'campaign', 'campaign name']), `Imported Campaign ${index + 1}`),
       clientId: text(pick(row, ['clientId', 'client id', 'client']), 'bulk-client'),
       brandId: text(pick(row, ['brandId', 'brand id', 'brand']), 'bulk-brand'),
-      country: text(pick(row, ['country', 'market']), 'KSA'),
-      city: text(pick(row, ['city']), 'Riyadh'),
-      objective: text(pick(row, ['objective']), 'Brand Awareness'),
-      platforms: list(pick(row, ['platforms', 'platform'])) || ['Instagram'],
+      country: defaultCountry,
+      city: text(pick(row, ['city']), defaultCity),
+      objective: text(pick(row, ['objective']), 'Imported campaign tracker'),
+      platforms: list(pick(row, ['platforms', 'platform'])).length ? list(pick(row, ['platforms', 'platform'])) : ['Instagram'],
       type: text(pick(row, ['type', 'campaign type']), 'Influencer Marketing'),
       budget: num(pick(row, ['budget']), 0),
       budgetType: text(pick(row, ['budgetType', 'budget type', 'currency']), 'USD'),
-      targetInfluencers: num(pick(row, ['targetInfluencers', 'target influencers']), 0),
-      targetPostingCoverage: num(pick(row, ['targetPostingCoverage', 'target coverage', 'coverage target']), 0),
-      startDate: text(pick(row, ['startDate', 'start date']), new Date().toISOString().slice(0, 10)),
-      endDate: text(pick(row, ['endDate', 'end date']), new Date().toISOString().slice(0, 10)),
-      deliverables: text(pick(row, ['deliverables']), ''),
+      targetInfluencers: totalList || target || num(pick(row, ['targetInfluencers', 'target influencers']), 0),
+      targetPostingCoverage: target || num(pick(row, ['targetPostingCoverage', 'target coverage', 'coverage target']), coverage),
+      startDate: asDateText(pick(row, ['startDate', 'start date'])),
+      endDate: asDateText(pick(row, ['endDate', 'end date'])),
+      deliverables: text(pick(row, ['deliverables']), `Target ${target || 0}; confirmations ${confirmations}; visits ${visited}; coverage ${coverage}; approved ${approved}; rejected ${rejected}`),
       tags: text(pick(row, ['tags', 'hashtags']), ''),
       mentions: text(pick(row, ['mentions']), ''),
       links: text(pick(row, ['links', 'url']), ''),
@@ -96,7 +119,10 @@ export function rowsToCampaigns(rows: Row[]): Campaign[] {
       clientOwners: list(pick(row, ['clientOwners', 'client owners'])) || [],
       influencerCriteria: text(pick(row, ['influencerCriteria', 'criteria']), ''),
       currentOwner: text(pick(row, ['currentOwner', 'current owner', 'owner']), 'Ops'),
-      nextAction: text(pick(row, ['nextAction', 'next action']), 'Review imported record'),
+      nextAction: text(
+        pick(row, ['nextAction', 'next action']),
+        `Review tracker metrics: ${targetRate}% target, ${confirmationRate}% confirmations, ${coverageRate}% coverage`,
+      ),
       stage: num(pick(row, ['stage']), CampaignStage.INTAKE) as CampaignStage,
       status: normalizeValue(pick(row, ['status']), ['Active', 'Blocked', 'Closed', 'On Hold'], 'Active'),
       recordHealth: normalizeValue(pick(row, ['recordHealth', 'health']), ['Healthy', 'At Risk', 'Critical'], 'Healthy'),

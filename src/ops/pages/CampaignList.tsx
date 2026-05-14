@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useState } from 'react';
-import { ChevronDown, Download, Edit3, FolderKanban, Plus, Save, Search, Trash2, Upload, X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, Cloud, Download, Edit3, FileSpreadsheet, FolderKanban, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { CampaignStage, STAGE_NAMES } from '../constants';
@@ -14,6 +14,7 @@ import { buildAssignmentOptions } from '../lib/assignmentOptions';
 import { buildMyCampaignMatrix, getOperationalTaskStatus } from '../lib/opsPageInsights';
 import { dataService, TEAM_MEMBERS } from '../services/dataService';
 import { notify } from '../services/notificationService';
+import { opsCampaignsService } from '../services/opsCampaignsService';
 import { exportCampaigns, rowsToCampaigns } from '../services/spreadsheetService';
 import { BulkUploadButton } from '../components/BulkUploadDialog';
 
@@ -60,6 +61,7 @@ export default function CampaignList() {
   const [taskDraft, setTaskDraft] = useState<CampaignTaskDraft | null>(null);
   const [confirmDeleteCampaign, setConfirmDeleteCampaign] = useState<string | null>(null);
   const [bulkMessage, setBulkMessage] = useState('');
+  const [onlineStatus, setOnlineStatus] = useState<'loading' | 'ready' | 'offline'>('loading');
 
   const assignmentOptions = useMemo(() => buildAssignmentOptions({
     users: TEAM_MEMBERS,
@@ -76,6 +78,28 @@ export default function CampaignList() {
   const matrix = useMemo(() => buildMyCampaignMatrix(filteredCampaigns, tasks), [filteredCampaigns, tasks]);
   const openTasks = tasks.filter((task) => getOperationalTaskStatus(task) !== 'Done').length;
   const blockedTasks = tasks.filter((task) => getOperationalTaskStatus(task) === 'Blocked').length;
+
+  useEffect(() => {
+    let alive = true;
+    opsCampaignsService
+      .list()
+      .then((onlineCampaigns) => {
+        if (!alive) return;
+        if (onlineCampaigns.length) {
+          dataService.upsertCampaigns(onlineCampaigns);
+          setCampaigns(onlineCampaigns);
+        }
+        setOnlineStatus('ready');
+      })
+      .catch((error) => {
+        console.error('Online campaigns failed to load', error);
+        if (alive) setOnlineStatus('offline');
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const toggleExpanded = (campaignId: string) => {
     setExpanded((current) => {
@@ -161,18 +185,29 @@ export default function CampaignList() {
     notify('Campaign Task Deleted', `"${task.title}" removed`, 'red', '/campaigns');
   };
 
-  const deleteCampaign = (campaign: Campaign) => {
+  const deleteCampaign = async (campaign: Campaign) => {
     if (!isMaster) return;
-    setCampaigns(dataService.deleteCampaign(campaign.id));
+    const localCampaigns = dataService.deleteCampaign(campaign.id);
+    setCampaigns(localCampaigns);
     setConfirmDeleteCampaign(null);
-    notify('Campaign Deleted', `"${campaign.name}" removed`, 'red', '/campaigns');
+    try {
+      const onlineCampaigns = await opsCampaignsService.remove(campaign.id);
+      setCampaigns(onlineCampaigns);
+      dataService.upsertCampaigns(onlineCampaigns);
+      notify('Campaign Deleted', `"${campaign.name}" removed online`, 'red', '/campaigns');
+    } catch (error) {
+      console.error(error);
+      notify('Campaign Deleted Locally', `"${campaign.name}" was removed here, but online sync failed`, 'red', '/campaigns');
+    }
   };
 
   const commitCampaigns = async (items: Campaign[]) => {
-    const { campaigns: next, inserted, updated } = dataService.upsertCampaigns(items);
+    const { campaigns: next, inserted, updated } = await opsCampaignsService.upsert(items);
+    dataService.upsertCampaigns(next);
     setCampaigns(next);
+    setOnlineStatus('ready');
     setBulkMessage(`${inserted} added, ${updated} updated.`);
-    notify('Campaigns Imported', `${inserted} added, ${updated} updated.`, 'green', '/campaigns');
+    notify('Campaigns Imported Online', `${inserted} added, ${updated} updated.`, 'green', '/campaigns');
     return { inserted, updated };
   };
 
@@ -185,9 +220,21 @@ export default function CampaignList() {
             <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Campaign Execution Buckets</h2>
             <p className="mt-1 text-sm text-muted-foreground">Expandable campaign buckets with PMO-style task lanes, assignment, status, edits, and master-only delete.</p>
           </div>
-          <button onClick={() => navigate('/campaigns/new')} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-gc-orange/90">
-            <Plus size={16} /> New campaign
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={cn(
+              'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-black uppercase tracking-wide',
+              onlineStatus === 'ready'
+                ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700'
+                : onlineStatus === 'offline'
+                  ? 'border-red-500/20 bg-red-500/10 text-red-700'
+                  : 'border-border bg-muted text-muted-foreground',
+            )}>
+              <Cloud size={14} /> {onlineStatus === 'ready' ? 'Online sync' : onlineStatus === 'offline' ? 'Sync issue' : 'Syncing'}
+            </span>
+            <button onClick={() => navigate('/campaigns/new')} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-gc-orange/90">
+              <Plus size={16} /> New campaign
+            </button>
+          </div>
         </div>
       </section>
 
@@ -199,6 +246,32 @@ export default function CampaignList() {
       </div>
 
       <section className="rounded-xl border border-border bg-card p-4">
+        <div className="mb-4 flex flex-col gap-3 rounded-xl border border-gc-orange/20 bg-gc-orange/5 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gc-orange text-white">
+              <FileSpreadsheet size={18} />
+            </div>
+            <div>
+              <p className="text-sm font-black text-foreground">Bulk upload campaigns online</p>
+              <p className="mt-1 text-xs text-muted-foreground">Upload CSV or Excel, preview every row, fix rejected rows, then publish to Supabase for the whole team.</p>
+            </div>
+          </div>
+          <BulkUploadButton<Campaign>
+            label="Bulk upload"
+            title="Bulk Import Campaigns"
+            templateHeaders={['id','name','clientId','brandId','country','city','objective','platforms','type','budget','budgetType','targetInfluencers','targetPostingCoverage','startDate','endDate','status','stage','currentOwner','deliverables','tags','mentions','productDetails','influencerCriteria']}
+            parse={rowsToCampaigns}
+            validate={c => {
+              const errs: string[] = [];
+              if (!c.name) errs.push('Missing name');
+              if (!c.country) errs.push('Missing country');
+              if (!c.startDate) errs.push('Missing start date');
+              if (!c.endDate) errs.push('Missing end date');
+              return errs;
+            }}
+            commit={commitCampaigns}
+          />
+        </div>
         <div className="grid gap-3 lg:grid-cols-[1fr_15rem_auto]">
           <div className="relative">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -209,19 +282,6 @@ export default function CampaignList() {
             {Object.entries(STAGE_NAMES).map(([key, label]) => <option key={key} value={key}>{key}. {label}</option>)}
           </select>
           <div className="flex flex-wrap gap-2">
-            <BulkUploadButton<Campaign>
-              label="Import"
-              title="Bulk Import Campaigns"
-              templateHeaders={['id','name','clientId','brandId','country','city','objective','platforms','type','budget','budgetType','targetInfluencers','targetPostingCoverage','startDate','endDate','status','stage','currentOwner']}
-              parse={rowsToCampaigns}
-              validate={c => {
-                const errs: string[] = [];
-                if (!c.name) errs.push('Missing name');
-                if (!c.country) errs.push('Missing country');
-                return errs;
-              }}
-              commit={commitCampaigns}
-            />
             <button onClick={() => exportCampaigns(filteredCampaigns)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">
               <Download size={15} /> Export
             </button>
