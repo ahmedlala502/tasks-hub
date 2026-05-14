@@ -19,7 +19,22 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ?? '';
 const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const bootstrapMasterEmail = (Deno.env.get('MASTER_ADMIN_EMAIL') ?? 'admin@trygc.com').trim().toLowerCase();
+const defaultMasterEmails = [
+  'admin@trygc.com',
+  'lamiaa@trygc.com',
+  'adel@grand-community.com',
+  'sabry@trygc.com',
+  'a.ismail@trygc.com',
+];
+const configuredMasterEmails = [
+  Deno.env.get('MASTER_ADMIN_EMAIL'),
+  Deno.env.get('MASTER_ADMIN_EMAILS'),
+]
+  .filter(Boolean)
+  .flatMap((value) => String(value).split(','))
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
+const masterEmails = new Set([...defaultMasterEmails, ...configuredMasterEmails]);
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -74,7 +89,7 @@ function mapUser(user: {
 }) {
   const email = user.email ?? '';
   const metadataRole = normalizeRole(user.app_metadata?.role);
-  const effectiveRole = email.toLowerCase() === bootstrapMasterEmail ? 'master' : metadataRole;
+  const effectiveRole = masterEmails.has(email.toLowerCase()) ? 'master' : metadataRole;
   const displayName =
     String(
       user.user_metadata?.display_name ??
@@ -131,7 +146,7 @@ async function requireMaster(request: Request) {
 
   const callerRole = normalizeRole(user.app_metadata?.role);
   const callerEmail = (user.email ?? '').toLowerCase();
-  if (callerRole !== 'master' && callerEmail !== bootstrapMasterEmail) {
+  if (callerRole !== 'master' && !masterEmails.has(callerEmail)) {
     throw new Error('Only master users can manage workspace accounts.');
   }
 

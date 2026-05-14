@@ -6,7 +6,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
-  AlertTriangle,
   Archive,
   CheckCircle2,
   ChevronRight,
@@ -22,7 +21,6 @@ import {
   SlidersHorizontal,
   ToggleLeft,
   ToggleRight,
-  Trash2,
   Upload,
   Users,
 } from 'lucide-react';
@@ -386,20 +384,6 @@ export default function Admin() {
 
   const refreshDataCounts = () => setDataCounts(getDataCounts());
 
-  const bulkRemove = (label: string, count: number, remove: () => void) => {
-    if (count === 0) {
-      setSavedAt(`${label} already empty`);
-      return;
-    }
-
-    const confirmed = window.confirm(`Remove all ${count} ${label.toLowerCase()} records? This only runs from Admin and cannot be undone.`);
-    if (!confirmed) return;
-
-    remove();
-    refreshDataCounts();
-    setSavedAt(`${label} removed`);
-  };
-
   const grantFullAccess = () => {
     setUsers(prev => prev.map(user => ({ ...user, access: 'Full', status: 'Active' })));
     setPolicies(prev => prev.map(policy => ({ ...policy, enabled: true })));
@@ -747,30 +731,26 @@ export default function Admin() {
             </div>
           </section>
 
-          <section className="bg-card border border-red-200 rounded-xl p-5 space-y-4">
+          <section className="bg-card border border-emerald-200 rounded-xl p-5 space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-widest text-red-600">Admin Only</p>
-                <h3 className="font-condensed font-extrabold text-[17px] text-foreground">Bulk Remove Records</h3>
-                <p className="mt-1 text-[10.5px] font-semibold text-muted-foreground">Clear module data from one place without adding delete controls to operational pages.</p>
+                <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-600">Data Guard</p>
+                <h3 className="font-condensed font-extrabold text-[17px] text-foreground">Workspace Records Protected</h3>
+                <p className="mt-1 text-[10.5px] font-semibold text-muted-foreground">Bulk removal controls are locked while the live team is operating.</p>
               </div>
-              <AlertTriangle size={18} className="shrink-0 text-red-600" />
+              <Database size={18} className="shrink-0 text-emerald-600" />
             </div>
 
-            <div className="grid grid-cols-1 gap-2">
-              <RemoveButton label="Campaigns" count={dataCounts.campaigns} onClick={() => bulkRemove('Campaigns', dataCounts.campaigns, dataService.clearCampaigns)} />
-              <RemoveButton label="Influencers" count={dataCounts.influencers} onClick={() => bulkRemove('Influencers', dataCounts.influencers, dataService.clearInfluencers)} />
-              <RemoveButton label="Blockers" count={dataCounts.blockers} onClick={() => bulkRemove('Blockers', dataCounts.blockers, dataService.clearBlockers)} />
-              <RemoveButton label="Tasks" count={dataCounts.tasks} onClick={() => bulkRemove('Tasks', dataCounts.tasks, dataService.clearTasks)} />
+            <div className="grid grid-cols-2 gap-2">
+              <DataGuardMetric label="Campaigns" value={dataCounts.campaigns} />
+              <DataGuardMetric label="Influencers" value={dataCounts.influencers} />
+              <DataGuardMetric label="Blockers" value={dataCounts.blockers} />
+              <DataGuardMetric label="Tasks" value={dataCounts.tasks} />
             </div>
 
-            <button
-              onClick={() => bulkRemove('Workspace data', dataCounts.campaigns + dataCounts.influencers + dataCounts.blockers + dataCounts.tasks, dataService.clearWorkspaceData)}
-              className="h-10 w-full rounded-lg border border-red-200 bg-red-50 text-[10px] font-extrabold uppercase tracking-widest text-red-700 hover:bg-red-100 transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={dataCounts.campaigns + dataCounts.influencers + dataCounts.blockers + dataCounts.tasks === 0}
-            >
-              <Trash2 size={13} /> Remove All Workspace Data
-            </button>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10.5px] font-bold text-emerald-800">
+              Export and backup are still available; destructive bulk actions are intentionally hidden.
+            </div>
           </section>
 
           <section className="bg-card border border-border rounded-xl p-5 space-y-4">
@@ -878,20 +858,11 @@ function ActionButton({ icon, label, onClick }: { icon: React.ReactNode; label: 
   );
 }
 
-function RemoveButton({ label, count, onClick }: { label: string; count: number; onClick: () => void }) {
+function DataGuardMetric({ label, value }: { label: string; value: number }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={count === 0}
-      className="h-10 rounded-lg border border-border bg-background px-3 text-left text-foreground hover:border-red-300 hover:text-red-700 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <span className="flex items-center justify-between gap-3">
-        <span className="flex min-w-0 items-center gap-2">
-          <Trash2 size={13} className="shrink-0 text-red-600" />
-          <span className="truncate text-[10px] font-extrabold uppercase tracking-widest">Remove {label}</span>
-        </span>
-        <span className="rounded-md bg-secondary px-2 py-1 text-[10px] font-black tabular-nums text-muted-foreground">{count}</span>
-      </span>
-    </button>
+    <div className="rounded-lg border border-border bg-background p-3">
+      <p className="text-[9.5px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</p>
+      <p className="mt-1 font-condensed text-[20px] font-black text-foreground">{value}</p>
+    </div>
   );
 }

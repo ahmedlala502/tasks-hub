@@ -23,7 +23,7 @@ function getProfileText(user: User, key: string, fallback: string): string {
 
 export function mapSupabaseUser(user: User): OpsUser {
   const fallbackRole = user.email?.trim().toLowerCase() === DEFAULT_MASTER_EMAIL ? 'master' : 'operations';
-  const role = getRoleFromMetadata(user.app_metadata?.role ?? fallbackRole);
+  const role = getRoleFromMetadata(user.app_metadata?.role ?? user.user_metadata?.role ?? fallbackRole);
   const status = user.banned_until ? 'suspended' : 'active';
   const department = getDepartmentFromMetadata(user.user_metadata?.department);
   const displayName = getDisplayName(user);
