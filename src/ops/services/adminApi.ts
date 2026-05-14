@@ -196,7 +196,7 @@ export const adminApi = {
     }
   },
 
-  async updateUser(payload: { id: string; name?: string; role?: OpsRole; status?: 'active' | 'suspended'; office?: OpsOffice; department?: OpsDepartment; title?: string }) {
+  async updateUser(payload: { id: string; name?: string; password?: string; role?: OpsRole; status?: 'active' | 'suspended'; office?: OpsOffice; department?: OpsDepartment; title?: string }) {
     const user = await invokeFunction<AdminApiUser>('updateUser', payload);
     upsertUserCache(user);
     return user;

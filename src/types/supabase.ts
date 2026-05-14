@@ -45,6 +45,65 @@ export type Database = {
         }
         Relationships: []
       }
+      ops_updates: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          detail: string
+          id: string
+          owner: string
+          pinned: boolean
+          surface_notification: boolean
+          surface_ticker: boolean
+          ticker_direction: string
+          ticker_speed_seconds: number
+          title: string
+          tone: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          detail: string
+          id?: string
+          owner?: string
+          pinned?: boolean
+          surface_notification?: boolean
+          surface_ticker?: boolean
+          ticker_direction?: string
+          ticker_speed_seconds?: number
+          title: string
+          tone?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          detail?: string
+          id?: string
+          owner?: string
+          pinned?: boolean
+          surface_notification?: boolean
+          surface_ticker?: boolean
+          ticker_direction?: string
+          ticker_speed_seconds?: number
+          title?: string
+          tone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ops_updates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trygc: {
         Row: {
           brandName: string | null

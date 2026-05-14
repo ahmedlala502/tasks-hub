@@ -184,18 +184,6 @@ export default function SettingsWorkspace() {
               {activeRoot === 'general' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <EditableField label="Workspace Name" value={settings.workspaceName} onChange={(value) => updateSetting('workspaceName', value)} />
-                  <EditableField label="Pinned Ticker Message" value={settings.pinnedMessage || ''} onChange={(value) => updateSetting('pinnedMessage', value)} />
-                  <label className="block">
-                    <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Ticker Scroll Direction</span>
-                    <select
-                      className="settings-input"
-                      value={settings.tickerDirection || 'left'}
-                      onChange={(event) => updateSetting('tickerDirection', event.target.value)}
-                    >
-                      <option value="left">Right to Left (Default)</option>
-                      <option value="right">Left to Right</option>
-                    </select>
-                  </label>
                   <EditableField label="Default Market" value={settings.defaultMarket} onChange={(value) => updateSetting('defaultMarket', value)} />
                   <EditableField label="Timezone" value={settings.timezone} onChange={(value) => updateSetting('timezone', value)} />
                   <EditableField label="Language Mode" value={settings.language} onChange={(value) => updateSetting('language', value)} />
@@ -444,4 +432,3 @@ function MetricTile({ label, value, detail }: { label: string; value: string; de
 function flipToggle(key: string, setter: React.Dispatch<React.SetStateAction<Record<string, boolean>>>) {
   setter((current) => ({ ...current, [key]: !current[key] }));
 }
-

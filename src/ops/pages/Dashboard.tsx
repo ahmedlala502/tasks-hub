@@ -22,6 +22,7 @@ import { dataService } from '../services/dataService';
 import { Button } from '../components/ui/button';
 import { CampaignStage } from '../constants';
 import { buildUpdatesFeed } from '../lib/opsPageInsights';
+import { opsUpdatesService, toFeedItem, type OpsUpdate } from '../services/opsUpdatesService';
 
 const STAGE_SHORT: Record<number, string> = {
   1: 'Intake', 2: 'Validation', 3: 'Blocked', 4: 'Ready',
@@ -223,18 +224,27 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { role } = useAuth();
 
-  const [pinnedMessage, setPinnedMessage] = React.useState('');
-  const [tickerDirection, setTickerDirection] = React.useState('left');
+  const [onlineUpdates, setOnlineUpdates] = React.useState<OpsUpdate[]>([]);
   React.useEffect(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('trygc-settings') || '{}');
-      if (stored.settings?.pinnedMessage) {
-        setPinnedMessage(stored.settings.pinnedMessage);
+    let mounted = true;
+    const load = async () => {
+      try {
+        const items = await opsUpdatesService.listActive();
+        if (mounted) setOnlineUpdates(items);
+      } catch {
+        if (mounted) setOnlineUpdates([]);
       }
-      if (stored.settings?.tickerDirection) {
-        setTickerDirection(stored.settings.tickerDirection);
-      }
-    } catch {}
+    };
+
+    void load();
+    const interval = window.setInterval(load, 30000);
+    const refresh = () => { void load(); };
+    window.addEventListener('gc-online-updates-refresh', refresh);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+      window.removeEventListener('gc-online-updates-refresh', refresh);
+    };
   }, []);
 
   const campaigns = filterCampaignsByRole(role, dataService.getCampaigns());
@@ -244,17 +254,20 @@ export default function Dashboard() {
   const handovers = filterHandoversByRole(role, dataService.getHandovers());
   const allEvents = buildUpdatesFeed(campaigns, tasks, blockers, handovers);
   const recentEvents = allEvents.slice(0, 8);
-  
-  const pinnedFeedItem: any = pinnedMessage ? {
-    id: 'pinned-message',
-    kind: 'blocker',
-    title: '📌 PINNED ANNOUNCEMENT',
-    detail: pinnedMessage,
-    owner: 'Admin',
+  const onlineTickerUpdates = onlineUpdates.filter((item) => item.surfaceTicker);
+  const tickerEvents = [...onlineTickerUpdates.map(toFeedItem), ...allEvents].slice(0, 15);
+  const visibleTickerEvents = tickerEvents.length > 0 ? tickerEvents : [{
+    id: 'ticker-fallback',
+    kind: 'blocker' as const,
+    title: 'No urgent updates',
+    detail: 'Publish a slider update from the Updates page when there is news to share.',
+    owner: 'Workspace',
     at: Date.now(),
-    tone: 'orange'
-  } : null;
-  const tickerEvents = (pinnedFeedItem ? [pinnedFeedItem, ...allEvents] : allEvents).slice(0, 15);
+    tone: 'green' as const,
+  }];
+  const primaryTickerUpdate = onlineTickerUpdates[0];
+  const tickerDirection = primaryTickerUpdate?.tickerDirection || 'left';
+  const tickerSpeedSeconds = primaryTickerUpdate?.tickerSpeedSeconds || 38;
 
   const activeCampaigns = campaigns.filter(c => c.status === 'Active').length;
   const totalTasks = tasks.length;
@@ -413,24 +426,29 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="w-full bg-card border border-border rounded-xl overflow-hidden shadow-sm flex items-center h-11 relative">
-        <div className="px-4 py-2 bg-gc-orange text-white text-[10px] font-black uppercase tracking-widest z-10 h-full flex items-center shadow-[4px_0_12px_rgba(0,0,0,0.1)] shrink-0">
+      <div className="w-full bg-card border-2 border-gc-orange/30 rounded-xl overflow-hidden shadow-sm flex items-center h-12 relative">
+        <div className="px-4 py-2 bg-gc-orange text-white text-[10px] font-black uppercase tracking-widest z-10 h-full flex items-center shadow-[4px_0_12px_rgba(0,0,0,0.14)] shrink-0">
           Live Feed
         </div>
         <div className="flex-1 overflow-hidden h-full relative flex items-center">
-          <div className={`flex items-center h-full whitespace-nowrap absolute left-0 w-max ${tickerDirection === 'right' ? 'animate-marquee-reverse' : 'animate-marquee'}`}>
-            {[...tickerEvents, ...tickerEvents, ...tickerEvents].map((event, i) => (
+          <div
+            tabIndex={0}
+            aria-label="Moving updates feed. Focus or hover to pause."
+            className={`flex items-center h-full whitespace-nowrap absolute left-0 w-max focus:outline-none focus:[animation-play-state:paused] ${tickerDirection === 'right' ? 'animate-marquee-reverse' : 'animate-marquee'}`}
+            style={{ animationDuration: `${tickerSpeedSeconds}s` }}
+          >
+            {Array.from({ length: 8 }).flatMap(() => visibleTickerEvents).map((event, i) => (
               <button
                 key={`${event.id}-${i}`}
                 type="button"
                 onClick={() => navigate(event.kind === 'handover' ? '/handover' : event.kind === 'task' ? '/tasks/all' : event.kind === 'campaign' ? '/campaigns' : '/blockers')}
-                className="flex items-center gap-2.5 mx-6 text-sm text-foreground hover:text-gc-orange transition-colors cursor-pointer group"
+                className="flex h-full items-center gap-2.5 mx-6 text-sm text-foreground hover:text-gc-orange focus:text-gc-orange focus:outline-none transition-colors cursor-pointer group"
               >
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${event.tone === 'red' ? 'bg-red-500' : event.tone === 'orange' ? 'bg-gc-orange' : event.tone === 'green' ? 'bg-green-500' : 'bg-purple-500'}`} />
-                <span className="font-bold text-[11px] uppercase text-muted-foreground">{event.owner}:</span>
-                <span className="font-semibold">{event.title}</span>
-                <span className="text-muted-foreground opacity-70 group-hover:opacity-100 text-[12px]">({event.detail})</span>
-                <span className="text-[10px] text-muted-foreground ml-1">{timeAgo(event.at)}</span>
+                <span className={`w-2 h-2 rounded-full shrink-0 ${event.tone === 'red' ? 'bg-red-500' : event.tone === 'orange' ? 'bg-gc-orange' : event.tone === 'green' ? 'bg-green-500' : 'bg-purple-500'}`} />
+                <span className="font-black text-[11px] uppercase text-muted-foreground">{event.owner}:</span>
+                <span className="font-extrabold">{event.title}</span>
+                <span className="text-muted-foreground opacity-80 group-hover:opacity-100 group-focus:opacity-100 text-[12px] font-semibold">({event.detail})</span>
+                <span className="text-[10px] font-bold text-muted-foreground ml-1">{timeAgo(event.at)}</span>
               </button>
             ))}
           </div>

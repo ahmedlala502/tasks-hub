@@ -7,7 +7,7 @@ type OpsOffice = 'Egypt' | 'KSA' | 'UAE' | 'Kuwait';
 type RequestPayload =
   | { action: 'listUsers' }
   | { action: 'createUser'; name: string; email: string; password: string; role: OpsRole; office?: OpsOffice; department?: string; title?: string }
-  | { action: 'updateUser'; id: string; name?: string; role?: OpsRole; status?: OpsStatus; office?: OpsOffice; department?: string; title?: string }
+  | { action: 'updateUser'; id: string; name?: string; password?: string; role?: OpsRole; status?: OpsStatus; office?: OpsOffice; department?: string; title?: string }
   | { action: 'deleteUser'; id: string };
 
 const corsHeaders = {
@@ -207,6 +207,7 @@ Deno.serve(async (request) => {
         const existing = existingData.user;
 
         const updateData: {
+          password?: string;
           app_metadata?: { role: OpsRole };
           user_metadata?: Record<string, unknown>;
           ban_duration?: 'none' | '876000h';
@@ -216,6 +217,14 @@ Deno.serve(async (request) => {
 
         if (payload.role) {
           updateData.app_metadata = { role: nextRole };
+        }
+
+        if (payload.password !== undefined) {
+          const password = payload.password.trim();
+          if (password.length < 6) {
+            throw new Error('Password must be at least 6 characters.');
+          }
+          updateData.password = password;
         }
 
         const hasMetadataChange =

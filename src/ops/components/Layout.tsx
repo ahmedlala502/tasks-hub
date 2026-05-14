@@ -15,6 +15,7 @@ import { notificationService, AppNotification } from '../services/notificationSe
 import { exportAllData, downloadJson } from '../services/dataService';
 import { canAccessPath, getRoleLabel } from '../lib/access';
 import { getWorkspaceLabel } from '../lib/workspace';
+import { opsUpdatesService } from '../services/opsUpdatesService';
 import ErrorBoundary from '../../components/ErrorBoundary';
 
 type NavItem = {
@@ -129,16 +130,48 @@ export default function Layout() {
   const [accent, setAccent] = useState(() => localStorage.getItem('trygc-accent') || '#f97316');
   const [compactSidebar, setCompactSidebar] = useState(() => localStorage.getItem('trygc-compact-sidebar') === 'true');
   const [notifications, setNotifications] = useState<AppNotification[]>(() => notificationService.getAll());
+  const [onlineNotifications, setOnlineNotifications] = useState<AppNotification[]>([]);
+  const [readOnlineNotificationIds, setReadOnlineNotificationIds] = useState<Set<string>>(() => new Set());
 
   const refreshNotifications = useCallback(() => {
     setNotifications(notificationService.getAll());
   }, []);
+
+  const refreshOnlineNotifications = useCallback(async () => {
+    try {
+      const items = await opsUpdatesService.listActive();
+      setOnlineNotifications(items
+        .filter((item) => item.surfaceNotification)
+        .map((item) => ({
+          id: `online-${item.id}`,
+          title: item.title,
+          detail: item.detail,
+          tone: item.tone,
+          path: '/updates',
+          createdAt: new Date(item.updatedAt || item.createdAt).getTime(),
+          read: readOnlineNotificationIds.has(`online-${item.id}`),
+        })));
+    } catch {
+      setOnlineNotifications([]);
+    }
+  }, [readOnlineNotificationIds]);
 
   useEffect(() => {
     const handler = () => refreshNotifications();
     window.addEventListener('gc-notification', handler);
     return () => window.removeEventListener('gc-notification', handler);
   }, [refreshNotifications]);
+
+  useEffect(() => {
+    void refreshOnlineNotifications();
+    const interval = window.setInterval(refreshOnlineNotifications, 30000);
+    const handler = () => { void refreshOnlineNotifications(); };
+    window.addEventListener('gc-online-updates-refresh', handler);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('gc-online-updates-refresh', handler);
+    };
+  }, [refreshOnlineNotifications]);
 
   React.useEffect(() => {
     document.documentElement.style.setProperty('--primary', accent);
@@ -164,7 +197,8 @@ export default function Layout() {
 
   const initials = user?.displayName?.split(' ').map((n: string) => n[0]).join('').slice(0, 2) || 'U';
   const pageLabel = getPageLabel(location.pathname);
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const mergedNotifications = [...onlineNotifications, ...notifications].sort((a, b) => b.createdAt - a.createdAt).slice(0, 80);
+  const unreadCount = mergedNotifications.filter(n => !n.read).length;
   const workspaceNav = OPS_NAV.filter(item => canAccessPath(role, item.path));
   const systemNav = SYSTEM_NAV.filter(item => canAccessPath(role, item.path));
   const workspaceLabel = getWorkspaceLabel(role);
@@ -353,12 +387,13 @@ export default function Layout() {
 
               {notificationsOpen && (
                 <NotificationPanel
-                  items={notifications}
+                  items={mergedNotifications}
                   digestEnabled={digestEnabled}
                   onToggleDigest={() => setDigestEnabled((value) => !value)}
                   onClose={() => setNotificationsOpen(false)}
                   onMarkAllRead={() => {
                     notificationService.markAllRead();
+                    setReadOnlineNotificationIds(new Set(onlineNotifications.map((item) => item.id)));
                     refreshNotifications();
                   }}
                   onClearAll={() => {

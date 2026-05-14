@@ -350,6 +350,7 @@ export default function Admin() {
           const nextUser = await adminApi.updateUser({
             id: existing.uid,
             name: seed.name,
+            password: DEFAULT_ACCESS_PASSWORD,
             role: seed.role,
             office: seed.office,
             status: 'active',

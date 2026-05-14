@@ -252,6 +252,7 @@
   .panel-header { @apply px-5 py-4 border-b border-border flex items-center justify-between bg-secondary/20; }
   .settings-input { @apply w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-gc-orange focus:ring-2 focus:ring-gc-orange/15; }
   .icon-btn { @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border hover:bg-accent transition-colors; }
+  .mini-action { @apply inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-[11px] font-bold text-muted-foreground transition-colors hover:border-gc-orange/40 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-gc-orange/20; }
 
   /* Glow pulse for active indicators */
   .glow-orange { box-shadow: 0 0 10px rgba(232,99,12,0.45); }
@@ -264,8 +265,15 @@
   .animate-marquee-reverse {
     animation: marquee 120s linear infinite reverse;
   }
-  .animate-marquee:hover, .animate-marquee-reverse:hover {
+  .animate-marquee:hover, .animate-marquee:focus-within, .animate-marquee-reverse:hover, .animate-marquee-reverse:focus-within {
     animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-marquee,
+    .animate-marquee-reverse {
+      animation-duration: 160s !important;
+    }
   }
 }
 
