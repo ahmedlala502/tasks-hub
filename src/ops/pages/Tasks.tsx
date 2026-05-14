@@ -28,6 +28,7 @@ import {
 import { format, isPast, isValid } from 'date-fns';
 import { useAuth } from '../App';
 import { filterCampaignsByRole, filterOwnerOptionsByRole, filterTasksByRole } from '../lib/workspace';
+import { buildAssignmentOptions } from '../lib/assignmentOptions';
 import {
   TASK_BUCKET_LABELS,
   buildCampaignTaskGroups,
@@ -140,11 +141,12 @@ export default function TasksCenter() {
     ...campaigns.map(c => c.name).filter(Boolean),
     ...tasks.map(t => t.campaignId?.trim()).filter(Boolean) as string[],
   ])).sort((a, b) => a.localeCompare(b));
-  const owners = filterOwnerOptionsByRole(role, Array.from(new Set([
-    ...TEAM_MEMBERS,
-    ...supabaseUsers,
-    ...tasks.map(t => t.ownerId?.trim()).filter(Boolean) as string[],
-  ])));
+  const owners = filterOwnerOptionsByRole(role, buildAssignmentOptions({
+    users: [...TEAM_MEMBERS, ...supabaseUsers],
+    tasks,
+    campaigns,
+    handovers: dataService.getHandovers(),
+  }));
 
   const bucketTasks = useMemo(() => (
     selectedBucket ? filterTasksByBucket(tasks, selectedBucket, now) : tasks
@@ -765,8 +767,10 @@ function CreateForm({
         </Field>
 
         <Field label="Assignee">
-          <input className="settings-input" list="create-owners" placeholder="Type or pick..." value={draft.ownerId || ''} onChange={e => setDraft(d => ({ ...d, ownerId: e.target.value }))} />
-          <datalist id="create-owners">{owners.map(o => <option key={o} value={o} />)}</datalist>
+          <select className="settings-input" value={draft.ownerId || ''} onChange={e => setDraft(d => ({ ...d, ownerId: e.target.value }))}>
+            <option value="">Select assignee...</option>
+            {owners.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
         </Field>
 
         <Field label="Campaign *">

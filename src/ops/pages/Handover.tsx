@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../App';
 import { filterHandoversByRole, filterOwnerOptionsByRole, filterTasksByRole, filterTeamOptionsByRole, getWorkspaceScope } from '../lib/workspace';
+import { buildAssignmentOptions } from '../lib/assignmentOptions';
 import { cn } from '../utils';
 import { dataService, TEAM_MEMBERS } from '../services/dataService';
 import { notify } from '../services/notificationService';
@@ -151,15 +152,18 @@ export default function HandoverCenter() {
   }, []);
 
   const owners = useMemo(() => {
-    const fromTasks = tasks.map((task) => task.ownerId.trim()).filter(Boolean);
-    const allUsers = Array.from(new Set([
-      ...TEAM_MEMBERS, ...adminUsers, ...fromTasks,
+    const allUsers = buildAssignmentOptions({
+      users: [
+        ...TEAM_MEMBERS, ...adminUsers,
       'Campaign Manager', 'Community Lead', 'Coordination Lead', 
       'Coverage Lead', 'QA Lead', 'Finance Lead', 'Head of Operations',
       'Master Admin', 'Ops Team', 'Regional Lead', 'Team Lead'
-    ]));
+      ],
+      tasks,
+      handovers,
+    });
     return filterOwnerOptionsByRole(role, allUsers).sort();
-  }, [role, tasks, adminUsers]);
+  }, [role, tasks, adminUsers, handovers]);
 
   const teamOptions = useMemo(() => filterTeamOptionsByRole(role, TEAM_OPTIONS), [role]);
   const defaultTeam = teamOptions[0] || (scope === 'community' ? 'Community' : 'Operations');

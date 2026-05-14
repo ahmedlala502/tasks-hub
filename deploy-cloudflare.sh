@@ -12,6 +12,6 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Deploying to Cloudflare Pages..."
-wrangler pages deploy dist --project-name=trygc-hub-manager
+wrangler pages deploy dist --project-name=trygc-tasks-hub
 
 echo "Deployment complete!"

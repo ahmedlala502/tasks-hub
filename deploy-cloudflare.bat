@@ -10,7 +10,7 @@ if %errorlevel% neq 0 (
 )
 
 echo Deploying to Cloudflare Pages...
-call wrangler pages deploy dist --project-name=trygc-hub-manager
+call wrangler pages deploy dist --project-name=trygc-tasks-hub
 
 echo Deployment complete!
 pause

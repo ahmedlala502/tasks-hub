@@ -21,6 +21,7 @@ import { filterBlockersByRole, filterCampaignsByRole, filterHandoversByRole, fil
 import { dataService } from '../services/dataService';
 import { Button } from '../components/ui/button';
 import { CampaignStage } from '../constants';
+import { buildUpdatesFeed } from '../lib/opsPageInsights';
 
 const STAGE_SHORT: Record<number, string> = {
   1: 'Intake', 2: 'Validation', 3: 'Blocked', 4: 'Ready',
@@ -226,6 +227,7 @@ export default function Dashboard() {
   const influencers = filterInfluencersByRole(role, dataService.getInfluencers());
   const blockers = filterBlockersByRole(role, dataService.getBlockers());
   const handovers = filterHandoversByRole(role, dataService.getHandovers());
+  const recentEvents = buildUpdatesFeed(campaigns, tasks, blockers, handovers).slice(0, 8);
 
   const activeCampaigns = campaigns.filter(c => c.status === 'Active').length;
   const totalTasks = tasks.length;
@@ -386,12 +388,36 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <HeaderWidget label="Employees Online" value={onlineEmployees.toLocaleString()} detail="Active within 12h" tone="green" active={onlineEmployees > 0} onClick={() => navigate('/online-users')} />
-        <HeaderWidget label="All Campaigns" value={campaigns.length.toLocaleString()} detail="Portfolio load" onClick={() => navigate('/analytics')} />
+        <HeaderWidget label="All Campaigns" value={campaigns.length.toLocaleString()} detail="Portfolio load" onClick={() => navigate('/campaigns')} />
         <HeaderWidget label="Active Now" value={activeCampaigns.toLocaleString()} detail="Currently running" tone="orange" onClick={() => navigate('/analytics')} />
         <HeaderWidget label="All Tasks" value={totalTasks.toLocaleString()} detail="Open + completed" tone="purple" onClick={() => navigate('/tasks/all')} />
         <HeaderWidget label="Tasks Done" value={completedTasks.toLocaleString()} detail="Closed tasks" tone="green" active={completedTasks > 0} onClick={() => navigate('/tasks/done')} />
         <HeaderWidget label="Tasks Pending" value={pendingTasks.toLocaleString()} detail="Awaiting completion" tone="red" onClick={() => navigate('/tasks/pending')} />
       </div>
+
+      <section className="rounded-xl border border-border bg-card p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-[9.5px] font-bold uppercase tracking-[1.5px] text-muted-foreground mb-0.5">Workspace Event Recorder</p>
+            <h3 className="font-condensed font-extrabold text-[17px] tracking-tight text-foreground">Latest Activity Across The Tool</h3>
+          </div>
+          <Button variant="outline" size="sm" className="h-7 text-[11px] font-semibold" onClick={() => navigate('/updates')}>
+            Open Updates
+          </Button>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {recentEvents.map((event) => (
+            <button key={event.id} onClick={() => navigate(event.kind === 'handover' ? '/handover' : event.kind === 'task' ? '/tasks' : event.kind === 'campaign' ? '/campaigns' : '/live-ops')} className="rounded-lg border border-border bg-background p-3 text-left transition-colors hover:border-gc-orange/40 hover:bg-gc-orange/5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-muted-foreground">{event.kind}</span>
+                <span className="text-[10px] font-semibold text-muted-foreground">{timeAgo(event.at)}</span>
+              </div>
+              <p className="mt-2 truncate text-sm font-bold text-foreground">{event.title}</p>
+              <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{event.detail}</p>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
         <div className="xl:col-span-8 space-y-5">

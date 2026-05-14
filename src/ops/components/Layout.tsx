@@ -4,10 +4,11 @@ import { useAuth } from '../App';
 import {
   LayoutDashboard, LogOut, Bell,
   Settings, ShieldCheck, AlertTriangle, History,
-  Shield, BarChart3, MessageSquare, CheckSquare, Flame,
+  Shield, BarChart3, MessageSquare, CheckSquare,
   Sun, Moon, RefreshCw, Download,
   ChevronRight, FolderKanban,
-  Search, X, SlidersHorizontal, Check, Clock, CircleAlert, CheckCircle2, UserRound
+  Search, X, SlidersHorizontal, Check, Clock, CircleAlert, CheckCircle2, UserRound,
+  Activity, ClipboardList, Trophy
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { notificationService, AppNotification } from '../services/notificationService';
@@ -25,11 +26,13 @@ type NavItem = {
 // ── Nav items ─────────────────────────────────────────────
 const OPS_NAV: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard',      path: '/' },
+  { icon: UserRound,       label: 'My Dashboard',   path: '/my-dashboard' },
+  { icon: Activity,        label: 'Live Ops',       path: '/live-ops' },
   { icon: FolderKanban,    label: 'Campaigns',      path: '/campaigns' },
+  { icon: ClipboardList,   label: 'Daily Routine',  path: '/tasks-daily-routines' },
   { icon: RefreshCw,       label: 'Handover',       path: '/handover' },
   { icon: CheckSquare,     label: 'Tasks',          path: '/tasks' },
-  { icon: Flame,           label: 'Priority Board', path: '/priority-board' },
-  { icon: AlertTriangle,   label: 'Blockers',       path: '/blockers' },
+  { icon: Trophy,          label: 'Updates',        path: '/updates' },
   { icon: BarChart3,       label: 'Reporting',      path: '/reporting' },
 ];
 
@@ -64,6 +67,7 @@ function getPageLabel(pathname: string): string {
   const exact = ALL_NAV.find(i => i.path === pathname);
   if (exact) return exact.label;
   if (pathname.startsWith('/tasks/')) return 'Tasks';
+  if (pathname === '/tasks-daily-routines') return 'Daily Routine';
   if (pathname === '/online-users') return 'Online Users';
   if (pathname === '/campaigns/new') return 'New Campaign';
   if (pathname.startsWith('/campaigns/') && pathname.endsWith('/setup')) return 'Campaign Setup';

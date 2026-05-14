@@ -28,7 +28,7 @@ chmod +x deploy-cloudflare.sh
 ### Option 3: Manual Deployment
 ```bash
 npm run build
-wrangler pages deploy dist --project-name=trygc-hub-manager
+wrangler pages deploy dist --project-name=trygc-tasks-hub
 ```
 
 ## Environment Variables
@@ -40,7 +40,7 @@ Set environment variables in Cloudflare Pages dashboard:
 ## Configuration
 
 The `wrangler.toml` file contains:
-- Project name: `trygc-hub-manager`
+- Project name: `trygc-tasks-hub`
 - Build command: `npm run build`
 - Output directory: `dist`
 

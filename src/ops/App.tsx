@@ -7,12 +7,13 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import type { OpsDepartment, OpsOffice, OpsRole, OpsUser } from './auth/types';
 
 import Dashboard from './pages/Dashboard';
-import Blockers from './pages/Blockers';
+import MyDashboard from './pages/MyDashboard';
+import LiveOps from './pages/LiveOps';
 import AuditLogs from './pages/AuditLogs';
 import Admin from './pages/Admin';
 import Reporting from './pages/Reporting';
 import Tasks from './pages/Tasks';
-import PriorityBoard from './pages/PriorityBoard';
+import DailyRoutines from './pages/DailyRoutines';
 import UserProfile from './pages/UserProfile';
 import OnlineUsers from './pages/OnlineUsers';
 import Templates from './pages/Templates';
@@ -20,6 +21,7 @@ import Analytics from './pages/Analytics';
 import AssetRegistry from './pages/AssetRegistry';
 import Handover from './pages/Handover';
 import Settings from './pages/Settings';
+import Updates from './pages/Updates';
 import Login from './pages/Login';
 import CampaignList from './pages/CampaignList';
 import CampaignIntake from './pages/CampaignIntake';
@@ -121,16 +123,21 @@ export default function App() {
               element={user ? <Layout /> : <Navigate to="/login" />}
             >
               <Route index element={allow('/', <Dashboard />)} />
+              <Route path="my-dashboard" element={allow('/my-dashboard', <MyDashboard />)} />
+              <Route path="live-ops" element={allow('/live-ops', <LiveOps />)} />
               <Route path="handover" element={allow('/handover', <Handover />)} />
               <Route path="online-users" element={allow('/online-users', <OnlineUsers />)} />
-              <Route path="blockers" element={allow('/blockers', <Blockers />)} />
+              <Route path="blockers" element={<Navigate to="/live-ops" replace />} />
               <Route path="audit" element={allow('/audit', <AuditLogs />)} />
               <Route path="reporting" element={allow('/reporting', <Reporting />)} />
               <Route path="tasks" element={allow('/tasks', <Tasks />)} />
               <Route path="tasks/:bucket" element={allow('/tasks', <Tasks />)} />
-              <Route path="priority-board" element={allow('/priority-board', <PriorityBoard />)} />
+              <Route path="tasks-daily-routines" element={allow('/tasks-daily-routines', <DailyRoutines />)} />
+              <Route path="daily-routines" element={allow('/daily-routines', <DailyRoutines />)} />
+              <Route path="priority-board" element={<Navigate to="/tasks-daily-routines" replace />} />
               <Route path="profile" element={allow('/profile', <UserProfile />)} />
               <Route path="templates" element={allow('/templates', <Templates />)} />
+              <Route path="updates" element={allow('/updates', <Updates />)} />
               <Route path="analytics" element={allow('/analytics', <Analytics />)} />
               <Route path="assets" element={allow('/assets', <AssetRegistry />)} />
               <Route path="settings" element={allow('/settings', <Settings />)} />

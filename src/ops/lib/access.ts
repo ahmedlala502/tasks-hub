@@ -2,12 +2,16 @@ import type { OpsRole } from '../auth/types';
 
 const OPERATIONS_PATHS = new Set([
   '/',
+  '/my-dashboard',
+  '/live-ops',
   '/profile',
   '/handover',
   '/online-users',
   '/tasks',
-  '/priority-board',
-  '/blockers',
+  '/tasks-daily-routines',
+  '/daily-routines',
+  '/updates',
+  '/campaigns',
   '/analytics',
   '/assets',
   '/reporting',

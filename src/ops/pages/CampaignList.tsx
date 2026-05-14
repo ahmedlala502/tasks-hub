@@ -3,96 +3,168 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
-import {
-  Filter,
-  Search,
-  ChevronRight,
-  Plus,
-  Activity,
-  AlertCircle,
-  AlertTriangle,
-  Flame,
-  ShieldCheck,
-  CheckCircle2,
-  Clock,
-  Eye,
-  LayoutList,
-  Trash2,
-  Upload,
-  Download,
-  FileSpreadsheet
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { ChevronDown, Download, Edit3, FolderKanban, Plus, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { cn } from '../utils';
+import { useAuth } from '../App';
 import { CampaignStage, STAGE_NAMES } from '../constants';
-import { Campaign } from '../types';
-import { dataService } from '../services/dataService';
+import type { Campaign, Task } from '../types';
+import { cn } from '../utils';
+import { buildAssignmentOptions } from '../lib/assignmentOptions';
+import { buildMyCampaignMatrix, getOperationalTaskStatus } from '../lib/opsPageInsights';
+import { dataService, TEAM_MEMBERS } from '../services/dataService';
 import { notify } from '../services/notificationService';
 import { exportCampaigns, readSpreadsheet, rowsToCampaigns } from '../services/spreadsheetService';
 
+type CampaignTaskDraft = {
+  id?: string;
+  campaignId: string;
+  title: string;
+  ownerId: string;
+  department: string;
+  priority: Task['priority'];
+  status: NonNullable<Task['status']>;
+  dueDate: string;
+  nextStep: string;
+  metricTarget: string;
+  metricCON: string;
+  metricCOV: string;
+};
+
+const EMPTY_TASK: CampaignTaskDraft = {
+  campaignId: '',
+  title: '',
+  ownerId: '',
+  department: 'PMO',
+  priority: 'Medium',
+  status: 'In Progress',
+  dueDate: new Date().toISOString().slice(0, 10),
+  nextStep: '',
+  metricTarget: '',
+  metricCON: '',
+  metricCOV: '',
+};
+
+const TEAM_BUCKETS = ['PMO', 'Community', 'Coverage', 'QA', 'Reporting', 'Finance', 'Operations'];
+
 export default function CampaignList() {
   const navigate = useNavigate();
+  const { role } = useAuth();
+  const isMaster = role === 'master';
   const [campaigns, setCampaigns] = useState<Campaign[]>(dataService.getCampaigns());
-  const [selectedStage, setSelectedStage] = useState<number | 'all'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isCompactView, setIsCompactView] = useState(false);
+  const [tasks, setTasks] = useState<Task[]>(dataService.getTasks());
+  const [query, setQuery] = useState('');
+  const [stage, setStage] = useState<number | 'all'>('all');
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [taskDraft, setTaskDraft] = useState<CampaignTaskDraft | null>(null);
+  const [confirmDeleteCampaign, setConfirmDeleteCampaign] = useState<string | null>(null);
   const [bulkMessage, setBulkMessage] = useState('');
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const ownerOptions = useMemo(() => {
-    const owners = new Set<string>();
-    campaigns.forEach((campaign) => {
-      if (campaign.currentOwner?.trim()) owners.add(campaign.currentOwner.trim());
-      (campaign.internalOwners || []).forEach((owner) => owner?.trim() && owners.add(owner.trim()));
+
+  const assignmentOptions = useMemo(() => buildAssignmentOptions({
+    users: TEAM_MEMBERS,
+    tasks,
+    campaigns,
+    handovers: dataService.getHandovers(),
+  }), [campaigns, tasks]);
+
+  const filteredCampaigns = useMemo(() => campaigns.filter((campaign) => {
+    const haystack = `${campaign.name} ${campaign.currentOwner} ${campaign.country} ${campaign.city} ${campaign.nextAction}`.toLowerCase();
+    return (stage === 'all' || campaign.stage === stage) && (!query || haystack.includes(query.toLowerCase()));
+  }), [campaigns, query, stage]);
+
+  const matrix = useMemo(() => buildMyCampaignMatrix(filteredCampaigns, tasks), [filteredCampaigns, tasks]);
+  const openTasks = tasks.filter((task) => getOperationalTaskStatus(task) !== 'Done').length;
+  const blockedTasks = tasks.filter((task) => getOperationalTaskStatus(task) === 'Blocked').length;
+
+  const toggleExpanded = (campaignId: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(campaignId)) next.delete(campaignId);
+      else next.add(campaignId);
+      return next;
     });
-    ['Ahmed E.', 'Sarah A.', 'Mona K.', 'Omar S.', 'Ops Team'].forEach((owner) => owners.add(owner));
-    return Array.from(owners);
-  }, [campaigns]);
+  };
 
-  const filteredCampaigns = useMemo(() => {
-    return campaigns.filter(campaign => {
-      const matchesStage = selectedStage === 'all' || campaign.stage === selectedStage;
-      const lowerQuery = searchQuery.toLowerCase();
-      
-      const internalOwnerMatch = campaign.internalOwners?.some(o => o.toLowerCase().includes(lowerQuery));
-      const clientOwnerMatch = campaign.clientOwners?.some(o => o.toLowerCase().includes(lowerQuery));
-      
-      const matchesSearch = !searchQuery || 
-        (campaign.name || '').toLowerCase().includes(lowerQuery) ||
-        internalOwnerMatch ||
-        clientOwnerMatch;
-        
-      return matchesStage && matchesSearch;
+  const openTask = (campaign: Campaign, task?: Task, department = 'PMO') => {
+    if (task) {
+      setTaskDraft({
+        id: task.id,
+        campaignId: campaign.name,
+        title: task.title,
+        ownerId: task.ownerId || campaign.currentOwner || assignmentOptions[0] || '',
+        department: task.department || task.category || department,
+        priority: task.priority,
+        status: getOperationalTaskStatus(task),
+        dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+        nextStep: task.nextStep || task.description || '',
+        metricTarget: String(task.metricTarget || ''),
+        metricCON: String(task.metricCON || ''),
+        metricCOV: String(task.metricCOV || ''),
+      });
+      return;
+    }
+
+    setTaskDraft({
+      ...EMPTY_TASK,
+      campaignId: campaign.name,
+      ownerId: campaign.currentOwner || assignmentOptions[0] || '',
+      department,
+      metricTarget: String(campaign.targetInfluencers || ''),
     });
-  }, [selectedStage, searchQuery, campaigns]);
-
-  const handleUpdateStatus = (id: string, status: Campaign['status']) => {
-    const updated = dataService.updateCampaign(id, { status });
-    setCampaigns(updated);
   };
 
-  const handleUpdateHealth = (id: string, recordHealth: Campaign['recordHealth']) => {
-    const updated = dataService.updateCampaign(id, { recordHealth });
-    setCampaigns(updated);
+  const saveTask = () => {
+    if (!taskDraft?.title.trim()) return;
+    const now = Date.now();
+    const existing = taskDraft.id ? tasks.find((task) => task.id === taskDraft.id) : undefined;
+    const dueDate = new Date(`${taskDraft.dueDate}T18:00:00`).getTime();
+    const task: Task = {
+      id: taskDraft.id || `campaign-task-${now}`,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+      createdBy: 'campaigns',
+      title: taskDraft.title.trim(),
+      description: taskDraft.nextStep.trim(),
+      nextStep: taskDraft.nextStep.trim(),
+      ownerId: taskDraft.ownerId,
+      campaignId: taskDraft.campaignId,
+      department: taskDraft.department,
+      category: taskDraft.department,
+      priority: taskDraft.priority,
+      status: taskDraft.status,
+      dueDate,
+      completed: taskDraft.status === 'Done',
+      completedAt: taskDraft.status === 'Done' ? now : undefined,
+      metricTarget: Number(taskDraft.metricTarget) || 0,
+      metricCON: Number(taskDraft.metricCON) || 0,
+      metricCOV: Number(taskDraft.metricCOV) || 0,
+      flags: taskDraft.status === 'Blocked' ? [{ id: `campaign-flag-${now}`, label: 'Blocked', tone: 'red', resolved: false }] : [],
+    };
+    setTasks(taskDraft.id ? dataService.updateTask(taskDraft.id, task) : dataService.addTask(task));
+    setTaskDraft(null);
+    notify('Campaign Task Saved', `"${task.title}" saved in ${task.campaignId}`, 'orange', '/campaigns');
   };
 
-  const handleUpdateStage = (id: string, stage: CampaignStage) => {
-    const c = campaigns.find(c => c.id === id);
-    const updated = dataService.updateCampaign(id, { stage });
-    setCampaigns(updated);
-    if (c) notify('Campaign Stage Updated', `"${c.name}" moved to ${STAGE_NAMES[stage]}`, 'orange', '/campaigns');
-  };
-  
-  const handleUpdateOwner = (id: string, currentOwner: string) => {
-    const updated = dataService.updateCampaign(id, { currentOwner });
-    setCampaigns(updated);
+  const updateTaskStatus = (task: Task, status: NonNullable<Task['status']>) => {
+    setTasks(dataService.updateTask(task.id, {
+      status,
+      completed: status === 'Done',
+      completedAt: status === 'Done' ? Date.now() : undefined,
+      updatedAt: Date.now(),
+    }));
   };
 
-  const handleDelete = (id: string) => {
-    const c = campaigns.find(c => c.id === id);
-    setCampaigns(dataService.deleteCampaign(id));
-    if (c) notify('Campaign Deleted', `"${c.name}" removed from registry`, 'red', '/campaigns');
-    setConfirmDeleteId(null);
+  const deleteTask = (task: Task) => {
+    if (!isMaster) return;
+    setTasks(dataService.deleteTask(task.id));
+    notify('Campaign Task Deleted', `"${task.title}" removed`, 'red', '/campaigns');
+  };
+
+  const deleteCampaign = (campaign: Campaign) => {
+    if (!isMaster) return;
+    setCampaigns(dataService.deleteCampaign(campaign.id));
+    setConfirmDeleteCampaign(null);
+    notify('Campaign Deleted', `"${campaign.name}" removed`, 'red', '/campaigns');
   };
 
   const handleBulkUpload = async (file?: File) => {
@@ -100,8 +172,7 @@ export default function CampaignList() {
     try {
       const rows = await readSpreadsheet(file);
       const imported = rowsToCampaigns(rows);
-      const updated = dataService.addCampaigns(imported);
-      setCampaigns(updated);
+      setCampaigns(dataService.addCampaigns(imported));
       setBulkMessage(`${imported.length} campaigns imported from ${file.name}`);
     } catch (error) {
       console.error(error);
@@ -109,326 +180,210 @@ export default function CampaignList() {
     }
   };
 
-  const handleRowClick = (event: React.MouseEvent<HTMLTableRowElement>, campaignId: string) => {
-    const target = event.target as HTMLElement;
-    if (target.closest('button, input, select, textarea, a, [role="button"]')) return;
-    navigate(`/campaigns/${campaignId}`);
-  };
-
   return (
-    <div className="max-w-[1240px] mx-auto space-y-8 animate-in fade-in duration-500">
-      <div className="flex justify-between items-end mb-10">
-        <div>
-          <div className="text-[9.5px] font-bold uppercase tracking-[1.5px] text-gc-orange">Operations Core</div>
-          <h2 className="font-condensed font-extrabold text-[22px] tracking-tight text-foreground">Campaign Registry</h2>
-          <p className="text-[var(--ink-700)] flex items-center gap-2 mt-2 font-mono text-[13px]">
-            <Activity size={16} className="text-[var(--gc-orange)]" />
-            Centralized hub for all <span className="font-bold text-[var(--ink-900)]">18-stage</span> campaign lifecycle operations.
-          </p>
-        </div>
-        <button onClick={() => navigate('/campaigns/new')} className="bg-gc-orange text-white px-4 py-2.5 rounded-lg font-condensed font-bold uppercase tracking-wide hover:bg-gc-orange/90 transition-colors flex items-center gap-2 shadow-[var(--shadow-sm)]">
-          <Plus strokeWidth={3} size={16} /> New Campaign
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 rounded-xl border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-card">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-50 text-gc-orange dark:bg-orange-900/20">
-            <FileSpreadsheet size={18} />
-          </div>
+    <div className="mx-auto max-w-[1240px] space-y-6 pb-12">
+      <section className="rounded-xl border border-border bg-card p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-sm font-bold text-foreground">Bulk Campaign Upload</p>
-            <p className="text-xs text-muted-foreground">Supports `.xlsx`, `.xls`, and `.csv`. Columns can include name, country, city, stage, status, owner, budget, platforms, dates.</p>
-            {bulkMessage && <p className="mt-1 text-xs font-semibold text-gc-orange">{bulkMessage}</p>}
+            <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-gc-orange">Campaigns</p>
+            <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Campaign Execution Buckets</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Expandable campaign buckets with PMO-style task lanes, assignment, status, edits, and master-only delete.</p>
+          </div>
+          <button onClick={() => navigate('/campaigns/new')} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-gc-orange/90">
+            <Plus size={16} /> New campaign
+          </button>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <Metric title="Campaigns" value={filteredCampaigns.length} />
+        <Metric title="Open Tasks" value={openTasks} tone="purple" />
+        <Metric title="Blocked Tasks" value={blockedTasks} tone="red" />
+        <Metric title="Master Delete" value={isMaster ? 'On' : 'Locked'} tone={isMaster ? 'green' : 'orange'} />
+      </div>
+
+      <section className="rounded-xl border border-border bg-card p-4">
+        <div className="grid gap-3 lg:grid-cols-[1fr_15rem_auto]">
+          <div className="relative">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input className="settings-input pl-9" placeholder="Search campaign, owner, market, next action..." value={query} onChange={(event) => setQuery(event.target.value)} />
+          </div>
+          <select className="settings-input" value={stage} onChange={(event) => setStage(event.target.value === 'all' ? 'all' : Number(event.target.value))}>
+            <option value="all">All lifecycle stages</option>
+            {Object.entries(STAGE_NAMES).map(([key, label]) => <option key={key} value={key}>{key}. {label}</option>)}
+          </select>
+          <div className="flex flex-wrap gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">
+              <Upload size={15} /> Import
+              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(event) => handleBulkUpload(event.target.files?.[0])} />
+            </label>
+            <button onClick={() => exportCampaigns(filteredCampaigns)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">
+              <Download size={15} /> Export
+            </button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:bg-card dark:text-gray-300 dark:hover:bg-gray-800">
-            <Upload size={15} />
-            Import
-            <input
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="hidden"
-              onChange={(event) => handleBulkUpload(event.target.files?.[0])}
-            />
-          </label>
-          <button
-            onClick={() => exportCampaigns(filteredCampaigns)}
-            className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-3 py-2 text-xs font-bold text-white hover:bg-gc-orange/90"
-          >
-            <Download size={15} />
-            Export
-          </button>
-        </div>
-      </div>
+        {bulkMessage && <p className="mt-3 text-xs font-semibold text-gc-orange">{bulkMessage}</p>}
+      </section>
 
-      {/* Stage Filter Chips */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-[11px] font-display font-black uppercase tracking-[1.5px] text-[var(--ink-500)]">Lifecycle Phase Filter</p>
-          <button 
-            onClick={() => setSelectedStage('all')}
-            className="text-[11px] font-display font-black uppercase tracking-widest text-[var(--gc-orange)] hover:text-[#D14F1C] transition-colors"
-          >
-            Clear All Filters
-          </button>
-        </div>
-        <div className="flex overflow-x-auto gap-2 pb-4 snap-x custom-scrollbar">
-          <button
-            onClick={() => setSelectedStage('all')}
-            className={cn(
-              "whitespace-nowrap px-5 py-2.5 rounded-full text-[10.5px] font-display font-black uppercase tracking-widest transition-all border shrink-0",
-              selectedStage === 'all' 
-                ? "bg-[var(--gc-purple)] text-white border-[var(--gc-purple)] shadow-[var(--shadow-md)] shadow-purple-900/10" 
-                : "bg-[var(--white)] text-[var(--ink-500)] border-[var(--border)] hover:bg-[var(--bg)] hover:text-[var(--ink-700)]"
-            )}
-          >
-            All Stages
-          </button>
-          {Object.entries(STAGE_NAMES).map(([stage, name]) => (
-            <button
-              key={stage}
-              onClick={() => setSelectedStage(Number(stage))}
-              className={cn(
-                "whitespace-nowrap px-5 py-2.5 rounded-full text-[10.5px] font-display font-black uppercase tracking-widest transition-all border shrink-0",
-                selectedStage === Number(stage)
-                  ? "bg-[var(--gc-orange)] text-white border-[var(--gc-orange)] shadow-[var(--shadow-md)] shadow-orange-900/10"
-                  : "bg-[var(--white)] text-[var(--ink-500)] border-[var(--border)] hover:bg-[var(--bg)] hover:text-[var(--ink-700)] hover:border-[var(--ink-300)]"
-              )}
-            >
-              {stage}. {name.split('–')[0].split('/')[0].trim()}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Campaign List */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="p-6 border-b border-[var(--border)] flex items-center justify-between bg-[var(--bg)]">
-           <div className="relative w-[380px]">
-             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--ink-300)]" />
-             <input 
-               className="w-full pl-12 pr-4 py-3 text-sm outline-none font-medium bg-[var(--white)] border border-[var(--border)] rounded-full focus:border-[var(--gc-purple)] focus:ring-[4px] focus:ring-[var(--gc-purple-mid)] transition-all" 
-               placeholder="Filter by name, owner, or reference ID..." 
-               value={searchQuery}
-               onChange={(e) => setSearchQuery(e.target.value)}
-             />
-           </div>
-           
-           <div className="flex items-center gap-2">
-             <button 
-               onClick={() => setIsCompactView(!isCompactView)}
-               className={cn(
-                 "flex items-center gap-2 px-5 py-3 border rounded-full text-[12px] font-display font-bold uppercase tracking-widest transition-all",
-                 isCompactView 
-                   ? "bg-[var(--gc-purple)] text-white border-[var(--gc-purple)]" 
-                   : "bg-[var(--white)] text-[var(--ink-700)] border-[var(--border)] hover:bg-[var(--bg)] hover:border-[var(--border-strong)]"
-               )}
-             >
-                <LayoutList strokeWidth={2.5} size={16} /> {isCompactView ? 'Compact View' : 'Default View'}
-             </button>
-             <button className="flex items-center gap-2 px-5 py-3 border border-[var(--border)] rounded-full text-[12px] font-display font-bold uppercase tracking-widest text-[var(--ink-700)] bg-[var(--white)] hover:bg-[var(--bg)] hover:border-[var(--border-strong)] transition-all">
-                <Filter strokeWidth={2.5} size={16} /> Refine
-             </button>
-           </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr>
-                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border">Campaign Name</th>
-                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border">Current Stage</th>
-                <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border text-center">Status</th>
-                {!isCompactView && (
-                  <>
-                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border">Market</th>
-                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border">Owner</th>
-                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border">Health</th>
-                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border text-right">Actions</th>
-                  </>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--border)]">
-              {filteredCampaigns.length > 0 ? (
-                filteredCampaigns.map((campaign) => (
-                  <tr
-                    key={campaign.id}
-                    onClick={(event) => handleRowClick(event, campaign.id)}
-                    className="px-5 py-3.5 border-b border-border bg-card group-hover:bg-accent/40 transition-colors group hover:-translate-y-px hover:shadow-[0_4px_12px_rgba(0,0,0,0.02)] transition-all cursor-pointer bg-[var(--white)] z-0 hover:z-10 relative"
-                  >
-                    <td className="px-6 py-4 border-b border-[var(--border)]">
-                      <div className="flex items-center gap-4">
-                        <button
-                          onClick={() => navigate(`/campaigns/${campaign.id}`)}
-                          className="w-12 h-12 rounded-full bg-[var(--gc-orange-soft)] border border-[var(--gc-orange)]/20 text-[var(--gc-orange)] flex items-center justify-center font-display font-black shadow-sm hover:bg-gc-orange hover:text-white hover:border-gc-orange transition-all shrink-0"
-                          title="Open campaign detail"
-                        >
-                          {campaign.name?.substring(0, 2).toUpperCase()}
-                        </button>
-                        <div>
-                          <input 
-                            className="text-[15px] font-bold text-[var(--ink-900)] bg-transparent border-none outline-none focus:ring-[2px] focus:ring-[var(--gc-orange-soft)] rounded px-2 -mx-2 transition-all block w-full"
-                            value={campaign.name}
-                            onChange={(e) => {
-                              const updated = dataService.updateCampaign(campaign.id, { name: e.target.value });
-                              setCampaigns(updated);
-                            }}
-                          />
-                          <p className="text-[11px] text-[var(--ink-500)] font-mono mt-1 tracking-wider uppercase pl-1">{campaign.id} · {campaign.city}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 border-b border-[var(--border)] min-w-[240px]" onClick={(event) => event.stopPropagation()}>
-                       <div className="space-y-2.5">
-                          <div className="flex items-center justify-between px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide bg-[var(--bg)] border border-[var(--border)] group/stage-toggle transition-colors relative focus-within:ring-2 focus-within:ring-[var(--gc-purple)] focus-within:border-[var(--gc-purple)] pr-2">
-                             <button
-                               onClick={() => setSelectedStage(campaign.stage)}
-                               className="flex-1 text-left text-[10px] font-black uppercase tracking-widest text-[var(--ink-900)] hover:text-[var(--gc-purple)] truncate transition-colors py-1 outline-none"
-                               title="Filter by this stage"
-                             >
-                               {campaign.stage}. {STAGE_NAMES[campaign.stage as keyof typeof STAGE_NAMES]}
-                             </button>
-                             <div className="relative flex items-center justify-center p-1 rounded hover:bg-[var(--ink-200)] transition-colors text-[var(--ink-400)] hover:text-[var(--ink-900)]">
-                                <select 
-                                  value={campaign.stage}
-                                  onChange={(e) => handleUpdateStage(campaign.id, Number(e.target.value))}
-                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                  title="Update Stage"
-                                >
-                                  {Object.entries(STAGE_NAMES).map(([s, n]) => (
-                                    <option key={s} value={s}>{s}. {n}</option>
-                                  ))}
-                                </select>
-                                <ChevronRight size={14} className="rotate-90" />
-                             </div>
-                          </div>
-                          <div className="h-1.5 w-full bg-[var(--bg)] rounded-full overflow-hidden border border-[var(--border)]">
-                             <div className="h-full bg-[var(--gc-purple)] transition-all duration-700 ease-out" style={{ width: `${((campaign.stage || 1) / 18) * 100}%` }} />
-                          </div>
-                       </div>
-                    </td>
-                    <td className="px-6 py-4 border-b border-[var(--border)] text-center relative group/status" onClick={(event) => event.stopPropagation()}>
-                       <label className={cn(
-                         "flex items-center justify-center mx-auto w-fit px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest gap-2 cursor-pointer transition-all hover:scale-105 shadow-sm",
-                         campaign.status === 'Active' ? "bg-emerald-50 text-emerald-600 border-emerald-200" :
-                         campaign.status === 'Blocked' ? "bg-red-50 text-red-600 border-red-200" :
-                         campaign.status === 'Closed' ? "bg-secondary text-muted-foreground border-border" :
-                         "bg-amber-50 text-amber-600 border-amber-200"
-                       )}>
-                         {campaign.status === 'Active' && <Activity size={12} />}
-                         {campaign.status === 'Blocked' && <AlertCircle size={12} />}
-                         {campaign.status === 'Closed' && <CheckCircle2 size={12} />}
-                         {campaign.status === 'On Hold' && <Clock size={12} />}
-                         
-                         <select 
-                           value={campaign.status}
-                           onChange={(e) => handleUpdateStatus(campaign.id, e.target.value as any)}
-                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                           title="Change Status"
-                         >
-                           {['Active', 'Blocked', 'Closed', 'On Hold'].map(s => <option key={s} value={s}>{s}</option>)}
-                         </select>
-                         {campaign.status}
-                       </label>
-                    </td>
-                    {!isCompactView && (
-                      <React.Fragment>
-                        <td className="px-6 py-4 border-b border-[var(--border)]">
-                           <input 
-                             className="text-[14px] font-bold text-[var(--ink-700)] bg-transparent border-none outline-none focus:ring-[2px] focus:ring-[var(--gc-orange-soft)] rounded px-2 py-1 -mx-2 transition-all w-full"
-                             value={campaign.country}
-                             onChange={(e) => {
-                               const updated = dataService.updateCampaign(campaign.id, { country: e.target.value });
-                               setCampaigns(updated);
-                             }}
-                           />
-                        </td>
-                        <td className="px-6 py-4 border-b border-[var(--border)]" onClick={(event) => event.stopPropagation()}>
-                          <select
-                            className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-[12px] font-bold text-[var(--ink-700)] outline-none focus:border-[var(--gc-orange)]"
-                            value={campaign.currentOwner || ''}
-                            onChange={(event) => handleUpdateOwner(campaign.id, event.target.value)}
-                          >
-                            {ownerOptions.map((owner) => (
-                              <option key={owner} value={owner}>
-                                {owner}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-6 py-4 border-b border-[var(--border)] relative group/health">
-                           <div className="flex items-center w-full">
-                             <label className={cn(
-                               "flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest cursor-pointer transition-all hover:scale-105 shadow-sm relative overflow-hidden",
-                               campaign.recordHealth === 'Healthy' ? "bg-emerald-50 text-emerald-600 border-emerald-200" : 
-                               campaign.recordHealth === 'At Risk' ? "bg-amber-50 text-amber-600 border-amber-200" : 
-                               "bg-red-50 text-red-600 border-red-200"
-                             )}>
-                                {campaign.recordHealth === 'Healthy' && <ShieldCheck size={12} strokeWidth={2.5} />}
-                                {campaign.recordHealth === 'At Risk' && <AlertTriangle size={12} strokeWidth={2.5} />}
-                                {campaign.recordHealth === 'Critical' && <Flame size={12} strokeWidth={2.5} />}
-                                
-                                {campaign.recordHealth}
-
-                                <select 
-                                  value={campaign.recordHealth}
-                                  onChange={(e) => handleUpdateHealth(campaign.id, e.target.value as any)}
-                                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                  title="Update Mission Health"
-                                >
-                                  {['Healthy', 'At Risk', 'Critical'].map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
-                             </label>
-                           </div>
-                        </td>
-                        <td className="px-6 py-4 border-b border-[var(--border)] text-right" onClick={(event) => event.stopPropagation()}>
-                          {confirmDeleteId === campaign.id ? (
-                            <div className="flex items-center justify-end gap-1">
-                              <span className="text-[10px] font-bold text-destructive whitespace-nowrap">Delete?</span>
-                              <button onClick={() => handleDelete(campaign.id)} className="px-2 py-1 bg-destructive text-white rounded text-[10px] font-bold hover:bg-destructive/90">Yes</button>
-                              <button onClick={() => setConfirmDeleteId(null)} className="px-2 py-1 border border-border rounded text-[10px] font-bold hover:bg-accent">No</button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                onClick={() => navigate(`/campaigns/${campaign.id}`)}
-                                className="p-2.5 text-[var(--gc-purple)] hover:bg-[var(--gc-purple-soft)] rounded-md transition-all"
-                                title="View Detail"
-                              >
-                                <Eye size={18} />
-                              </button>
-                              <button
-                                onClick={() => setConfirmDeleteId(campaign.id)}
-                                className="p-2.5 text-destructive/60 hover:text-destructive hover:bg-destructive/10 rounded-md transition-all"
-                                title="Delete Campaign"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </React.Fragment>
-                    )}
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={isCompactView ? 3 : 7} className="p-16 text-center">
-                    <div className="w-20 h-20 bg-[var(--bg)] border border-[var(--border)] rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
-                      <Search size={28} className="text-[var(--ink-300)]" />
+      <section className="space-y-4">
+        {matrix.length ? matrix.map((item) => {
+          const isOpen = expanded.has(item.campaign.id);
+          const laneNames = [...new Set([...TEAM_BUCKETS, ...item.teamLanes.map((lane) => lane.name)])];
+          return (
+            <div key={item.campaign.id} className="rounded-xl border border-border bg-card shadow-sm">
+              <button onClick={() => toggleExpanded(item.campaign.id)} className="flex w-full flex-col gap-4 p-5 text-left lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gc-orange/10 text-gc-orange">
+                    <FolderKanban size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate text-lg font-black text-foreground">{item.campaign.name}</h3>
+                      <StatusPill value={item.campaign.status} />
+                      <HealthPill value={item.campaign.recordHealth} />
                     </div>
-                    <p className="text-[18px] font-bold text-[var(--ink-900)] tracking-tight">No campaigns found</p>
-                    <p className="text-[13px] font-mono text-[var(--ink-500)] mt-2">Try adjusting your filters or search query.</p>
-                  </td>
-                </tr>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.campaign.country || 'No market'} - Owner: {item.campaign.currentOwner || 'Unassigned'} - {item.campaign.nextAction || 'No next action set'}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 lg:w-[420px]">
+                  <MiniStat label="Tasks" value={`${item.doneCount}/${item.taskCount}`} />
+                  <MiniStat label="CON" value={`${item.confirmationProgress}%`} />
+                  <MiniStat label="COV" value={`${item.coverageProgress}%`} />
+                  <div className="flex items-center justify-end">
+                    <ChevronDown className={cn('text-muted-foreground transition-transform', isOpen && 'rotate-180')} size={18} />
+                  </div>
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="border-t border-border p-5">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[11px] font-black uppercase tracking-wide text-muted-foreground">Campaign tasks</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Add work to the right lane, assign it, and update status without leaving the campaign bucket.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => navigate(`/campaigns/${item.campaign.id}`)} className="rounded-lg border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">Details</button>
+                      {isMaster && (
+                        confirmDeleteCampaign === item.campaign.id ? (
+                          <>
+                            <button onClick={() => deleteCampaign(item.campaign)} className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white">Delete campaign</button>
+                            <button onClick={() => setConfirmDeleteCampaign(null)} className="rounded-lg border border-border px-3 py-2 text-xs font-bold">Cancel</button>
+                          </>
+                        ) : (
+                          <button onClick={() => setConfirmDeleteCampaign(item.campaign.id)} className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">Delete</button>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 xl:grid-cols-3">
+                    {laneNames.map((laneName) => {
+                      const lane = item.teamLanes.find((entry) => entry.name === laneName);
+                      const laneTasks = lane?.tasks || [];
+                      return (
+                        <div key={laneName} className="rounded-lg border border-border bg-background p-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[11px] font-black uppercase tracking-wide text-muted-foreground">{laneName}</p>
+                            <button onClick={() => openTask(item.campaign, undefined, laneName)} className="icon-btn" title="Add task"><Plus size={14} /></button>
+                          </div>
+                          <div className="mt-3 space-y-2">
+                            {laneTasks.length ? laneTasks.map((task) => (
+                              <div key={task.id} className="rounded-lg border border-border bg-card p-3">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-bold text-foreground">{task.title}</p>
+                                    <p className="mt-1 text-[11px] text-muted-foreground">{task.ownerId || 'Unassigned'} - {task.priority}</p>
+                                  </div>
+                                  <div className="flex shrink-0 gap-1">
+                                    <button onClick={() => openTask(item.campaign, task, laneName)} className="icon-btn" title="Edit task"><Edit3 size={13} /></button>
+                                    {isMaster && <button onClick={() => deleteTask(task)} className="icon-btn text-red-500" title="Delete task"><Trash2 size={13} /></button>}
+                                  </div>
+                                </div>
+                                <select className="settings-input mt-2 h-8 text-[11px]" value={getOperationalTaskStatus(task)} onChange={(event) => updateTaskStatus(task, event.target.value as NonNullable<Task['status']>)}>
+                                  {['Pending', 'In Progress', 'Blocked', 'Done'].map((status) => <option key={status} value={status}>{status}</option>)}
+                                </select>
+                              </div>
+                            )) : <div className="rounded-lg border border-dashed border-border p-5 text-center text-xs text-muted-foreground">No tasks in this lane</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
-            </tbody>
-          </table>
+            </div>
+          );
+        }) : (
+          <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">No campaigns match your filters.</div>
+        )}
+      </section>
+
+      {taskDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-5 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-foreground">{taskDraft.id ? 'Edit campaign task' : 'Add campaign task'}</h3>
+              <button onClick={() => setTaskDraft(null)} className="icon-btn"><X size={16} /></button>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <input className="settings-input md:col-span-2" placeholder="Task title" value={taskDraft.title} onChange={(event) => setTaskDraft({ ...taskDraft, title: event.target.value })} />
+              <input className="settings-input" value={taskDraft.campaignId} onChange={(event) => setTaskDraft({ ...taskDraft, campaignId: event.target.value })} />
+              <select className="settings-input" value={taskDraft.ownerId} onChange={(event) => setTaskDraft({ ...taskDraft, ownerId: event.target.value })}>
+                <option value="">Assigned to...</option>
+                {[taskDraft.ownerId, ...assignmentOptions].filter(Boolean).filter((item, index, array) => array.indexOf(item) === index).map((owner) => <option key={owner} value={owner}>{owner}</option>)}
+              </select>
+              <select className="settings-input" value={taskDraft.department} onChange={(event) => setTaskDraft({ ...taskDraft, department: event.target.value })}>
+                {[taskDraft.department, ...TEAM_BUCKETS].filter(Boolean).filter((item, index, array) => array.indexOf(item) === index).map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}
+              </select>
+              <input className="settings-input" type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft({ ...taskDraft, dueDate: event.target.value })} />
+              <select className="settings-input" value={taskDraft.priority} onChange={(event) => setTaskDraft({ ...taskDraft, priority: event.target.value as Task['priority'] })}>
+                {['Low', 'Medium', 'High', 'Critical'].map((priority) => <option key={priority} value={priority}>{priority}</option>)}
+              </select>
+              <select className="settings-input" value={taskDraft.status} onChange={(event) => setTaskDraft({ ...taskDraft, status: event.target.value as NonNullable<Task['status']> })}>
+                {['Pending', 'In Progress', 'Blocked', 'Done'].map((status) => <option key={status} value={status}>{status}</option>)}
+              </select>
+              <input className="settings-input" placeholder="Target" value={taskDraft.metricTarget} onChange={(event) => setTaskDraft({ ...taskDraft, metricTarget: event.target.value })} />
+              <input className="settings-input" placeholder="CON" value={taskDraft.metricCON} onChange={(event) => setTaskDraft({ ...taskDraft, metricCON: event.target.value })} />
+              <input className="settings-input" placeholder="COV" value={taskDraft.metricCOV} onChange={(event) => setTaskDraft({ ...taskDraft, metricCOV: event.target.value })} />
+              <textarea className="settings-input min-h-20 resize-none md:col-span-2" placeholder="Next step / result" value={taskDraft.nextStep} onChange={(event) => setTaskDraft({ ...taskDraft, nextStep: event.target.value })} />
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setTaskDraft(null)} className="rounded-lg border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">Cancel</button>
+              <button onClick={saveTask} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-xs font-bold text-white hover:bg-gc-orange/90"><Save size={15} /> Save</button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
+}
+
+function Metric({ title, value, tone = 'orange' }: { title: string; value: number | string; tone?: 'orange' | 'green' | 'red' | 'purple' }) {
+  const toneClass = tone === 'green' ? 'text-emerald-600' : tone === 'red' ? 'text-red-600' : tone === 'purple' ? 'text-gc-purple' : 'text-gc-orange';
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <p className="text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground">{title}</p>
+      <p className={cn('mt-3 text-3xl font-black', toneClass)}>{value}</p>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background px-3 py-2 text-right">
+      <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-sm font-black text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function StatusPill({ value }: { value: Campaign['status'] }) {
+  const styles = value === 'Active' ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600' : value === 'Blocked' ? 'border-red-500/20 bg-red-500/10 text-red-600' : 'border-border bg-muted text-muted-foreground';
+  return <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide', styles)}>{value}</span>;
+}
+
+function HealthPill({ value }: { value: Campaign['recordHealth'] }) {
+  const styles = value === 'Healthy' ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600' : value === 'At Risk' ? 'border-gc-orange/20 bg-gc-orange/10 text-gc-orange' : 'border-red-500/20 bg-red-500/10 text-red-600';
+  return <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide', styles)}>{value}</span>;
 }
