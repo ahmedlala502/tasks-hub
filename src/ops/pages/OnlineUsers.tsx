@@ -180,7 +180,7 @@ export default function OnlineUsers() {
                 </div>
                 <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">{row.email || row.rosterSource || 'Workspace activity only'}</p>
                 {row.credentialEmail && (
-                  <p className="mt-1 truncate text-[11px] font-bold text-gc-orange">{row.credentialEmail} / {row.defaultPassword}</p>
+                  <p className="mt-1 truncate text-[11px] font-bold text-gc-orange">{row.credentialEmail}</p>
                 )}
               </div>
               <div>
@@ -242,7 +242,6 @@ export default function OnlineUsers() {
                     <td className="px-4 py-3 text-sm font-bold text-foreground">{employee.shift}</td>
                     <td className="px-4 py-3">
                       <p className="text-[12px] font-black text-gc-orange">{roster.find((row) => row.name === employee.name)?.credentialEmail}</p>
-                      <p className="text-[11px] font-bold text-muted-foreground">Admin123</p>
                     </td>
                     {rosterDates.map((date) => {
                       const value = employee.schedule[date] || '';

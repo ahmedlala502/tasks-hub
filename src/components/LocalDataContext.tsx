@@ -8,6 +8,9 @@ import { migrateLocalStorageToCloud } from '../lib/migration';
 import { AppPage, FeatureKey, filterHandoversByTeam, filterMembersByTeam, filterOfficesByTeam, filterTasksByTeam, getCurrentTeam, resolvePermissionProfile, WidgetKey } from '../lib/accessControl';
 import { hashPassword, verifyPassword, generateSessionId, calculateSessionExpiration } from '../lib/authService';
 import { addToast } from '../lib/toast';
+import { REAL_EMPLOYEE_ROSTER } from '../ops/data/employeeRoster';
+import { getRosterCredentialEmail } from '../ops/lib/onlineUsers';
+import { DEFAULT_ACCESS_PASSWORD } from '../ops/auth/defaultAccessUsers';
 
 interface AuthResult {
   ok: boolean;
@@ -260,6 +263,72 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Seed roster users into workspace so they have login access and sync to Supabase
+  useEffect(() => {
+    if (loading || !syncState.isOnline) return;
+
+    const seedRosterUsers = async () => {
+      try {
+        const defaultPasswordHash = await hashPassword(DEFAULT_ACCESS_PASSWORD);
+        const newMembers: Member[] = [];
+        const newUsers: WorkspaceUser[] = [];
+
+        for (const employee of REAL_EMPLOYEE_ROSTER) {
+          const email = getRosterCredentialEmail(employee.name).toLowerCase();
+          if (workspace.users.some(u => u.email.toLowerCase() === email)) continue;
+
+          const createdAt = new Date().toISOString();
+          const member = {
+            id: createId('member'),
+            name: employee.name,
+            team: employee.department || 'Operations',
+            office: employee.office || 'Egypt',
+            country: 'Egypt',
+            role: employee.roleTask || 'Operations Agent',
+            tasksCompleted: 0,
+            handoversOut: 0,
+            onTime: 0,
+            updatedAt: createdAt,
+            status: 'active' as const,
+          };
+
+          const user = {
+            id: createId('user'),
+            name: employee.name,
+            role: member.role,
+            office: member.office,
+            country: member.country,
+            email,
+            password: defaultPasswordHash,
+            team: member.team,
+            status: 'active' as const,
+            createdAt,
+            approvedAt: createdAt,
+          };
+
+          await cloudStore.saveMember(member);
+          await cloudStore.saveUser(user);
+          newMembers.push(member);
+          newUsers.push(user);
+        }
+
+        if (newMembers.length > 0) {
+          setWorkspace(current => ({
+            ...current,
+            members: [...newMembers, ...current.members],
+            users: [...newUsers, ...current.users],
+          }));
+          addToast('Synced ' + newMembers.length + ' roster users to workspace.', 'success', 4000);
+        }
+      } catch (err) {
+        console.error('Failed to seed roster users:', err);
+      }
+    };
+
+    seedRosterUsers();
+  }, [loading, syncState.isOnline]);
+
+
   const commit = async (updater: (current: LocalWorkspace) => LocalWorkspace) => {
     setWorkspace(current => {
       const next = updater(current);
@@ -391,19 +460,17 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
     const sessionId = generateSessionId();
     const expiresAt = calculateSessionExpiration(24);
 
-    commit(current => {
-      const updatedUsers = current.users.map(u =>
-        u.email.toLowerCase() === normalizedEmail
-          ? { ...u, loginAttempts: 0, lockedUntil: undefined, status: 'active' as const, lastLoginAt: new Date().toISOString() }
-          : u
-      );
-      cloudStore.updateUser(normalizedEmail, { lastLoginAt: new Date().toISOString(), loginAttempts: 0, lockedUntil: undefined, status: 'active' });
-      return appendAudit({
-        ...current,
-        user: toSessionUser(account),
-        users: updatedUsers,
-      }, 'LOGIN_SUCCESS', { email: normalizedEmail, sessionId }, 'info');
-    });
+    const updatedUsers = workspace.users.map(u =>
+      u.email.toLowerCase() === normalizedEmail
+        ? { ...u, loginAttempts: 0, lockedUntil: undefined, status: 'active' as const, lastLoginAt: new Date().toISOString() }
+        : u
+    );
+    await cloudStore.updateUser(normalizedEmail, { lastLoginAt: new Date().toISOString(), loginAttempts: 0, lockedUntil: undefined, status: 'active' });
+    commit(current => appendAudit({
+      ...current,
+      user: toSessionUser(account),
+      users: updatedUsers,
+    }, 'LOGIN_SUCCESS', { email: normalizedEmail, sessionId }, 'info'));
 
     const state: AuthState = { isAuthenticated: true, isLocked: false, lastActivity: Date.now(), sessionId, expiresAt };
     setAuth(state);
@@ -432,18 +499,20 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     const hashedPassword = await hashPassword(trimmedPassword);
+    const newSignup = {
+      id: createId('signup'),
+      name: payload.name.trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
+      team: payload.team,
+      office: payload.office,
+      country: payload.country,
+      requestedAt: new Date().toISOString(),
+    };
+    await cloudStore.saveSignupRequest(newSignup);
     commit(current => appendAudit({
       ...current,
-      pendingSignups: [{
-        id: createId('signup'),
-        name: payload.name.trim(),
-        email: normalizedEmail,
-        password: hashedPassword,
-        team: payload.team,
-        office: payload.office,
-        country: payload.country,
-        requestedAt: new Date().toISOString(),
-      }, ...current.pendingSignups],
+      pendingSignups: [newSignup, ...current.pendingSignups],
     }, 'SIGNUP_REQUEST', { email: normalizedEmail, team: payload.team }));
 
     addToast('Access request submitted successfully!', 'success', 6000);
@@ -538,7 +607,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
           email: request.email,
           password: request.password,
           team: request.team,
-          status: 'active',
+          status: 'active' as const,
           createdAt: request.requestedAt,
           approvedAt,
         };

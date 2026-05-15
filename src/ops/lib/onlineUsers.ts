@@ -19,7 +19,6 @@ export interface OnlineUserRow {
   nextShiftTime?: string;
   rosterSource?: string;
   credentialEmail?: string;
-  defaultPassword?: string;
   status: OnlineUserStatus;
   lastActiveAt?: number;
   tasksTouched: number;
@@ -157,7 +156,6 @@ export function buildOnlineUserRoster({
     row.nextShiftTime = nextShift?.[1];
     row.rosterSource = employee.source;
     row.credentialEmail = getRosterCredentialEmail(employee.name);
-    row.defaultPassword = 'Admin123';
     row.source = 'roster';
   });
 

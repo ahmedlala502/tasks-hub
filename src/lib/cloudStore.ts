@@ -45,7 +45,7 @@ export class CloudStore {
   // Users
   async getUsers() {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_users' as any)
       .select('*')
       .eq('workspace_id', this.workspaceId);
     
@@ -55,7 +55,7 @@ export class CloudStore {
 
   async saveUser(user: WorkspaceUser) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_users' as any)
       .upsert({ ...user, workspace_id: this.workspaceId, updated_at: new Date().toISOString() })
       .select()
       .single();
@@ -66,7 +66,7 @@ export class CloudStore {
 
   async updateUser(email: string, patch: Partial<WorkspaceUser>) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_users' as any)
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq('workspace_id', this.workspaceId)
       .eq('email', email)
@@ -79,7 +79,7 @@ export class CloudStore {
 
   async deleteUser(email: string) {
     const { error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_users' as any)
       .delete()
       .eq('workspace_id', this.workspaceId)
       .eq('email', email);
@@ -90,7 +90,7 @@ export class CloudStore {
   // Tasks
   async getTasks() {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_tasks' as any)
       .select('*')
       .eq('workspace_id', this.workspaceId)
       .order('created_at', { ascending: false });
@@ -101,7 +101,7 @@ export class CloudStore {
 
   async saveTask(task: Task) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_tasks' as any)
       .upsert({ ...task, workspace_id: this.workspaceId, updated_at: new Date().toISOString() })
       .select()
       .single();
@@ -112,7 +112,7 @@ export class CloudStore {
 
   async updateTask(id: string, patch: Partial<Task>) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_tasks' as any)
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq('workspace_id', this.workspaceId)
       .eq('id', id)
@@ -125,7 +125,7 @@ export class CloudStore {
 
   async deleteTasks(ids: string[]) {
     const { error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_tasks' as any)
       .delete()
       .eq('workspace_id', this.workspaceId)
       .in('id', ids);
@@ -136,7 +136,7 @@ export class CloudStore {
   // Handovers
   async getHandovers() {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_handovers' as any)
       .select('*')
       .eq('workspace_id', this.workspaceId)
       .order('created_at', { ascending: false });
@@ -147,7 +147,7 @@ export class CloudStore {
 
   async saveHandover(handover: Handover) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_handovers' as any)
       .upsert({ ...handover, workspace_id: this.workspaceId })
       .select()
       .single();
@@ -158,7 +158,7 @@ export class CloudStore {
 
   async updateHandover(id: string, patch: Partial<Handover>) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_handovers' as any)
       .update(patch)
       .eq('workspace_id', this.workspaceId)
       .eq('id', id)
@@ -171,7 +171,7 @@ export class CloudStore {
 
   async deleteHandover(id: string) {
     const { error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_handovers' as any)
       .delete()
       .eq('workspace_id', this.workspaceId)
       .eq('id', id);
@@ -182,7 +182,7 @@ export class CloudStore {
   // Offices
   async getOffices() {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_offices' as any)
       .select('*')
       .eq('workspace_id', this.workspaceId);
     
@@ -192,7 +192,7 @@ export class CloudStore {
 
   async saveOffice(office: Office) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_offices' as any)
       .upsert({ ...office, workspace_id: this.workspaceId })
       .select()
       .single();
@@ -203,7 +203,7 @@ export class CloudStore {
 
   async updateOffice(id: string, patch: Partial<Office>) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_offices' as any)
       .update(patch)
       .eq('workspace_id', this.workspaceId)
       .eq('id', id)
@@ -216,7 +216,7 @@ export class CloudStore {
 
   async deleteOffice(id: string) {
     const { error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_offices' as any)
       .delete()
       .eq('workspace_id', this.workspaceId)
       .eq('id', id);
@@ -227,7 +227,7 @@ export class CloudStore {
   // Members
   async getMembers() {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_members' as any)
       .select('*')
       .eq('workspace_id', this.workspaceId);
     
@@ -237,7 +237,7 @@ export class CloudStore {
 
   async saveMember(member: Member) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_members' as any)
       .upsert({ ...member, workspace_id: this.workspaceId, updated_at: new Date().toISOString() })
       .select()
       .single();
@@ -248,7 +248,7 @@ export class CloudStore {
 
   async updateMember(id: string, patch: Partial<Member>) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_members' as any)
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq('workspace_id', this.workspaceId)
       .eq('id', id)
@@ -261,7 +261,7 @@ export class CloudStore {
 
   async deleteMember(id: string) {
     const { error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_members' as any)
       .delete()
       .eq('workspace_id', this.workspaceId)
       .eq('id', id);
@@ -272,7 +272,7 @@ export class CloudStore {
   // Settings
   async getSettings() {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_settings' as any)
       .select('settings')
       .eq('workspace_id', this.workspaceId)
       .single();
@@ -286,7 +286,7 @@ export class CloudStore {
 
   async saveSettings(settings: WorkspaceSettings) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_settings' as any)
       .upsert({
         workspace_id: this.workspaceId,
         settings,
@@ -302,7 +302,7 @@ export class CloudStore {
   // Audit Logs
   async getAuditLogs(limit = 200) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_audit_logs' as any)
       .select('*')
       .eq('workspace_id', this.workspaceId)
       .order('timestamp', { ascending: false })
@@ -314,7 +314,7 @@ export class CloudStore {
 
   async logAudit(event: AuditEvent) {
     const { error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_audit_logs' as any)
       .insert({ ...event, workspace_id: this.workspaceId });
     
     if (error) throw error;
@@ -323,7 +323,7 @@ export class CloudStore {
   // Signup Requests
   async getSignupRequests() {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_audit_logs' as any)
       .select('*')
       .eq('workspace_id', this.workspaceId)
       .order('requested_at', { ascending: false });
@@ -334,7 +334,7 @@ export class CloudStore {
 
   async saveSignupRequest(request: PendingSignupRequest) {
     const { data, error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_signup_requests' as any)
       .upsert({ ...request, workspace_id: this.workspaceId })
       .select()
       .single();
@@ -345,7 +345,7 @@ export class CloudStore {
 
   async deleteSignupRequest(id: string) {
     const { error } = await supabase
-      .from('workspace_' as any)
+      .from('workspace_signup_requests' as any)
       .delete()
       .eq('workspace_id', this.workspaceId)
       .eq('id', id);
@@ -465,32 +465,33 @@ export class CloudStore {
         name: workspace.settings?.name || 'TryGC Hub Workspace',
       }),
       ...workspace.users.map((u: any) =>
-        supabase.from('workspace_' as any).upsert({ ...u, workspace_id: this.workspaceId })
+        supabase.from('workspace_users' as any).upsert({ ...u, workspace_id: this.workspaceId })
       ),
       ...workspace.tasks.map((t: any) =>
-        supabase.from('workspace_' as any).upsert({ ...t, workspace_id: this.workspaceId })
+        supabase.from('workspace_tasks' as any).upsert({ ...t, workspace_id: this.workspaceId })
       ),
       ...workspace.handovers.map((h: any) =>
-        supabase.from('workspace_' as any).upsert({ ...h, workspace_id: this.workspaceId })
+        supabase.from('workspace_handovers' as any).upsert({ ...h, workspace_id: this.workspaceId })
       ),
       ...workspace.offices.map((o: any) =>
-        supabase.from('workspace_' as any).upsert({ ...o, workspace_id: this.workspaceId })
+        supabase.from('workspace_offices' as any).upsert({ ...o, workspace_id: this.workspaceId })
       ),
       ...workspace.members.map((m: any) =>
-        supabase.from('workspace_' as any).upsert({ ...m, workspace_id: this.workspaceId })
+        supabase.from('workspace_members' as any).upsert({ ...m, workspace_id: this.workspaceId })
       ),
-      workspace.settings && supabase.from('workspace_' as any).upsert({
+      workspace.settings && supabase.from('workspace_settings' as any).upsert({
         workspace_id: this.workspaceId,
         settings: workspace.settings,
       }),
       ...workspace.auditLogs.slice(0, 200).map((log: any) =>
-        supabase.from('workspace_' as any).insert({ ...log, workspace_id: this.workspaceId })
+        supabase.from('workspace_audit_logs' as any).insert({ ...log, workspace_id: this.workspaceId })
       ),
       ...workspace.pendingSignups.map((s: any) =>
-        supabase.from('workspace_' as any).upsert({ ...s, workspace_id: this.workspaceId })
+        supabase.from('workspace_signup_requests' as any).upsert({ ...s, workspace_id: this.workspaceId })
       ),
     ]);
   }
 }
 
 export const cloudStore = CloudStore.getInstance();
+
