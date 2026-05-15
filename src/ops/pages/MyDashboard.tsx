@@ -26,7 +26,16 @@ export default function MyDashboard() {
   const handovers = dataService.getHandovers();
   const displayName = user?.displayName || 'Workspace User';
   const insights = useMemo(() => buildMyDashboardInsights(tasks, campaigns, displayName), [campaigns, displayName, tasks]);
-  const myTasks = useMemo(() => tasks.filter((task) => isAssignedToUser(task, displayName)), [displayName, tasks]);
+  const myTasks = useMemo(() => {
+    const byId = new Map<string, Task>();
+    tasks.filter((task) => isAssignedToUser(task, displayName)).forEach((task) => byId.set(task.id, task));
+    return Array.from(byId.values()).sort((a, b) => {
+      const statusA = getOperationalTaskStatus(a);
+      const statusB = getOperationalTaskStatus(b);
+      if (statusA !== statusB) return statusA === 'Done' ? 1 : statusB === 'Done' ? -1 : 0;
+      return (a.dueDate || 0) - (b.dueDate || 0);
+    });
+  }, [displayName, tasks]);
   const myHandovers = useMemo(() => handovers.filter((handover) => isHandoverForUser(handover, displayName)).slice(0, 6), [displayName, handovers]);
   const campaignMatrix = useMemo(() => buildMyCampaignMatrix(campaigns, tasks).filter((item) => insights.campaignNames.includes(item.campaign.name)).slice(0, 5), [campaigns, insights.campaignNames, tasks]);
 
@@ -61,13 +70,13 @@ export default function MyDashboard() {
         <section className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-extrabold text-foreground">Priority Work</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Critical, blocked, and overdue personal work.</p>
+              <h3 className="text-sm font-extrabold text-foreground">My Task Queue</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Every task assigned to you, without duplicate rows.</p>
             </div>
             <Link to="/tasks" className="text-xs font-bold text-gc-orange hover:underline">Open Tasks</Link>
           </div>
           <div className="mt-4 space-y-3">
-            {insights.urgentTasks.length ? insights.urgentTasks.map((task) => <TaskRow key={task.id} task={task} />) : <EmptyState label="No urgent personal tasks right now." />}
+            {myTasks.length ? myTasks.slice(0, 12).map((task) => <TaskRow key={task.id} task={task} />) : <EmptyState label="No personal tasks assigned to you yet." />}
           </div>
         </section>
 

@@ -49,6 +49,29 @@ const EMPTY_TASK: CampaignTaskDraft = {
 
 const TEAM_BUCKETS = ['PMO', 'Community', 'Coverage', 'QA', 'Reporting', 'Finance', 'Operations'];
 
+const TRACKER_COLUMNS: Array<{ label: string; value: (campaign: Campaign) => React.ReactNode; align?: 'right' }> = [
+  { label: 'Campaign Name', value: (campaign) => campaign.name },
+  { label: 'Country', value: (campaign) => campaign.country },
+  { label: 'Type', value: (campaign) => campaign.type },
+  { label: 'Total List', value: (campaign) => formatMetric(campaign.totalList), align: 'right' },
+  { label: 'Confirmations', value: (campaign) => formatMetric(campaign.confirmations), align: 'right' },
+  { label: 'Target', value: (campaign) => formatMetric(campaign.targetInfluencers), align: 'right' },
+  { label: 'Visited', value: (campaign) => formatMetric(campaign.visited), align: 'right' },
+  { label: 'Coverage', value: (campaign) => formatMetric(campaign.coverage), align: 'right' },
+  { label: 'Approved', value: (campaign) => formatMetric(campaign.approved), align: 'right' },
+  { label: 'Reject', value: (campaign) => formatMetric(campaign.reject), align: 'right' },
+  { label: 'Daily Target', value: (campaign) => formatMetric(campaign.dailyTarget), align: 'right' },
+  { label: "Today's Visits", value: (campaign) => formatMetric(campaign.todaysVisits), align: 'right' },
+  { label: "Tomorrow's Visits", value: (campaign) => formatMetric(campaign.tomorrowsVisits), align: 'right' },
+  { label: 'Day After', value: (campaign) => formatMetric(campaign.dayAfterVisits), align: 'right' },
+  { label: 'Start Date', value: (campaign) => campaign.startDate || '-' },
+  { label: 'End Date', value: (campaign) => campaign.endDate || '-' },
+  { label: 'Run Rate', value: (campaign) => formatMetric(campaign.runRate), align: 'right' },
+  { label: '% of Target', value: (campaign) => formatRate(campaign.targetRate), align: 'right' },
+  { label: 'Conf Rate %', value: (campaign) => formatRate(campaign.confirmationRate), align: 'right' },
+  { label: 'Cov Rate %', value: (campaign) => formatRate(campaign.coverageRate), align: 'right' },
+];
+
 export default function CampaignList() {
   const navigate = useNavigate();
   const { role } = useAuth();
@@ -86,8 +109,13 @@ export default function CampaignList() {
       .then((onlineCampaigns) => {
         if (!alive) return;
         if (onlineCampaigns.length) {
-          dataService.upsertCampaigns(onlineCampaigns);
-          setCampaigns(onlineCampaigns);
+          const localCampaigns = dataService.getCampaigns();
+          if (!localCampaigns.length) {
+            dataService.upsertCampaigns(onlineCampaigns);
+            setCampaigns(onlineCampaigns);
+          } else {
+            setCampaigns(localCampaigns);
+          }
         }
         setOnlineStatus('ready');
       })
@@ -256,10 +284,10 @@ export default function CampaignList() {
               <p className="mt-1 text-xs text-muted-foreground">Upload CSV or Excel, preview every row, fix rejected rows, then publish to Supabase for the whole team.</p>
             </div>
           </div>
-          <BulkUploadButton<Campaign>
-            label="Bulk upload"
-            title="Bulk Import Campaigns"
-            templateHeaders={['id','name','clientId','brandId','country','city','objective','platforms','type','budget','budgetType','targetInfluencers','targetPostingCoverage','startDate','endDate','status','stage','currentOwner','deliverables','tags','mentions','productDetails','influencerCriteria']}
+            <BulkUploadButton<Campaign>
+              label="Bulk upload"
+              title="Bulk Import Campaigns"
+            templateHeaders={TRACKER_COLUMNS.map((column) => column.label)}
             parse={rowsToCampaigns}
             validate={c => {
               const errs: string[] = [];
@@ -310,10 +338,10 @@ export default function CampaignList() {
                     <p className="mt-1 text-xs text-muted-foreground">{item.campaign.country || 'No market'} - Owner: {item.campaign.currentOwner || 'Unassigned'} - {item.campaign.nextAction || 'No next action set'}</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-4 gap-2 lg:w-[420px]">
-                  <MiniStat label="Tasks" value={`${item.doneCount}/${item.taskCount}`} />
-                  <MiniStat label="CON" value={`${item.confirmationProgress}%`} />
-                  <MiniStat label="COV" value={`${item.coverageProgress}%`} />
+                <div className="grid grid-cols-4 gap-2 lg:w-[500px]">
+                  <MiniStat label="Tasks" value={`${item.doneCount}/${item.taskCount}`} sub={`${item.openCount} open`} />
+                  <MiniStat label="Confirmations" value={`${item.confirmationTotal}/${item.targetTotal}`} sub={`${item.confirmationProgress}%`} />
+                  <MiniStat label="Coverage" value={`${item.coverageTotal}/${item.campaign.targetPostingCoverage || item.targetTotal}`} sub={`${item.coverageProgress}%`} />
                   <div className="flex items-center justify-end">
                     <ChevronDown className={cn('text-muted-foreground transition-transform', isOpen && 'rotate-180')} size={18} />
                   </div>
@@ -326,6 +354,12 @@ export default function CampaignList() {
                     <div>
                       <p className="text-[11px] font-black uppercase tracking-wide text-muted-foreground">Campaign tasks</p>
                       <p className="mt-1 text-xs text-muted-foreground">Add work to the right lane, assign it, and update status without leaving the campaign bucket.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <BadgeStat label="Tasks" value={`${item.taskCount}`} />
+                      <BadgeStat label="Confirmations" value={`${item.confirmationTotal}/${item.targetTotal}`} />
+                      <BadgeStat label="Coverage" value={`${item.coverageTotal}/${item.campaign.targetPostingCoverage || item.targetTotal}`} />
+                      <BadgeStat label="Blocked" value={`${item.blockedCount}`} tone={item.blockedCount ? 'red' : 'green'} />
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => navigate(`/campaigns/${item.campaign.id}`)} className="rounded-lg border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">Details</button>
@@ -424,6 +458,19 @@ export default function CampaignList() {
   );
 }
 
+function formatMetric(value: number | string | undefined | null) {
+  if (value === undefined || value === null || value === '') return '-';
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toLocaleString() : String(value);
+}
+
+function formatRate(value: number | string | undefined | null) {
+  if (value === undefined || value === null || value === '') return '-';
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return String(value);
+  return `${parsed.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+}
+
 function Metric({ title, value, tone = 'orange' }: { title: string; value: number | string; tone?: 'orange' | 'green' | 'red' | 'purple' }) {
   const toneClass = tone === 'green' ? 'text-emerald-600' : tone === 'red' ? 'text-red-600' : tone === 'purple' ? 'text-gc-purple' : 'text-gc-orange';
   return (
@@ -434,12 +481,26 @@ function Metric({ title, value, tone = 'orange' }: { title: string; value: numbe
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
+function MiniStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-lg border border-border bg-background px-3 py-2 text-right">
       <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="text-sm font-black text-foreground">{value}</p>
+      {sub && <p className="text-[10px] font-black uppercase tracking-wide text-gc-orange">{sub}</p>}
     </div>
+  );
+}
+
+function BadgeStat({ label, value, tone = 'orange' }: { label: string; value: string; tone?: 'orange' | 'green' | 'red' }) {
+  const styles = tone === 'green'
+    ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700'
+    : tone === 'red'
+      ? 'border-red-500/20 bg-red-500/10 text-red-700'
+      : 'border-gc-orange/20 bg-gc-orange/10 text-gc-orange';
+  return (
+    <span className={cn('rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wide', styles)}>
+      {label}: {value}
+    </span>
   );
 }
 

@@ -30,7 +30,6 @@ const OPS_NAV: NavItem[] = [
   { icon: UserRound,       label: 'My Dashboard',   path: '/my-dashboard' },
   { icon: Activity,        label: 'Live Ops',       path: '/live-ops' },
   { icon: FolderKanban,    label: 'Campaigns',      path: '/campaigns' },
-  { icon: Users,           label: 'Influencers',    path: '/influencers' },
   { icon: ClipboardList,   label: 'Daily Routine',  path: '/tasks-daily-routines' },
   { icon: RefreshCw,       label: 'Handover',       path: '/handover' },
   { icon: CheckSquare,     label: 'Tasks',          path: '/tasks' },

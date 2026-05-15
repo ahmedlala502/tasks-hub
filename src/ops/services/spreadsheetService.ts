@@ -81,6 +81,11 @@ export function rowsToCampaigns(rows: Row[]): Campaign[] {
     const coverage = num(pick(row, ['coverage', 'covered']), 0);
     const approved = num(pick(row, ['approved', 'approval']), 0);
     const rejected = num(pick(row, ['reject', 'rejected']), 0);
+    const dailyTarget = num(pick(row, ['daily target', 'dailyTarget']), 0);
+    const todaysVisits = num(pick(row, ["today's visits", 'todays visits', 'today visits', 'todayVisits']), 0);
+    const tomorrowsVisits = num(pick(row, ["tomorrow's visits", 'tomorrows visits', 'tomorrow visits', 'tomorrowVisits']), 0);
+    const dayAfterVisits = num(pick(row, ['day after', 'day after visits', 'dayAfterVisits']), 0);
+    const runRate = num(pick(row, ['run rate', 'runRate']), 0);
     const targetRate = num(pick(row, ['% of target', 'target rate', 'target %']), 0);
     const confirmationRate = num(pick(row, ['conf rate %', 'confirmation rate', 'confirmation rate %']), 0);
     const coverageRate = num(pick(row, ['cov rate %', 'coverage rate', 'coverage rate %']), 0);
@@ -102,8 +107,22 @@ export function rowsToCampaigns(rows: Row[]): Campaign[] {
       type: text(pick(row, ['type', 'campaign type']), 'Influencer Marketing'),
       budget: num(pick(row, ['budget']), 0),
       budgetType: text(pick(row, ['budgetType', 'budget type', 'currency']), 'USD'),
-      targetInfluencers: totalList || target || num(pick(row, ['targetInfluencers', 'target influencers']), 0),
-      targetPostingCoverage: target || num(pick(row, ['targetPostingCoverage', 'target coverage', 'coverage target']), coverage),
+      targetInfluencers: target || num(pick(row, ['targetInfluencers', 'target influencers']), 0),
+      targetPostingCoverage: coverage || target || num(pick(row, ['targetPostingCoverage', 'target coverage', 'coverage target']), coverage),
+      totalList,
+      confirmations,
+      visited,
+      coverage,
+      approved,
+      reject: rejected,
+      dailyTarget,
+      todaysVisits,
+      tomorrowsVisits,
+      dayAfterVisits,
+      runRate,
+      targetRate,
+      confirmationRate,
+      coverageRate,
       startDate: asDateText(pick(row, ['startDate', 'start date'])),
       endDate: asDateText(pick(row, ['endDate', 'end date'])),
       deliverables: text(pick(row, ['deliverables']), `Target ${target || 0}; confirmations ${confirmations}; visits ${visited}; coverage ${coverage}; approved ${approved}; rejected ${rejected}`),
@@ -346,20 +365,26 @@ function toCsv(rows: Row[]) {
 
 export function exportCampaigns(campaigns: Campaign[]) {
   exportRows('trygc_campaigns_export.xlsx', campaigns.map((campaign) => ({
-    id: campaign.id,
-    name: campaign.name,
-    country: campaign.country,
-    city: campaign.city,
-    status: campaign.status,
-    stage: campaign.stage,
-    recordHealth: campaign.recordHealth,
-    currentOwner: campaign.currentOwner,
-    budget: campaign.budget,
-    targetInfluencers: campaign.targetInfluencers,
-    targetPostingCoverage: campaign.targetPostingCoverage,
-    startDate: campaign.startDate,
-    endDate: campaign.endDate,
-    platforms: campaign.platforms.join('; '),
+    'Campaign Name': campaign.name,
+    Country: campaign.country,
+    Type: campaign.type,
+    'Total List': campaign.totalList ?? '',
+    Confirmations: campaign.confirmations ?? '',
+    Target: campaign.targetInfluencers,
+    Visited: campaign.visited ?? '',
+    Coverage: campaign.coverage ?? campaign.targetPostingCoverage,
+    Approved: campaign.approved ?? '',
+    Reject: campaign.reject ?? '',
+    'Daily Target': campaign.dailyTarget ?? '',
+    "Today's Visits": campaign.todaysVisits ?? '',
+    "Tomorrow's Visits": campaign.tomorrowsVisits ?? '',
+    'Day After': campaign.dayAfterVisits ?? '',
+    'Start Date': campaign.startDate,
+    'End Date': campaign.endDate,
+    'Run Rate': campaign.runRate ?? '',
+    '% of Target': campaign.targetRate ?? '',
+    'Conf Rate %': campaign.confirmationRate ?? '',
+    'Cov Rate %': campaign.coverageRate ?? '',
   })));
 }
 

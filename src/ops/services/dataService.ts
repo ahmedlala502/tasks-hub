@@ -9,6 +9,7 @@ import { Campaign, CampaignInfluencer, Blocker, Handover, Task } from '../types'
 import { ensureDailyOperatingTasks } from '../lib/dailyOperatingTasks';
 import completedTasksCsv from '../data/community-done-tasks.csv?raw';
 import attachedWorkspaceExport from '../data/attached-workspace-export.json';
+import { CAMPAIGNS_20260515 } from '../data/campaigns-20260515';
 import { buildImportedCompletedTasks, deriveUsersFromCompletedTasks, extractUsersFromWorkspaceExport, parseCompletedTasksCsv } from '../lib/importedWorkspaceData';
 import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
 
@@ -47,7 +48,7 @@ export const ATTACHED_EXPORT_USERS = extractUsersFromWorkspaceExport(attachedWor
 const IMPORTED_COMPLETED_TASK_ROWS = parseCompletedTasksCsv(completedTasksCsv);
 export const IMPORTED_COMPLETED_TASKS = buildImportedCompletedTasks(IMPORTED_COMPLETED_TASK_ROWS);
 
-const INITIAL_CAMPAIGNS_DATA: Campaign[] = [];
+const INITIAL_CAMPAIGNS_DATA: Campaign[] = CAMPAIGNS_20260515;
 
 export const INITIAL_INFLUENCERS_DATA: CampaignInfluencer[] = [
   {
@@ -121,9 +122,9 @@ const saveToStorage = (key: string, data: any) => {
   localStorage.removeItem(key);
 });
 
-// V5 — tasks and handovers reset for demo
+// V6 — campaigns replaced from campaigns_20260515_1730.xlsx
 const STORAGE_KEYS = {
-  campaigns: 'GC_CAMPAIGNS_V4',
+  campaigns: 'GC_CAMPAIGNS_V6',
   influencers: 'GC_INFLUENCERS_V4',
   blockers: 'GC_BLOCKERS_V4',
   tasks: 'GC_TASKS_V5',

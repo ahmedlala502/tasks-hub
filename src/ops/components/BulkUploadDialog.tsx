@@ -123,13 +123,28 @@ function BulkUploadDialog<T>({
 
   const downloadTemplate = () => {
     const sampleValues = templateHeaders.map((header) => {
-      const key = header.toLowerCase();
+      const key = header.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (key === 'id') return 'C-BULK-001';
-      if (key === 'name') return 'Ramadan Launch KSA';
+      if (key === 'name' || key === 'campaignname') return 'Ramadan Launch KSA';
       if (key === 'country') return 'KSA';
       if (key === 'city') return 'Riyadh';
       if (key === 'platforms') return 'Instagram; TikTok';
       if (key === 'type') return 'Influencer Marketing';
+      if (key === 'totallist') return '150';
+      if (key === 'confirmations') return '75';
+      if (key === 'target') return '100';
+      if (key === 'visited') return '45';
+      if (key === 'coverage') return '40';
+      if (key === 'approved') return '38';
+      if (key === 'reject') return '2';
+      if (key === 'dailytarget') return '10';
+      if (key === 'todaysvisits') return '5';
+      if (key === 'tomorrowsvisits') return '6';
+      if (key === 'dayafter') return '4';
+      if (key === 'runrate') return '42';
+      if (key === 'oftarget') return '42';
+      if (key === 'confrate') return '75';
+      if (key === 'covrate') return '40';
       if (key === 'budget') return '50000';
       if (key === 'budgettype') return 'SAR';
       if (key === 'targetinfluencers') return '25';

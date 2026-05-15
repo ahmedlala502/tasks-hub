@@ -19,16 +19,56 @@ import {
   Brain,
   Eye,
   EyeOff,
+  FileSpreadsheet,
+  ListChecks,
   Server,
+  UploadCloud,
+  Users,
 } from 'lucide-react';
+import { useAuth } from '../App';
+import { BulkUploadButton } from '../components/BulkUploadDialog';
+import { adminApi } from '../services/adminApi';
+import { dataService } from '../services/dataService';
 import { cn } from '../utils';
 import { AI_PROVIDER_PRESETS, AiProviderConfig, AiProviderId } from '../services/geminiService';
+import {
+  rowsToCampaigns,
+  rowsToInfluencers,
+  rowsToTasks,
+  rowsToUsers,
+  type UserImportRow,
+} from '../services/spreadsheetService';
+import type { Campaign, CampaignInfluencer, Task } from '../types';
 
 const SETTING_SECTIONS = [
   { id: 'general', label: 'General Info', icon: Sliders },
   { id: 'security', label: 'Security & API', icon: Shield },
   { id: 'notifications', label: 'Alert Protocols', icon: Bell },
   { id: 'cloud', label: 'Cloud Resources', icon: Cloud },
+  { id: 'bulk-upload', label: 'Bulk Upload Center', icon: UploadCloud, masterOnly: true },
+];
+
+const CAMPAIGN_TEMPLATE_HEADERS = [
+  'Campaign Name',
+  'Country',
+  'Type',
+  'Total List',
+  'Confirmations',
+  'Target',
+  'Visited',
+  'Coverage',
+  'Approved',
+  'Reject',
+  'Daily Target',
+  "Today's Visits",
+  "Tomorrow's Visits",
+  'Day After',
+  'Start Date',
+  'End Date',
+  'Run Rate',
+  '% of Target',
+  'Conf Rate %',
+  'Cov Rate %',
 ];
 
 const DEFAULT_AI_PROVIDER: AiProviderConfig = {
@@ -41,8 +81,11 @@ const DEFAULT_AI_PROVIDER: AiProviderConfig = {
 };
 
 export default function SettingsWorkspace() {
+  const { role } = useAuth();
+  const isMaster = role === 'master';
   const [activeRoot, setActiveRoot] = useState('general');
   const [saved, setSaved] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState('');
   const savedTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -98,7 +141,20 @@ export default function SettingsWorkspace() {
     autoArchive: false,
     strictRbac: true,
   });
-  const activeMeta = useMemo(() => SETTING_SECTIONS.find((section) => section.id === activeRoot), [activeRoot]);
+  const visibleSettingSections = useMemo(
+    () => SETTING_SECTIONS.filter((section) => !section.masterOnly || isMaster),
+    [isMaster],
+  );
+  const activeMeta = useMemo(
+    () => visibleSettingSections.find((section) => section.id === activeRoot) ?? visibleSettingSections[0],
+    [activeRoot, visibleSettingSections],
+  );
+
+  useEffect(() => {
+    if (!visibleSettingSections.some((section) => section.id === activeRoot)) {
+      setActiveRoot(visibleSettingSections[0]?.id ?? 'general');
+    }
+  }, [activeRoot, visibleSettingSections]);
 
   const updateSetting = (key: keyof typeof settings, value: string) => {
     setSettings((current: typeof settings) => ({ ...current, [key]: value }));
@@ -134,6 +190,55 @@ export default function SettingsWorkspace() {
     setAiProvider((current) => ({ ...current, [key]: value }));
   };
 
+  const commitCampaigns = async (items: Campaign[]) => {
+    const { inserted, updated } = dataService.upsertCampaigns(items);
+    setBulkMessage(`Campaigns updated: ${inserted} added, ${updated} refreshed.`);
+    return { inserted, updated };
+  };
+
+  const commitInfluencers = async (items: CampaignInfluencer[]) => {
+    const { inserted, updated } = dataService.upsertInfluencers(items);
+    setBulkMessage(`Influencers updated: ${inserted} added, ${updated} refreshed.`);
+    return { inserted, updated };
+  };
+
+  const commitTasks = async (items: Task[]) => {
+    const { inserted, updated } = dataService.upsertTasks(items);
+    setBulkMessage(`Tasks updated: ${inserted} added, ${updated} refreshed.`);
+    return { inserted, updated };
+  };
+
+  const commitUsers = async (items: UserImportRow[]) => {
+    let inserted = 0;
+    const errors: string[] = [];
+
+    for (const user of items) {
+      try {
+        await adminApi.createUser({
+          email: user.email,
+          name: user.name,
+          password: user.password,
+          role: user.role,
+          office: user.office ?? 'Egypt',
+          department: user.department as any,
+          title: user.title,
+        });
+        inserted++;
+      } catch (error) {
+        errors.push(`${user.email}: ${error instanceof Error ? error.message : 'failed'}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      console.warn('Bulk user import errors', errors);
+      setBulkMessage(`Users updated: ${inserted} added. ${errors.length} row needs review.`);
+    } else {
+      setBulkMessage(`Users updated: ${inserted} added.`);
+    }
+
+    return { inserted, updated: 0 };
+  };
+
   return (
     <div className="max-w-[1240px] mx-auto space-y-6 pb-12">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -156,7 +261,7 @@ export default function SettingsWorkspace() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1 space-y-1">
-          {SETTING_SECTIONS.map((section) => (
+          {visibleSettingSections.map((section) => (
             <button
               key={section.id}
               onClick={() => setActiveRoot(section.id)}
@@ -169,6 +274,7 @@ export default function SettingsWorkspace() {
             >
               <section.icon size={15} className={activeRoot === section.id ? 'text-gc-orange' : ''} />
               {section.label}
+              {section.masterOnly && <span className="ml-auto rounded-full border border-gc-orange/30 bg-gc-orange/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-gc-orange">Master</span>}
               {activeRoot === section.id && <ChevronRight size={13} className="ml-auto text-gc-orange" />}
             </button>
           ))}
@@ -359,10 +465,126 @@ export default function SettingsWorkspace() {
                   </div>
                 </div>
               )}
+
+              {activeRoot === 'bulk-upload' && isMaster && (
+                <div className="space-y-5">
+                  <div className="rounded-xl border border-gc-orange/25 bg-gc-orange/5 p-4">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-[10px] font-extrabold uppercase tracking-[1.4px] text-gc-orange">Master Only</p>
+                        <h4 className="text-sm font-extrabold text-foreground">Central Bulk Upload Center</h4>
+                        <p className="mt-1 text-xs text-muted-foreground">Upload approved templates for pages that support bulk import. Campaigns use the attached tracker sequence as the main template.</p>
+                      </div>
+                      <UploadCloud size={22} className="text-gc-orange" />
+                    </div>
+                  </div>
+
+                  {bulkMessage && (
+                    <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-[12px] font-bold text-green-700 dark:border-green-900/40 dark:bg-green-900/20 dark:text-green-300">
+                      {bulkMessage}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <BulkUploadTile
+                      icon={<FileSpreadsheet size={18} />}
+                      title="Campaigns"
+                      description="Imports campaign tracker rows with target, confirmations, coverage, visits, approvals, and rates."
+                      action={
+                        <BulkUploadButton<Campaign>
+                          title="Bulk Import Campaigns"
+                          templateHeaders={CAMPAIGN_TEMPLATE_HEADERS}
+                          parse={rowsToCampaigns}
+                          validate={(campaign) => {
+                            const errs: string[] = [];
+                            if (!campaign.name) errs.push('Missing campaign name');
+                            if (!campaign.country) errs.push('Missing country');
+                            return errs;
+                          }}
+                          commit={commitCampaigns}
+                        />
+                      }
+                    />
+                    <BulkUploadTile
+                      icon={<ListChecks size={18} />}
+                      title="Tasks"
+                      description="Imports task owners, due dates, priorities, statuses, and campaign links."
+                      action={
+                        <BulkUploadButton<Task>
+                          title="Bulk Import Tasks"
+                          templateHeaders={['id','title','description','ownerId','dueDate','campaignId','priority','status','department','category']}
+                          parse={rowsToTasks}
+                          validate={(task) => {
+                            const errs: string[] = [];
+                            if (!task.title) errs.push('Missing title');
+                            if (!task.ownerId) errs.push('Missing ownerId');
+                            return errs;
+                          }}
+                          commit={commitTasks}
+                        />
+                      }
+                    />
+                    <BulkUploadTile
+                      icon={<Users size={18} />}
+                      title="Influencers"
+                      description="Imports influencer campaign rosters, visit status, QA status, owner, city, and coverage fields."
+                      action={
+                        <BulkUploadButton<CampaignInfluencer>
+                          title="Bulk Import Influencers"
+                          templateHeaders={['id','campaignId','influencerId','username','platform','status','city','country','niche','followerRange','ownerId']}
+                          parse={rowsToInfluencers}
+                          validate={(influencer) => {
+                            const errs: string[] = [];
+                            if (!influencer.username) errs.push('Missing username');
+                            if (!influencer.campaignId) errs.push('Missing campaignId');
+                            return errs;
+                          }}
+                          commit={commitInfluencers}
+                        />
+                      }
+                    />
+                    <BulkUploadTile
+                      icon={<Shield size={18} />}
+                      title="Users"
+                      description="Creates workspace access accounts from email, name, password, role, office, department, and title."
+                      action={
+                        <BulkUploadButton<UserImportRow>
+                          title="Bulk Import Users"
+                          templateHeaders={['email','name','password','role','office','department','title']}
+                          parse={rowsToUsers}
+                          validate={(user) => {
+                            const errs: string[] = [];
+                            if (!user.email || !/.+@.+\..+/.test(user.email)) errs.push('Invalid email');
+                            if (!user.name) errs.push('Missing name');
+                            if (!user.password || user.password.length < 8) errs.push('Password must be 8+ chars');
+                            return errs;
+                          }}
+                          commit={commitUsers}
+                        />
+                      }
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function BulkUploadTile({ icon, title, description, action }: { icon: React.ReactNode; title: string; description: string; action: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border bg-background p-4">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="mt-0.5 rounded-lg bg-gc-orange/10 p-2 text-gc-orange">{icon}</div>
+        <div>
+          <h4 className="text-sm font-extrabold text-foreground">{title}</h4>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      {action}
     </div>
   );
 }

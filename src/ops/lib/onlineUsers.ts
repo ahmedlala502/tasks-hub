@@ -8,17 +8,39 @@ export interface OnlineUserRow {
   email?: string;
   role?: OpsUser['role'];
   office?: OpsOffice;
+  city?: string;
   department?: string;
   title?: string;
+  shift?: string;
+  roleTask?: string;
+  rosterStatus?: 'scheduled' | 'off' | 'leave' | 'unscheduled';
+  todaySchedule?: string;
+  nextShiftDate?: string;
+  nextShiftTime?: string;
+  rosterSource?: string;
+  credentialEmail?: string;
+  defaultPassword?: string;
   status: OnlineUserStatus;
   lastActiveAt?: number;
   tasksTouched: number;
   handoversTouched: number;
-  source: 'cloud' | 'workspace';
+  source: 'cloud' | 'workspace' | 'roster';
+}
+
+export interface EmployeeRosterEntry {
+  name: string;
+  city: string;
+  office: OpsOffice;
+  department: string;
+  roleTask: string;
+  shift: string;
+  source: string;
+  schedule: Record<string, string>;
 }
 
 interface BuildOnlineUserRosterInput {
   users?: OpsUser[];
+  roster?: EmployeeRosterEntry[];
   tasks: Task[];
   handovers: Handover[];
   now?: number;
@@ -35,6 +57,17 @@ function normalizeName(name: string): string {
 
 function keyFor(name: string): string {
   return normalizeName(name).toLowerCase();
+}
+
+function emailPart(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+export function getRosterCredentialEmail(name: string) {
+  const parts = normalizeName(name).split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'user@trygc.com';
+  if (parts.length === 1) return `${emailPart(parts[0])}@trygc.com`;
+  return `${emailPart(parts[0][0] || '')}.${emailPart(parts[1])}@trygc.com`;
 }
 
 function parseCloudTimestamp(value?: string | null): number | undefined {
@@ -56,8 +89,32 @@ function statusFor(lastActiveAt: number | undefined, now: number, onlineWindowMs
   return 'inactive';
 }
 
+function cairoDateKey(now: number) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Cairo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(now));
+}
+
+function rosterStatus(value?: string): NonNullable<OnlineUserRow['rosterStatus']> {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'unscheduled';
+  if (normalized === 'off') return 'off';
+  if (normalized.includes('leave') || normalized.includes('absent')) return 'leave';
+  return 'scheduled';
+}
+
+function nextScheduledShift(schedule: Record<string, string>, todayKey: string) {
+  return Object.entries(schedule)
+    .filter(([date, value]) => date >= todayKey && rosterStatus(value) === 'scheduled')
+    .sort(([left], [right]) => left.localeCompare(right))[0];
+}
+
 export function buildOnlineUserRoster({
   users = [],
+  roster = [],
   tasks,
   handovers,
   now = Date.now(),
@@ -65,6 +122,7 @@ export function buildOnlineUserRoster({
   idleWindowMs = DEFAULT_IDLE_WINDOW_MS,
 }: BuildOnlineUserRosterInput): OnlineUserRow[] {
   const rows = new Map<string, OnlineUserRow>();
+  const todayKey = cairoDateKey(now);
 
   const ensureRow = (name: string): OnlineUserRow | undefined => {
     const normalized = normalizeName(name);
@@ -82,6 +140,27 @@ export function buildOnlineUserRoster({
     return rows.get(key);
   };
 
+  roster.forEach((employee) => {
+    const row = ensureRow(employee.name);
+    if (!row) return;
+    const todaySchedule = employee.schedule[todayKey] || '';
+    const nextShift = nextScheduledShift(employee.schedule, todayKey);
+    row.office = employee.office;
+    row.city = employee.city;
+    row.department = employee.department;
+    row.title = employee.roleTask;
+    row.roleTask = employee.roleTask;
+    row.shift = employee.shift;
+    row.todaySchedule = todaySchedule || 'No roster entry';
+    row.rosterStatus = rosterStatus(todaySchedule);
+    row.nextShiftDate = nextShift?.[0];
+    row.nextShiftTime = nextShift?.[1];
+    row.rosterSource = employee.source;
+    row.credentialEmail = getRosterCredentialEmail(employee.name);
+    row.defaultPassword = 'Admin123';
+    row.source = 'roster';
+  });
+
   users
     .filter((user) => user.status === 'active')
     .forEach((user) => {
@@ -92,7 +171,7 @@ export function buildOnlineUserRoster({
       row.office = user.office;
       row.department = user.department;
       row.title = user.title;
-      row.source = 'cloud';
+      row.source = row.source === 'roster' ? row.source : 'cloud';
       row.lastActiveAt = maxTimestamp(row.lastActiveAt, parseCloudTimestamp(user.lastSignInAt));
     });
 

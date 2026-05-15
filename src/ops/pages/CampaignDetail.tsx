@@ -4,7 +4,6 @@ import {
   MapPin, 
   Calendar, 
   Users, 
-  BarChart3, 
   Download,
   Share2,
   MoreVertical,
@@ -15,22 +14,25 @@ import {
   X,
   Pencil,
   Save,
-  Trash2
+  Trash2,
+  Upload
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from '../utils';
 import { dataService } from '../services/dataService';
 import { STAGE_NAMES } from '../constants';
-import { Campaign, CampaignInfluencer } from '../types';
-import { exportCampaigns } from '../services/spreadsheetService';
+import { Campaign } from '../types';
+import { exportCampaigns, readSpreadsheet } from '../services/spreadsheetService';
 
 const MILESTONES = [
-  { stage: 'Strategy & Brief', status: 'completed', date: 'Oct 12' },
-  { stage: 'Influencer Sourcing', status: 'completed', date: 'Oct 15' },
-  { stage: 'Contractual Loop', status: 'completed', date: 'Oct 18' },
-  { stage: 'Content Production', status: 'active', date: 'Oct 22', progress: 65 },
-  { stage: 'Distribution Pulse', status: 'pending', date: 'Oct 28' },
-  { stage: 'Final Reporting', status: 'pending', date: 'Nov 05' },
+  { stage: 'TRYGC Intake', status: 'completed', date: 'Brief' },
+  { stage: 'Client Confirmation', status: 'completed', date: 'Approval' },
+  { stage: 'Influencer List', status: 'completed', date: 'Sourcing' },
+  { stage: 'Invitation & Confirmation', status: 'active', date: 'CON', progress: 65 },
+  { stage: 'Visit / Delivery Scheduling', status: 'pending', date: 'Schedule' },
+  { stage: 'Execution & Coverage', status: 'pending', date: 'COV' },
+  { stage: 'QA Review', status: 'pending', date: 'Quality' },
+  { stage: 'Client Report & Closure', status: 'pending', date: 'Report' },
 ];
 
 const CONTENT_FEED = [
@@ -40,20 +42,32 @@ const CONTENT_FEED = [
   { id: 4, influencer: '@fashion.mona', platform: 'Snapchat', type: 'Spotlight', status: 'Rejected', coverage: '5K', velocity: '2.1%' },
 ];
 
+type ContentFeedItem = typeof CONTENT_FEED[number];
+
 const INITIAL_VISIT_LOGS = [
   { influencer: '@lifestyle_sa', time: 'Nov 02, 14:00', location: 'Riyadh Core Hub', notes: 'Needs VIP parking access' },
   { influencer: '@tech_omar', time: 'Nov 04, 10:30', location: 'Jeddah Remote Studio', notes: 'Delivery signature required' },
 ];
+
+type AuditFinding = {
+  title: string;
+  detail: string;
+  owner: string;
+  tone: 'green' | 'orange' | 'red';
+};
 
 export default function CampaignDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [refreshToken, setRefreshToken] = React.useState(0);
   const [visitLogs, setVisitLogs] = React.useState(INITIAL_VISIT_LOGS);
-  const [contentFeed, setContentFeed] = React.useState(CONTENT_FEED);
+  const [contentFeed, setContentFeed] = React.useState<ContentFeedItem[]>(CONTENT_FEED);
+  const [contentBulkMessage, setContentBulkMessage] = React.useState('');
+  const contentUploadRef = React.useRef<HTMLInputElement | null>(null);
   const [isEntryOpen, setIsEntryOpen] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'overview' | 'influencers' | 'media' | 'performance'>('overview');
   const [isEditingCampaign, setIsEditingCampaign] = React.useState(false);
+  const [isAuditOpen, setIsAuditOpen] = React.useState(false);
   const [draftCampaign, setDraftCampaign] = React.useState<Campaign | null>(null);
   const [ownerDraft, setOwnerDraft] = React.useState('');
   const [newEntry, setNewEntry] = React.useState({ influencer: '@', time: 'Nov 10, 14:00', location: 'Riyadh', notes: '' });
@@ -75,18 +89,17 @@ export default function CampaignDetail() {
   }, [campaign]);
 
   React.useEffect(() => {
+    if (campaign?.approvedContent?.length) setContentFeed(campaign.approvedContent);
+    else setContentFeed(CONTENT_FEED);
+  }, [campaign?.id]);
+
+  React.useEffect(() => {
     setOwnerDraft(campaign?.currentOwner || '');
   }, [campaign?.currentOwner]);
 
   const ownerOptions = React.useMemo(() => {
-    const owners = new Set<string>();
-    dataService.getCampaigns().forEach((item) => {
-      if (item.currentOwner?.trim()) owners.add(item.currentOwner.trim());
-      (item.internalOwners || []).forEach((owner) => owner?.trim() && owners.add(owner.trim()));
-    });
-    ['Ahmed E.', 'Sarah A.', 'Mona K.', 'Omar S.', 'Ops Team'].forEach((owner) => owners.add(owner));
-    return Array.from(owners);
-  }, [refreshToken]);
+    return ['PMO', 'Community', 'Coordination', 'Coverage', 'QA', 'Reporting', 'Finance', 'Operations', 'Ops Team'];
+  }, []);
 
   if (!campaign) {
     return (
@@ -127,8 +140,52 @@ export default function CampaignDetail() {
     setVisitLogs(prev => prev.map((entry, i) => i === index ? { ...entry, [field]: value } : entry));
   };
 
+  const saveContentFeed = (next: ContentFeedItem[]) => {
+    setContentFeed(next);
+    if (campaign) dataService.updateCampaign(campaign.id, { approvedContent: next });
+  };
+
   const removeContentEntry = (id: number) => {
-    setContentFeed(prev => prev.filter(item => item.id !== id));
+    saveContentFeed(contentFeed.filter(item => item.id !== id));
+  };
+
+  const addContentEntry = () => {
+    const nextId = Math.max(0, ...contentFeed.map((item) => item.id)) + 1;
+    saveContentFeed([{ id: nextId, influencer: '@', platform: 'Instagram', type: 'Story', status: 'Pending', coverage: '-', velocity: '-' }, ...contentFeed]);
+  };
+
+  const updateContentEntry = (id: number, field: Exclude<keyof ContentFeedItem, 'id'>, value: string) => {
+    saveContentFeed(contentFeed.map((item) => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  const bulkUploadContent = async (file: File | null) => {
+    if (!file) return;
+    const rows = await readSpreadsheet(file);
+    const pick = (row: Record<string, any>, keys: string[], fallback = '') => {
+      const normalized = Object.fromEntries(Object.entries(row).map(([key, value]) => [key.toLowerCase().replace(/[^a-z0-9]/g, ''), value]));
+      for (const key of keys) {
+        const value = normalized[key.toLowerCase().replace(/[^a-z0-9]/g, '')];
+        if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
+      }
+      return fallback;
+    };
+    const imported = rows.map((row, index) => ({
+      id: Date.now() + index,
+      influencer: pick(row, ['Influencer', 'Influencer Asset', 'Username', 'Handle', 'Creator'], '@'),
+      platform: pick(row, ['Platform'], 'Instagram'),
+      type: pick(row, ['Type', 'Content Type', 'Asset Type'], 'Story'),
+      status: pick(row, ['Status', 'Approval', 'QA Status'], 'Approved'),
+      coverage: pick(row, ['Coverage', 'Coverage Sync', 'Reach'], '-'),
+      velocity: pick(row, ['Velocity', 'Rate', 'Engagement'], '-'),
+    })).filter((row) => row.influencer && row.influencer !== '@');
+
+    if (imported.length) {
+      saveContentFeed(imported);
+      setContentBulkMessage(`${imported.length} approved influencer / content rows loaded.`);
+    } else {
+      setContentBulkMessage('No usable approved influencer rows found.');
+    }
+    if (contentUploadRef.current) contentUploadRef.current.value = '';
   };
 
   const saveOwnerAssignment = () => {
@@ -137,18 +194,24 @@ export default function CampaignDetail() {
     setRefreshToken((prev) => prev + 1);
   };
 
-  const updateCampaignInfluencer = (influencerId: string, updates: Partial<CampaignInfluencer>) => {
-    dataService.updateInfluencer(influencerId, updates);
-    setRefreshToken((prev) => prev + 1);
-  };
-
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
+  const trackerCoverage = campaign.coverage ?? campaignInfluencers.filter(item => item.coverageReceived).length;
+  const trackerVisited = campaign.visited ?? campaignInfluencers.filter(item => item.visitCompleted).length;
+  const trackerMissed = Math.max((campaign.targetInfluencers || 0) - trackerVisited, 0);
+  const audit = buildTrygcAudit(campaign, {
+    confirmations: campaign.confirmations || 0,
+    coverage: trackerCoverage,
+    visited: trackerVisited,
+    missed: trackerMissed,
+    approved: campaign.approved || 0,
+    reject: campaign.reject || 0,
+  });
   const campaignStats = [
     { label: 'Target', value: String(campaign.targetInfluencers || 0), change: 'Plan', sub: `${campaign.targetPostingCoverage || 0} coverage target` },
-    { label: 'Coverage', value: String(campaignInfluencers.filter(item => item.coverageReceived).length), change: 'Live', sub: 'Influencers with coverage' },
-    { label: 'Visited', value: String(campaignInfluencers.filter(item => item.visitCompleted).length), change: 'Done', sub: 'Completed visits' },
-    { label: 'Missed', value: String(campaignInfluencers.filter(item => (item.visitDate && item.visitDate < startOfToday.getTime() && !item.visitCompleted) || item.status === 'Dropped').length), change: 'Review', sub: 'Needs follow-up' },
+    { label: 'Coverage', value: String(trackerCoverage), change: 'Live', sub: 'Tracker coverage' },
+    { label: 'Visited', value: String(trackerVisited), change: 'Done', sub: 'Completed visits' },
+    { label: 'Missed', value: String(trackerMissed), change: 'Review', sub: 'Target minus visited' },
   ];
 
   return (
@@ -220,10 +283,25 @@ export default function CampaignDetail() {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                     <input className="settings-input" value={draftCampaign.city || ''} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, city: event.target.value } : prev)} placeholder="City" />
                     <input className="settings-input" value={draftCampaign.country || ''} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, country: event.target.value } : prev)} placeholder="Country" />
+                    <input className="settings-input" value={draftCampaign.type || ''} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, type: event.target.value } : prev)} placeholder="Type" />
                     <input className="settings-input" value={draftCampaign.startDate || ''} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, startDate: event.target.value } : prev)} placeholder="Start date" />
                     <input className="settings-input" value={draftCampaign.endDate || ''} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, endDate: event.target.value } : prev)} placeholder="End date" />
                     <input className="settings-input" type="number" value={draftCampaign.targetInfluencers || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, targetInfluencers: Number(event.target.value) } : prev)} placeholder="Target influencers" />
                     <input className="settings-input" type="number" value={draftCampaign.targetPostingCoverage || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, targetPostingCoverage: Number(event.target.value) } : prev)} placeholder="Coverage target" />
+                    <input className="settings-input" type="number" value={draftCampaign.totalList || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, totalList: Number(event.target.value) } : prev)} placeholder="Total list" />
+                    <input className="settings-input" type="number" value={draftCampaign.confirmations || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, confirmations: Number(event.target.value) } : prev)} placeholder="Confirmations" />
+                    <input className="settings-input" type="number" value={draftCampaign.visited || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, visited: Number(event.target.value) } : prev)} placeholder="Visited" />
+                    <input className="settings-input" type="number" value={draftCampaign.coverage || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, coverage: Number(event.target.value), targetPostingCoverage: Number(event.target.value) } : prev)} placeholder="Coverage" />
+                    <input className="settings-input" type="number" value={draftCampaign.approved || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, approved: Number(event.target.value) } : prev)} placeholder="Approved" />
+                    <input className="settings-input" type="number" value={draftCampaign.reject || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, reject: Number(event.target.value) } : prev)} placeholder="Reject" />
+                    <input className="settings-input" type="number" value={draftCampaign.dailyTarget || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, dailyTarget: Number(event.target.value) } : prev)} placeholder="Daily target" />
+                    <input className="settings-input" type="number" value={draftCampaign.todaysVisits || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, todaysVisits: Number(event.target.value) } : prev)} placeholder="Today's visits" />
+                    <input className="settings-input" type="number" value={draftCampaign.tomorrowsVisits || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, tomorrowsVisits: Number(event.target.value) } : prev)} placeholder="Tomorrow's visits" />
+                    <input className="settings-input" type="number" value={draftCampaign.dayAfterVisits || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, dayAfterVisits: Number(event.target.value) } : prev)} placeholder="Day after" />
+                    <input className="settings-input" type="number" value={draftCampaign.runRate || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, runRate: Number(event.target.value) } : prev)} placeholder="Run rate" />
+                    <input className="settings-input" type="number" value={draftCampaign.targetRate || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, targetRate: Number(event.target.value) } : prev)} placeholder="% of target" />
+                    <input className="settings-input" type="number" value={draftCampaign.confirmationRate || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, confirmationRate: Number(event.target.value) } : prev)} placeholder="Conf rate %" />
+                    <input className="settings-input" type="number" value={draftCampaign.coverageRate || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, coverageRate: Number(event.target.value) } : prev)} placeholder="Cov rate %" />
                     <input className="settings-input" type="number" value={draftCampaign.budget || 0} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, budget: Number(event.target.value) } : prev)} placeholder="Budget" />
                     <input className="settings-input" value={draftCampaign.budgetType || ''} onChange={(event) => setDraftCampaign(prev => prev ? { ...prev, budgetType: event.target.value } : prev)} placeholder="Budget type" />
                   </div>
@@ -462,92 +540,6 @@ export default function CampaignDetail() {
             </div>
             )}
 
-            {(activeTab === 'overview' || activeTab === 'influencers') && (
-            <div className="bg-card border border-border rounded-xl overflow-hidden rounded-3xl bg-[var(--white)] border border-[var(--border)] overflow-hidden shadow-sm">
-               <div className="p-8 border-b border-[var(--border)] flex justify-between items-center bg-[var(--bg)]/50">
-                  <div className="flex items-center gap-4">
-                     <div className="w-12 h-12 bg-[var(--gc-orange-soft)] text-[var(--gc-orange)] rounded-2xl flex items-center justify-center">
-                        <Users size={24} />
-                     </div>
-                     <div>
-                        <h3 className="font-condensed font-extrabold text-[22px] tracking-tight text-foreground text-[14px]">Influencer KPI Controls</h3>
-                        <p className="text-[11px] text-[var(--ink-500)] font-bold uppercase tracking-widest mt-1">Adjust visit, coverage, and approval values feeding the matrix</p>
-                     </div>
-                  </div>
-               </div>
-               <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                     <thead className="bg-[var(--bg)]">
-                        <tr>
-                           <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border pl-8">Influencer</th>
-                           <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border">Status</th>
-                           <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border">Visit Date</th>
-                           <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border">Visited</th>
-                           <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border">Coverage</th>
-                           <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground bg-muted/30 border-b border-border pr-8">Approval</th>
-                        </tr>
-                     </thead>
-                     <tbody className="divide-y divide-[var(--border)]">
-                        {campaignInfluencers.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="px-8 py-10 text-center text-[13px] font-bold text-[var(--ink-400)]">
-                              No influencers are attached to this campaign yet. Add them from the Influencers page, then their visits and coverage will feed this campaign matrix.
-                            </td>
-                          </tr>
-                        ) : campaignInfluencers.map((influencer) => (
-                           <tr key={influencer.id} className="group hover:bg-[var(--bg)] transition-colors border-l-4 border-transparent hover:border-l-[var(--gc-orange)]">
-                              <td className="px-5 py-4 border-b border-border bg-card group-hover:bg-accent/40 transition-colors pl-8">
-                                 <p className="text-[14px] font-black text-[var(--ink-900)]">{influencer.username}</p>
-                                 <p className="text-[11px] font-bold text-[var(--ink-500)] uppercase tracking-widest mt-0.5">{influencer.platform} / {influencer.city || campaign.city || 'Market'}</p>
-                              </td>
-                              <td className="px-5 py-4 border-b border-border bg-card group-hover:bg-accent/40 transition-colors">
-                                 <select
-                                   className="settings-input min-w-32"
-                                   value={influencer.status}
-                                   onChange={(event) => updateCampaignInfluencer(influencer.id, { status: event.target.value as CampaignInfluencer['status'] })}
-                                 >
-                                   {['Pending', 'Invited', 'Confirmed', 'Scheduled', 'Completed', 'Dropped'].map(status => <option key={status}>{status}</option>)}
-                                 </select>
-                              </td>
-                              <td className="px-5 py-4 border-b border-border bg-card group-hover:bg-accent/40 transition-colors">
-                                 <input
-                                   className="settings-input min-w-36"
-                                   type="date"
-                                   value={influencer.visitDate ? new Date(influencer.visitDate).toISOString().slice(0, 10) : ''}
-                                   onChange={(event) => updateCampaignInfluencer(influencer.id, { visitDate: event.target.value ? new Date(event.target.value).getTime() : undefined })}
-                                 />
-                              </td>
-                              <td className="px-5 py-4 border-b border-border bg-card group-hover:bg-accent/40 transition-colors">
-                                 <TogglePill
-                                   active={influencer.visitCompleted}
-                                   label={influencer.visitCompleted ? 'Visited' : 'Missed'}
-                                   onClick={() => updateCampaignInfluencer(influencer.id, { visitCompleted: !influencer.visitCompleted })}
-                                 />
-                              </td>
-                              <td className="px-5 py-4 border-b border-border bg-card group-hover:bg-accent/40 transition-colors">
-                                 <TogglePill
-                                   active={influencer.coverageReceived}
-                                   label={influencer.coverageReceived ? 'Covered' : 'Missing'}
-                                   onClick={() => updateCampaignInfluencer(influencer.id, { coverageReceived: !influencer.coverageReceived })}
-                                 />
-                              </td>
-                              <td className="px-5 py-4 border-b border-border bg-card group-hover:bg-accent/40 transition-colors pr-8">
-                                 <select
-                                   className="settings-input min-w-36"
-                                   value={influencer.qaStatus}
-                                   onChange={(event) => updateCampaignInfluencer(influencer.id, { qaStatus: event.target.value as CampaignInfluencer['qaStatus'] })}
-                                 >
-                                   {['Pending', 'Approved', 'Rejected', 'Fix Required'].map(status => <option key={status}>{status}</option>)}
-                                 </select>
-                              </td>
-                           </tr>
-                        ))}
-                     </tbody>
-                  </table>
-               </div>
-            </div>
-            )}
-
             {(activeTab === 'overview' || activeTab === 'media') && (
             <div className="bg-card border border-border rounded-xl overflow-hidden rounded-3xl bg-[var(--white)] border border-[var(--border)] overflow-hidden shadow-sm">
                <div className="p-8 border-b border-[var(--border)] flex justify-between items-center bg-[var(--bg)]/50">
@@ -556,14 +548,27 @@ export default function CampaignDetail() {
                         <Camera size={24} />
                      </div>
                      <div>
-                        <h3 className="font-condensed font-extrabold text-[22px] tracking-tight text-foreground text-[14px]">Verified Content Stream</h3>
-                        <p className="text-[11px] text-[var(--ink-500)] font-bold uppercase tracking-widest mt-1">Live validation across verified handles</p>
+                        <h3 className="font-condensed font-extrabold text-[22px] tracking-tight text-foreground text-[14px]">Approved Influencers / Verified Content</h3>
+                        <p className="text-[11px] text-[var(--ink-500)] font-bold uppercase tracking-widest mt-1">Editable approved list with coverage proof and status</p>
                      </div>
                   </div>
-                  <button className="px-6 py-3.5 bg-[var(--ink-900)] text-white rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-[var(--gc-orange)] transition-colors shadow-sm">
-                     Batch Validate
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      ref={contentUploadRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      className="hidden"
+                      onChange={(event) => void bulkUploadContent(event.target.files?.[0] || null)}
+                    />
+                    <button onClick={() => contentUploadRef.current?.click()} className="px-5 py-3 bg-[var(--white)] border border-[var(--border-strong)] text-[var(--ink-700)] rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-[var(--bg)] transition-colors shadow-sm flex items-center gap-2">
+                       <Upload size={15} /> Bulk Upload
+                    </button>
+                    <button onClick={addContentEntry} className="px-6 py-3 bg-[var(--ink-900)] text-white rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-[var(--gc-orange)] transition-colors shadow-sm">
+                       Add Row
+                    </button>
+                  </div>
                </div>
+               {contentBulkMessage && <div className="border-b border-[var(--border)] bg-[var(--gc-orange-soft)]/20 px-8 py-3 text-[12px] font-bold text-[var(--gc-orange)]">{contentBulkMessage}</div>}
                <div className="overflow-x-auto">
                   <table className="w-full text-left">
                      <thead className="bg-[var(--bg)]">
@@ -584,26 +589,25 @@ export default function CampaignDetail() {
                                        {item.platform === 'TikTok' && <div className="absolute -top-1 -right-1 w-4 h-4 bg-[var(--ink-900)] rounded-full border border-white" />}
                                     </div>
                                     <div>
-                                       <p className="text-[14px] font-black text-[var(--ink-900)] group-hover:text-[var(--gc-orange)] transition-colors">{item.influencer}</p>
-                                       <p className="text-[11px] font-bold text-[var(--ink-500)] uppercase tracking-widest mt-0.5">{item.platform} • {item.type}</p>
+                                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                         <input className="settings-input min-w-28" value={item.influencer} onChange={(event) => updateContentEntry(item.id, 'influencer', event.target.value)} placeholder="Influencer" />
+                                         <input className="settings-input min-w-28" value={item.platform} onChange={(event) => updateContentEntry(item.id, 'platform', event.target.value)} placeholder="Platform" />
+                                         <input className="settings-input min-w-28" value={item.type} onChange={(event) => updateContentEntry(item.id, 'type', event.target.value)} placeholder="Type" />
+                                       </div>
                                     </div>
                                  </div>
                               </td>
                               <td className="px-5 py-3.5 border-b border-border bg-card group-hover:bg-accent/40 transition-colors py-6">
-                                 <div className={cn(
-                                   "w-fit px-3.5 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest border shadow-sm",
-                                   item.status === 'Approved' ? "bg-[var(--success)]/10 text-[var(--success)] border-[var(--success)]/20" :
-                                   item.status === 'Reviewing' ? "bg-[var(--warning)]/10 text-[var(--warning)] border-[var(--warning)]/20" :
-                                   item.status === 'Rejected' ? "bg-[var(--danger)]/10 text-[var(--danger)] border-[var(--danger)]/20" :
-                                   "bg-[var(--bg)] text-[var(--ink-500)] border-[var(--border-strong)]"
-                                 )}>
-                                    {item.status}
-                                 </div>
+                                 <select className="settings-input min-w-32" value={item.status} onChange={(event) => updateContentEntry(item.id, 'status', event.target.value)}>
+                                   {['Pending', 'Reviewing', 'Approved', 'Rejected'].map(status => <option key={status}>{status}</option>)}
+                                 </select>
                               </td>
                               <td className="px-5 py-3.5 border-b border-border bg-card group-hover:bg-accent/40 transition-colors py-6">
                                  <div className="space-y-1">
-                                    <p className="text-[13px] font-black text-[var(--ink-900)] tabular-nums">{item.coverage} Coverage</p>
-                                    <p className="text-[11px] font-bold text-[var(--ink-500)] uppercase tracking-widest">{item.velocity} Velocity</p>
+                                    <div className="grid grid-cols-1 gap-2">
+                                      <input className="settings-input min-w-28" value={item.coverage} onChange={(event) => updateContentEntry(item.id, 'coverage', event.target.value)} placeholder="Coverage" />
+                                      <input className="settings-input min-w-28" value={item.velocity} onChange={(event) => updateContentEntry(item.id, 'velocity', event.target.value)} placeholder="Velocity" />
+                                    </div>
                                  </div>
                               </td>
                               <td className="px-5 py-3.5 border-b border-border bg-card group-hover:bg-accent/40 transition-colors py-6 pr-8 text-right">
@@ -622,51 +626,6 @@ export default function CampaignDetail() {
             </div>
             )}
 
-            {(activeTab === 'overview' || activeTab === 'influencers') && (
-            <div className="grid grid-cols-2 gap-8">
-               <div className="bg-card border border-border rounded-xl overflow-hidden p-10 bg-[var(--gc-purple)] text-white rounded-3xl shadow-[var(--shadow-xl)] relative overflow-hidden group">
-                  <Users className="absolute -bottom-6 -right-6 text-white/5 size-48 group-hover:scale-110 transition-transform duration-700" />
-                  <p className="text-[12px] font-black uppercase tracking-widest opacity-70 mb-4">Influencer Sentiment</p>
-                  <h4 className="text-5xl font-display font-black tracking-tight mb-8">Very High</h4>
-                  <div className="space-y-6 relative z-10">
-                     <p className="text-[13px] text-white/90 italic font-medium leading-relaxed border-l-2 border-white/30 pl-5 py-1">
-                        "Unrivaled brand alignment with the current summer vibe tracker. Extractions show high organic ripple effect."
-                     </p>
-                     <div className="flex -space-x-2">
-                        {[1,2,3,4].map(i => (
-                          <div key={i} className="w-10 h-10 rounded-full bg-[var(--white)]/10 border-2 border-[var(--gc-purple)] backdrop-blur-md shadow-sm" />
-                        ))}
-                        <div className="w-10 h-10 rounded-full bg-[var(--white)] text-[var(--gc-purple)] flex items-center justify-center text-[12px] font-black border-2 border-[var(--gc-purple)] shadow-sm">
-                           +8
-                        </div>
-                     </div>
-                  </div>
-               </div>
-               <div className="bg-card border border-border rounded-xl overflow-hidden p-10 bg-[var(--ink-900)] text-white rounded-3xl relative overflow-hidden shadow-[var(--shadow-lg)]">
-                  <p className="text-[12px] font-black uppercase tracking-widest opacity-70 mb-4">Market Coverage</p>
-                  <h4 className="text-5xl font-display font-black tracking-tight mb-8">Operational</h4>
-                  <div className="space-y-8 relative z-10">
-                     <div>
-                       <div className="flex justify-between items-center text-[11px] font-black uppercase tracking-widest mb-3">
-                          <span className="text-[var(--ink-400)]">GCC Integration</span>
-                          <span className="text-white">82%</span>
-                       </div>
-                       <div className="h-2 bg-[var(--ink-800)] rounded-full overflow-hidden shadow-inner">
-                          <div className="h-full bg-[var(--gc-orange)] shadow-[0_0_10px_var(--gc-orange-soft)]" style={{ width: '82%' }} />
-                       </div>
-                     </div>
-                     <div className="flex items-center gap-5 text-[11px] font-black uppercase tracking-widest text-[var(--ink-500)]">
-                        <div className="flex items-center gap-2">
-                           <div className="w-2.5 h-2.5 rounded-full bg-[var(--success)] shadow-[0_0_8px_var(--success)]" /> Tier 1
-                        </div>
-                        <div className="flex items-center gap-2">
-                           <div className="w-2.5 h-2.5 rounded-full bg-[var(--warning)] shadow-[0_0_8px_var(--warning)]" /> Tier 2
-                        </div>
-                     </div>
-                  </div>
-               </div>
-            </div>
-            )}
          </div>
 
          {/* Sidebar: Operational Roadmap */}
@@ -713,43 +672,49 @@ export default function CampaignDetail() {
                   ))}
                </div>
 
-               <button className="w-full mt-12 py-4 border border-[var(--border-strong)] text-[var(--ink-900)] rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-[var(--ink-900)] hover:text-white hover:border-[var(--ink-900)] transition-all shadow-sm">
-                  Strategic Oversight Audit
+               <button
+                 onClick={() => setIsAuditOpen((current) => !current)}
+                 className="w-full mt-12 py-4 border border-[var(--border-strong)] text-[var(--ink-900)] rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-[var(--ink-900)] hover:text-white hover:border-[var(--ink-900)] transition-all shadow-sm"
+               >
+                  {isAuditOpen ? 'Hide TRYGC Audit' : 'Run TRYGC Campaign Audit'}
                </button>
-            </div>
-            )}
-
-            {(activeTab === 'overview' || activeTab === 'influencers' || activeTab === 'performance') && (
-            <div className="bg-card border border-border rounded-xl overflow-hidden p-10 bg-[var(--bg)] border border-[var(--border)] rounded-3xl shadow-sm group relative overflow-hidden">
-               <div className="absolute top-0 right-0 p-8 text-[var(--ink-300)] opacity-10 group-hover:scale-110 group-hover:opacity-20 transition-all duration-700">
-                  <BarChart3 size={140} strokeWidth={1} />
-               </div>
-               <h4 className="font-condensed font-extrabold text-[22px] tracking-tight text-foreground text-[12px] tracking-widest uppercase opacity-70 mb-8 relative z-10">Internal Resource Sync</h4>
-               <div className="space-y-6 relative z-10">
-                  <div className="flex gap-4 items-center">
-                     <div className="w-14 h-14 rounded-2xl bg-[var(--white)] border border-[var(--border-strong)] flex items-center justify-center text-[var(--ink-900)] shadow-sm font-display font-black text-[14px]">
-                        AE
-                     </div>
+               {isAuditOpen && (
+                 <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--bg)] p-5">
+                   <div className="flex items-start justify-between gap-4">
                      <div>
-                        <p className="text-[14px] font-black text-[var(--ink-900)]">Ahmed Essmat</p>
-                        <p className="text-[11px] font-bold text-[var(--ink-500)] uppercase tracking-widest mt-1">Internal Mission Lead</p>
+                       <p className="text-[10px] font-black uppercase tracking-widest text-[var(--gc-orange)]">Audit score</p>
+                       <h4 className="mt-1 text-3xl font-black text-[var(--ink-900)]">{audit.score}%</h4>
                      </div>
-                  </div>
-                  <div className="flex gap-4 items-center">
-                     <div className="w-14 h-14 rounded-2xl bg-[var(--ink-900)] flex items-center justify-center text-white shadow-[var(--shadow-md)] font-display font-black text-[14px]">
-                        MK
-                     </div>
-                     <div>
-                        <p className="text-[14px] font-black text-[var(--ink-900)]">Mona Khalid <span className="text-[var(--ink-400)]">(STC)</span></p>
-                        <p className="text-[11px] font-bold text-[var(--ink-500)] uppercase tracking-widest mt-1">Client Primary Owner</p>
-                     </div>
-                  </div>
-               </div>
-               <div className="mt-8 p-4 bg-[var(--white)] border border-[var(--border-strong)] rounded-2xl shadow-sm relative z-10">
-                  <div className="flex items-center justify-center gap-3 text-[11px] font-black uppercase tracking-widest text-[var(--ink-500)]">
-                     <Clock size={16} className="text-[var(--gc-orange)]" /> Last Activity Sync: 4m ago
-                  </div>
-               </div>
+                     <span className={cn(
+                       'rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-wide',
+                       audit.tone === 'green' ? 'border-[var(--success)]/20 bg-[var(--success)]/10 text-[var(--success)]' :
+                       audit.tone === 'red' ? 'border-[var(--danger)]/20 bg-[var(--danger)]/10 text-[var(--danger)]' :
+                       'border-[var(--gc-orange)]/20 bg-[var(--gc-orange-soft)] text-[var(--gc-orange)]'
+                     )}>
+                       {audit.label}
+                     </span>
+                   </div>
+                   <p className="mt-3 text-[12px] font-bold leading-relaxed text-[var(--ink-500)]">{audit.summary}</p>
+                   <div className="mt-5 space-y-3">
+                     {audit.findings.map((finding) => (
+                       <div key={finding.title} className="rounded-xl border border-[var(--border)] bg-[var(--white)] p-4">
+                         <div className="flex items-center justify-between gap-3">
+                           <p className="text-[12px] font-black uppercase tracking-wide text-[var(--ink-900)]">{finding.title}</p>
+                           <span className={cn(
+                             'rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wide',
+                             finding.tone === 'green' ? 'bg-[var(--success)]/10 text-[var(--success)]' :
+                             finding.tone === 'red' ? 'bg-[var(--danger)]/10 text-[var(--danger)]' :
+                             'bg-[var(--gc-orange-soft)] text-[var(--gc-orange)]'
+                           )}>
+                             {finding.owner}
+                           </span>
+                         </div>
+                         <p className="mt-2 text-[12px] font-semibold leading-relaxed text-[var(--ink-500)]">{finding.detail}</p>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               )}
             </div>
             )}
 
@@ -790,19 +755,104 @@ export default function CampaignDetail() {
   );
 }
 
-function TogglePill({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'min-w-24 rounded-lg border px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors',
-        active
-          ? 'border-[var(--success)]/20 bg-[var(--success)]/10 text-[var(--success)]'
-          : 'border-[var(--danger)]/20 bg-[var(--danger)]/10 text-[var(--danger)]'
-      )}
-    >
-      {label}
-    </button>
-  );
+function buildTrygcAudit(
+  campaign: Campaign,
+  metrics: { confirmations: number; coverage: number; visited: number; missed: number; approved: number; reject: number },
+) {
+  const target = Math.max(campaign.targetInfluencers || 0, 1);
+  const coverageTarget = Math.max(campaign.targetPostingCoverage || campaign.targetInfluencers || 0, 1);
+  const confirmationRate = Math.round((metrics.confirmations / target) * 100);
+  const visitRate = Math.round((metrics.visited / target) * 100);
+  const coverageRate = Math.round((metrics.coverage / coverageTarget) * 100);
+  const rejectRate = Math.round((metrics.reject / Math.max(metrics.approved + metrics.reject, 1)) * 100);
+  const daysLeft = campaign.endDate ? Math.ceil((new Date(`${campaign.endDate}T23:59:59`).getTime() - Date.now()) / 86400000) : 0;
+  const schedulePressure = daysLeft <= 7 && coverageRate < 80;
+  const score = Math.max(0, Math.min(100, Math.round(
+    (Math.min(confirmationRate, 100) * 0.28) +
+    (Math.min(visitRate, 100) * 0.24) +
+    (Math.min(coverageRate, 100) * 0.34) +
+    ((100 - Math.min(rejectRate, 100)) * 0.14),
+  )));
+  const findings: AuditFinding[] = [];
+
+  if (confirmationRate < 70) {
+    findings.push({
+      title: 'Push confirmations',
+      detail: `Confirmations are at ${confirmationRate}%. Community should prioritize fresh outreach, reminders, and replacement profiles until the campaign reaches at least 80%.`,
+      owner: 'Community',
+      tone: 'red',
+    });
+  } else {
+    findings.push({
+      title: 'Confirmation base is usable',
+      detail: `Confirmations are at ${confirmationRate}%. Keep reminders active, but the campaign can stay focused on scheduling and execution.`,
+      owner: 'Community',
+      tone: 'green',
+    });
+  }
+
+  if (visitRate < 60 && campaign.visitRequired) {
+    findings.push({
+      title: 'Tighten visit schedule',
+      detail: `Visited is at ${visitRate}% with ${metrics.missed} still open. Coordination should lock today's and tomorrow's visit slots and flag any influencer without a clear time.`,
+      owner: 'Coordination',
+      tone: 'red',
+    });
+  } else if (campaign.visitRequired) {
+    findings.push({
+      title: 'Visit execution is moving',
+      detail: `Visited is at ${visitRate}%. Keep missed visits visible in handover until all late slots have an owner.`,
+      owner: 'Coordination',
+      tone: 'orange',
+    });
+  }
+
+  if (coverageRate < 80) {
+    findings.push({
+      title: 'Recover coverage',
+      detail: `Coverage is at ${coverageRate}%. Coverage team should chase missing posts, confirm links, and separate posted-but-not-approved content from truly missing coverage.`,
+      owner: 'Coverage',
+      tone: schedulePressure ? 'red' : 'orange',
+    });
+  } else {
+    findings.push({
+      title: 'Coverage is close to target',
+      detail: `Coverage is at ${coverageRate}%. QA can now focus on proof quality, tag compliance, mentions, and archive links.`,
+      owner: 'QA',
+      tone: 'green',
+    });
+  }
+
+  if (rejectRate > 10) {
+    findings.push({
+      title: 'Review rejected content',
+      detail: `Reject rate is ${rejectRate}%. QA should group rejection reasons and send one clear correction note to owners before more coverage is submitted.`,
+      owner: 'QA',
+      tone: 'red',
+    });
+  }
+
+  if (schedulePressure) {
+    findings.push({
+      title: 'End-date pressure',
+      detail: `${daysLeft <= 0 ? 'The end date has arrived or passed' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}. Escalate blockers today and move unresolved gaps into recovery mode.`,
+      owner: 'PMO',
+      tone: 'red',
+    });
+  }
+
+  if (!findings.some((item) => item.owner === 'PMO')) {
+    findings.push({
+      title: 'PMO next step',
+      detail: `Keep one owner on the next action: ${campaign.nextAction || 'set the next measurable campaign action'}. Update this after the next handover.`,
+      owner: 'PMO',
+      tone: score >= 75 ? 'green' : 'orange',
+    });
+  }
+
+  const tone: AuditFinding['tone'] = score >= 75 ? 'green' : score >= 50 ? 'orange' : 'red';
+  const label = tone === 'green' ? 'On track' : tone === 'orange' ? 'Needs control' : 'At risk';
+  const summary = `TRYGC audit checks confirmations, visit execution, coverage, QA rejects, and end-date pressure. Current read: confirmations ${confirmationRate}%, visits ${visitRate}%, coverage ${coverageRate}%.`;
+
+  return { score, tone, label, summary, findings };
 }

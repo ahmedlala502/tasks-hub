@@ -1,4 +1,6 @@
 import type { OpsDepartment, OpsOffice, OpsRole } from './types';
+import { REAL_EMPLOYEE_ROSTER } from '../data/employeeRoster';
+import { getRosterCredentialEmail } from '../lib/onlineUsers';
 
 export const DEFAULT_ACCESS_PASSWORD = 'Admin123';
 
@@ -11,7 +13,7 @@ export type DefaultAccessUser = {
   title: string;
 };
 
-export const DEFAULT_ACCESS_USERS: DefaultAccessUser[] = [
+const CORE_DEFAULT_ACCESS_USERS: DefaultAccessUser[] = [
   { name: 'shouq_ksa', email: 'shouq_ksa@trygc.com', role: 'community', office: 'KSA', department: 'Coordination', title: 'Community Access' },
   { name: 'sara_ksa', email: 'sara_ksa@trygc.com', role: 'community', office: 'KSA', department: 'Coordination', title: 'Community Access' },
   { name: 'aljazi_ksa', email: 'aljazi_ksa@trygc.com', role: 'community', office: 'KSA', department: 'Coordination', title: 'Community Access' },
@@ -26,3 +28,19 @@ export const DEFAULT_ACCESS_USERS: DefaultAccessUser[] = [
   { name: 'Atia', email: 'm.atia@trygc.com', role: 'operations', office: 'Egypt', department: 'Operations', title: 'Operations Access' },
   { name: 'admin', email: 'admin@trygc.com', role: 'master', office: 'Egypt', department: 'Operations', title: 'Master Admin' },
 ];
+
+const ROSTER_ACCESS_USERS: DefaultAccessUser[] = REAL_EMPLOYEE_ROSTER.map((employee) => ({
+  name: employee.name,
+  email: getRosterCredentialEmail(employee.name),
+  role: 'operations',
+  office: 'Egypt',
+  department: 'Operations',
+  title: `${employee.roleTask} - ${employee.city}`,
+}));
+
+const byEmail = new Map<string, DefaultAccessUser>();
+[...CORE_DEFAULT_ACCESS_USERS, ...ROSTER_ACCESS_USERS].forEach((user) => {
+  if (!byEmail.has(user.email)) byEmail.set(user.email, user);
+});
+
+export const DEFAULT_ACCESS_USERS: DefaultAccessUser[] = Array.from(byEmail.values());

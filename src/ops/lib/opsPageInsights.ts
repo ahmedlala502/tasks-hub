@@ -75,6 +75,9 @@ export type CampaignMatrixItem = {
   doneCount: number;
   openCount: number;
   blockedCount: number;
+  confirmationTotal: number;
+  coverageTotal: number;
+  targetTotal: number;
   progress: number;
   confirmationProgress: number;
   coverageProgress: number;
@@ -116,7 +119,14 @@ function taskCampaignKey(task: Task) {
 }
 
 function campaignKeys(campaign: Campaign) {
-  return new Set([campaign.id, campaign.name].map(normalize).filter(Boolean));
+  return new Set([campaign.id, campaign.name, campaign.brandId].map(normalize).filter(Boolean));
+}
+
+function taskBelongsToCampaign(task: Task, campaign: Campaign) {
+  const taskKey = taskCampaignKey(task);
+  if (!taskKey) return false;
+  const keys = campaignKeys(campaign);
+  return keys.has(taskKey);
 }
 
 export function getOperationalTaskStatus(task: Task, now = Date.now()): OperationalTaskStatus {
@@ -182,12 +192,15 @@ export function buildMyDashboardInsights(tasks: Task[], campaigns: Campaign[], u
 
 export function buildMyCampaignMatrix(campaigns: Campaign[], tasks: Task[], now = Date.now()): CampaignMatrixItem[] {
   return campaigns.map((campaign) => {
-    const keys = campaignKeys(campaign);
-    const campaignTasks = tasks.filter((task) => keys.has(taskCampaignKey(task)));
+    const campaignTasks = tasks.filter((task) => taskBelongsToCampaign(task, campaign));
     const doneCount = campaignTasks.filter((task) => getOperationalTaskStatus(task, now) === 'Done').length;
     const blockedCount = campaignTasks.filter((task) => getOperationalTaskStatus(task, now) === 'Blocked').length;
-    const confirmationTotal = campaignTasks.reduce((sum, task) => sum + numberValue(task.metricCON), 0);
-    const coverageTotal = campaignTasks.reduce((sum, task) => sum + numberValue(task.metricCOV), 0);
+    const taskConfirmationTotal = campaignTasks.reduce((sum, task) => sum + numberValue(task.metricCON), 0);
+    const taskCoverageTotal = campaignTasks.reduce((sum, task) => sum + numberValue(task.metricCOV), 0);
+    const confirmationTotal = numberValue(campaign.confirmations) || taskConfirmationTotal;
+    const coverageTotal = numberValue(campaign.coverage) || taskCoverageTotal;
+    const targetTotal = numberValue(campaign.targetInfluencers);
+    const coverageTarget = numberValue(campaign.targetPostingCoverage) || targetTotal;
     const departments = new Set(campaignTasks.map((task) => clean(task.department || task.category, 'Operations')));
     const teamLanes = [...departments].sort().map((name) => {
       const laneTasks = campaignTasks.filter((task) => clean(task.department || task.category, 'Operations') === name);
@@ -206,9 +219,12 @@ export function buildMyCampaignMatrix(campaigns: Campaign[], tasks: Task[], now 
       doneCount,
       openCount: campaignTasks.length - doneCount,
       blockedCount,
+      confirmationTotal,
+      coverageTotal,
+      targetTotal,
       progress: pct(doneCount, campaignTasks.length),
-      confirmationProgress: pct(confirmationTotal, campaign.targetInfluencers),
-      coverageProgress: pct(coverageTotal, campaign.targetPostingCoverage),
+      confirmationProgress: pct(confirmationTotal, targetTotal),
+      coverageProgress: pct(coverageTotal, coverageTarget),
       teamLanes,
     };
   });
@@ -272,15 +288,27 @@ export function buildDailyFocus(tasks: Task[], now = Date.now()): DailyFocus {
 }
 
 export function buildUpdatesFeed(campaigns: Campaign[], tasks: Task[], blockers: Blocker[], handovers: Handover[]): UpdateFeedItem[] {
-  const campaignItems: UpdateFeedItem[] = campaigns.map((campaign) => ({
-    id: `campaign-${campaign.id}`,
-    kind: 'campaign',
-    title: campaign.name,
-    detail: `${campaign.status} · stage ${campaign.stage}/${CampaignStage.CLOSURE} · ${campaign.nextAction || 'No next action set'}`,
-    owner: clean(campaign.currentOwner),
-    at: campaign.updatedAt || campaign.createdAt,
-    tone: campaign.recordHealth === 'Critical' ? 'red' : campaign.recordHealth === 'At Risk' ? 'orange' : 'green',
-  }));
+  const campaignItems: UpdateFeedItem[] = campaigns.map((campaign) => {
+    const campaignTasks = tasks.filter((task) => taskBelongsToCampaign(task, campaign));
+    const taskConfirmationTotal = campaignTasks.reduce((sum, task) => sum + numberValue(task.metricCON), 0);
+    const taskCoverageTotal = campaignTasks.reduce((sum, task) => sum + numberValue(task.metricCOV), 0);
+    const confirmations = numberValue(campaign.confirmations) || taskConfirmationTotal;
+    const coverage = numberValue(campaign.coverage) || taskCoverageTotal;
+    const target = numberValue(campaign.targetInfluencers);
+    const visited = numberValue(campaign.visited);
+    const missed = Math.max(target - visited, 0);
+    const approved = numberValue(campaign.approved);
+    const rejected = numberValue(campaign.reject);
+    return {
+      id: `campaign-${campaign.id}`,
+      kind: 'campaign',
+      title: campaign.name,
+      detail: `${campaign.status} · target ${target} · confirmations ${confirmations} · visited ${visited} · missed ${missed} · coverage ${coverage}/${numberValue(campaign.targetPostingCoverage) || target} · approved ${approved} · reject ${rejected} · tasks ${campaignTasks.length}`,
+      owner: clean(campaign.currentOwner),
+      at: campaign.updatedAt || campaign.createdAt,
+      tone: campaign.recordHealth === 'Critical' ? 'red' : campaign.recordHealth === 'At Risk' ? 'orange' : 'green',
+    };
+  });
   const taskItems: UpdateFeedItem[] = tasks.map((task) => ({
     id: `task-${task.id}`,
     kind: 'task',
