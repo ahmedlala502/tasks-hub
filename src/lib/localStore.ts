@@ -440,7 +440,7 @@ export function normalizeTask(task: Partial<Task>, user: User): Task {
     })),
     createdAt: task.createdAt || now,
     updatedAt: now,
-    creatorId: task.creatorId || 'local-workspace',
+    creatorId: task.creatorId || user.email || 'local-workspace',
     dependencies: task.dependencies || [],
     tags: task.tags || [],
     estimatedHours: task.estimatedHours,

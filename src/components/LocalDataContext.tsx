@@ -233,6 +233,15 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
           }
         });
 
+        cloudStore.subscribeToAuditLogs((payload) => {
+          if (payload.eventType !== 'INSERT') return;
+          setWorkspace(current => {
+            const incoming = payload.new as AuditEvent;
+            if (current.auditLogs.some(e => e.id === incoming.id)) return current;
+            return { ...current, auditLogs: [incoming, ...current.auditLogs].slice(0, 200) };
+          });
+        });
+
         cloudStore.subscribeToSignupRequests((payload) => {
           setWorkspace(current => {
             if (payload.eventType === 'INSERT') {
@@ -306,13 +315,16 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
             approvedAt: createdAt,
           };
 
-          await cloudStore.saveMember(member);
-          await cloudStore.saveUser(user);
           newMembers.push(member);
           newUsers.push(user);
         }
 
         if (newMembers.length > 0) {
+          // Persist all new roster members + users to Supabase in parallel
+          await Promise.all([
+            ...newMembers.map(m => cloudStore.saveMember(m).catch(err => console.warn('saveMember failed:', err))),
+            ...newUsers.map(u => cloudStore.saveUser(u).catch(err => console.warn('saveUser failed:', err))),
+          ]);
           setWorkspace(current => ({
             ...current,
             members: [...newMembers, ...current.members],
@@ -329,12 +341,9 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
   }, [loading, syncState.isOnline]);
 
 
-  const commit = async (updater: (current: LocalWorkspace) => LocalWorkspace) => {
-    setWorkspace(current => {
-      const next = updater(current);
-      return next;
-    });
-  };
+  const commit = useCallback((updater: (current: LocalWorkspace) => LocalWorkspace) => {
+    setWorkspace(current => updater(current));
+  }, []);
 
   const appendAudit = (current: LocalWorkspace, action: string, details?: unknown, severity: 'info' | 'warning' | 'error' | 'critical' = 'info'): LocalWorkspace => {
     const event: AuditEvent = {
@@ -345,20 +354,43 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
       userId: current.user.email,
       severity,
     };
+    // Persist to Supabase so the Activity Feed page survives reloads and is shared across users
+    cloudStore.logAudit(event).catch(err => console.warn('Audit log persist failed:', err));
     return { ...current, auditLogs: [event, ...current.auditLogs].slice(0, 200) };
   };
 
-  const isMasterAdmin = isMasterAccount(workspace.user);
-  const isSuperAdmin = isMasterAdmin || workspace.user.isSuperAdmin === true || workspace.user.role === 'Super Admin';
-  const hasAdminAccess = isSuperAdmin || ['super admin', 'admin', 'manager', 'lead', 'head', 'director', 'general'].some(r => workspace.user.role.toLowerCase().includes(r));
-  const currentTeam = getCurrentTeam(workspace.user, workspace.members);
-  const permissionProfile = resolvePermissionProfile(workspace.user.role, workspace.settings.rolePermissions);
-  const allowedTeams = isSuperAdmin ? ['*'] : permissionProfile.teams;
+  const isMasterAdmin = useMemo(() => isMasterAccount(workspace.user), [workspace.user]);
+  const isSuperAdmin = useMemo(
+    () => isMasterAdmin || workspace.user.isSuperAdmin === true || workspace.user.role === 'Super Admin',
+    [isMasterAdmin, workspace.user.isSuperAdmin, workspace.user.role],
+  );
+  const hasAdminAccess = useMemo(
+    () => isSuperAdmin || ['super admin', 'admin', 'manager', 'lead', 'head', 'director', 'general'].some(r => workspace.user.role.toLowerCase().includes(r)),
+    [isSuperAdmin, workspace.user.role],
+  );
+  const currentTeam = useMemo(() => getCurrentTeam(workspace.user, workspace.members), [workspace.user, workspace.members]);
+  const permissionProfile = useMemo(
+    () => resolvePermissionProfile(workspace.user.role, workspace.settings.rolePermissions),
+    [workspace.user.role, workspace.settings.rolePermissions],
+  );
+  const allowedTeams = useMemo(() => (isSuperAdmin ? ['*'] : permissionProfile.teams), [isSuperAdmin, permissionProfile.teams]);
   const teamIsolation = workspace.settings.featureFlags?.teamIsolation !== false;
-  const scopedTasks = filterTasksByTeam(workspace.tasks, allowedTeams, teamIsolation);
-  const scopedHandovers = filterHandoversByTeam(workspace.handovers, allowedTeams, teamIsolation);
-  const scopedMembers = filterMembersByTeam(workspace.members, allowedTeams, teamIsolation);
-  const scopedOffices = filterOfficesByTeam(workspace.offices, workspace.tasks, workspace.members, allowedTeams, teamIsolation);
+  const scopedTasks = useMemo(
+    () => filterTasksByTeam(workspace.tasks, allowedTeams, teamIsolation),
+    [workspace.tasks, allowedTeams, teamIsolation],
+  );
+  const scopedHandovers = useMemo(
+    () => filterHandoversByTeam(workspace.handovers, allowedTeams, teamIsolation),
+    [workspace.handovers, allowedTeams, teamIsolation],
+  );
+  const scopedMembers = useMemo(
+    () => filterMembersByTeam(workspace.members, allowedTeams, teamIsolation),
+    [workspace.members, allowedTeams, teamIsolation],
+  );
+  const scopedOffices = useMemo(
+    () => filterOfficesByTeam(workspace.offices, workspace.tasks, workspace.members, allowedTeams, teamIsolation),
+    [workspace.offices, workspace.tasks, workspace.members, allowedTeams, teamIsolation],
+  );
 
   React.useEffect(() => {
     const needsUserFix = (workspace.user.isSuperAdmin || workspace.user.role === 'Super Admin') && workspace.user.role !== 'Super Admin';
@@ -681,7 +713,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
       canUseFeature: feature => canUsePrivilegedFeature(feature),
       isWidgetEnabled: widget => workspace.settings.widgetConfig?.[widget] !== false,
       addTask: async task => {
-        const newTask = normalizeTask(task, workspace.user);
+        const newTask = normalizeTask({ ...task, creatorId: task.creatorId || workspace.user.email }, workspace.user);
         await cloudStore.saveTask(newTask);
         commit(current => appendAudit({
           ...current,
@@ -721,7 +753,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
           taskIds: handover.taskIds || [],
           createdAt: handover.createdAt || new Date().toISOString(),
           ackAt: handover.ackAt,
-          creatorId: 'local-workspace',
+          creatorId: handover.creatorId || workspace.user.email || 'local-workspace',
         };
         await cloudStore.saveHandover(newHandover);
         commit(current => appendAudit({
@@ -936,13 +968,16 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
         const now = new Date().toISOString();
 
         switch (toolName) {
-          case 'createTask':
+          case 'createTask': {
             if (!canUsePrivilegedFeature('task.create')) return notAllowed;
+            const aiTask = normalizeTask({ ...args, title: args.title || 'AI Task', creatorId: workspace.user.email || 'ai-agent' }, workspace.user);
+            await cloudStore.saveTask(aiTask);
             commit(current => appendAudit({
               ...current,
-              tasks: [normalizeTask({ ...args, title: args.title || 'AI Task', creatorId: 'ai-agent' }, workspace.user), ...current.tasks],
-            }, 'TASK_CREATE', { title: args.title }));
+              tasks: [aiTask, ...current.tasks],
+            }, 'TASK_CREATE', { title: args.title, viaAI: true }));
             return `Task "${args.title}" created.`;
+          }
           case 'updateTask':
             if (!canUsePrivilegedFeature('task.edit')) return notAllowed;
             if (!args.id) return 'Missing task ID.';
@@ -971,23 +1006,26 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
             const task = workspace.tasks.find(t => t.id === args.id);
             return task ? JSON.stringify(task) : 'Task not found.';
           }
-          case 'createHandover':
+          case 'createHandover': {
             if (!canUsePrivilegedFeature('handover.create')) return notAllowed;
+            const aiHandover = {
+              id: createId('handover'), date: now.split('T')[0],
+              fromShift: (args.fromShift || 'Morning') as any,
+              toShift: (args.toShift || 'Mid') as any,
+              fromOffice: args.fromOffice || workspace.user.office,
+              toOffice: args.toOffice || workspace.user.office,
+              outgoing: args.outgoing || workspace.user.name,
+              incoming: args.incoming || 'TBD', status: 'Pending' as const,
+              watchouts: args.watchouts || '', taskIds: args.taskIds ? args.taskIds.split(',').map(s => s.trim()).filter(Boolean) : [],
+              createdAt: now, creatorId: workspace.user.email || 'ai-agent',
+            };
+            await cloudStore.saveHandover(aiHandover as any);
             commit(current => appendAudit({
               ...current,
-              handovers: [{
-                id: createId('handover'), date: now.split('T')[0],
-                fromShift: (args.fromShift || 'Morning') as any,
-                toShift: (args.toShift || 'Mid') as any,
-                fromOffice: args.fromOffice || workspace.user.office,
-                toOffice: args.toOffice || workspace.user.office,
-                outgoing: args.outgoing || workspace.user.name,
-                incoming: args.incoming || 'TBD', status: 'Pending' as const,
-                watchouts: args.watchouts || '', taskIds: args.taskIds ? args.taskIds.split(',').map(s => s.trim()).filter(Boolean) : [],
-                createdAt: now, creatorId: 'ai-agent',
-              }, ...current.handovers],
-            }, 'HANDOVER_INITIATE', { fromShift: args.fromShift, toShift: args.toShift }));
+              handovers: [aiHandover as any, ...current.handovers],
+            }, 'HANDOVER_INITIATE', { fromShift: args.fromShift, toShift: args.toShift, viaAI: true }));
             return `Handover created (${args.fromShift} → ${args.toShift}).`;
+          }
           case 'updateHandover':
             if (!canUsePrivilegedFeature('handover.edit')) return notAllowed;
             if (!args.id) return 'Missing handover ID.';
@@ -1092,7 +1130,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
         };
       },
     };
-  }, [workspace, auth, login, requestSignup, logout, lock, restoreSession, changePassword, currentTeam, isMasterAdmin, isSuperAdmin, hasAdminAccess, scopedTasks, scopedHandovers, scopedMembers, scopedOffices, permissionProfile, commit, appendAudit, sanitizeUserPatch, isMasterAccount, syncState, loading]);
+  }, [workspace, auth, login, requestSignup, logout, lock, restoreSession, changePassword, currentTeam, isMasterAdmin, isSuperAdmin, hasAdminAccess, scopedTasks, scopedHandovers, scopedMembers, scopedOffices, permissionProfile, commit, syncState, loading]);
 
   return <LocalDataContext.Provider value={value}>{children}</LocalDataContext.Provider>;
 }

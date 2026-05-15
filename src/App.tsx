@@ -156,11 +156,11 @@ export default function App() {
   const saveTaskFromHeader = useCallback(async (taskData: Record<string, unknown>) => {
     await addTask({
       ...taskData,
-      creatorId: 'local-workspace',
+      creatorId: (taskData.creatorId as string) || user.email,
       owner: (taskData.owner as string) || user.name,
     });
     setIsGlobalTaskModalOpen(false);
-  }, [addTask, user.name]);
+  }, [addTask, user.name, user.email]);
 
   const handleQuickAdd = useCallback(async (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && quickAddTitle.trim() && !isQuickAdding) {
@@ -176,7 +176,7 @@ export default function App() {
           country: user.country || 'KSA',
           office: user.office || OFFICES[0].name,
           team: currentTeam || TEAMS[0],
-          creatorId: 'local-workspace',
+          creatorId: user.email,
           due: new Date().toISOString().split('T')[0],
           carry: false,
           dod: [],
@@ -189,7 +189,7 @@ export default function App() {
         setIsQuickAdding(false);
       }
     }
-  }, [addTask, quickAddTitle, isQuickAdding, user.name, user.country, user.office, currentTeam]);
+  }, [addTask, quickAddTitle, isQuickAdding, user.name, user.email, user.country, user.office, currentTeam]);
 
   if (!isReady || loading) {
     return (

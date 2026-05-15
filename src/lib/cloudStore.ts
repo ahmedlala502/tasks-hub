@@ -323,11 +323,11 @@ export class CloudStore {
   // Signup Requests
   async getSignupRequests() {
     const { data, error } = await supabase
-      .from('workspace_audit_logs' as any)
+      .from('workspace_signup_requests' as any)
       .select('*')
       .eq('workspace_id', this.workspaceId)
       .order('requested_at', { ascending: false });
-    
+
     if (error) throw error;
     return data as unknown as PendingSignupRequest[];
   }
@@ -434,6 +434,20 @@ export class CloudStore {
       )
       .subscribe();
     
+    this.subscriptions.push(sub);
+    return sub;
+  }
+
+  subscribeToAuditLogs(callback: (payload: any) => void) {
+    const sub = supabase
+      .channel('audit-logs-changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'workspace_audit_logs', filter: `workspace_id=eq.${this.workspaceId}` },
+        callback
+      )
+      .subscribe();
+
     this.subscriptions.push(sub);
     return sub;
   }
