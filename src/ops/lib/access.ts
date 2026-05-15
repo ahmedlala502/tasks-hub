@@ -12,9 +12,11 @@ const OPERATIONS_PATHS = new Set([
   '/daily-routines',
   '/updates',
   '/campaigns',
+  '/influencers',
   '/analytics',
   '/assets',
   '/reporting',
+  '/performance',
   '/templates',
 ]);
 const MASTER_ONLY_PATHS = new Set(['/audit', '/settings', '/admin']);

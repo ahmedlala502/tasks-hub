@@ -17,9 +17,11 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Upload,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  CalendarCheck,
+  UserCheck,
+  AlertTriangle
 } from 'lucide-react';
 import { cn } from '../utils';
 import { dataService } from '../services/dataService';
@@ -72,6 +74,27 @@ export default function InfluencerList() {
 
     return matchesSearch && matchesNiche && matchesRange;
   });
+
+  const influencerSummary = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(startOfToday);
+    endOfToday.setDate(endOfToday.getDate() + 1);
+    const todayStart = startOfToday.getTime();
+    const todayEnd = endOfToday.getTime();
+
+    return {
+      scheduledToday: influencers.filter((inf) =>
+        (inf.visitDate && inf.visitDate >= todayStart && inf.visitDate < todayEnd) ||
+        (inf.status === 'Scheduled' && !inf.visitDate)
+      ).length,
+      approvalRequests: influencers.filter((inf) => inf.qaStatus === 'Pending' || inf.qaStatus === 'Fix Required').length,
+      missedVisits: influencers.filter((inf) =>
+        (inf.visitDate && inf.visitDate < todayStart && !inf.visitCompleted) ||
+        inf.status === 'Dropped'
+      ).length,
+    };
+  }, [influencers]);
 
   const sortedInfluencers = useMemo(() => {
     let sortableItems = [...filteredInfluencers];
@@ -249,6 +272,30 @@ export default function InfluencerList() {
             <UserPlus size={18} /> Recruit Influencer
           </button>
         </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <InfluencerSummaryCard
+          label="Today's Scheduled Visits"
+          value={influencerSummary.scheduledToday}
+          detail="Influencer visits due today"
+          icon={CalendarCheck}
+          tone="text-gc-orange"
+        />
+        <InfluencerSummaryCard
+          label="Request for Approval Influencers"
+          value={influencerSummary.approvalRequests}
+          detail="Pending or fix-required approval"
+          icon={UserCheck}
+          tone="text-purple-600"
+        />
+        <InfluencerSummaryCard
+          label="Missed Visits"
+          value={influencerSummary.missedVisits}
+          detail="Past visits needing follow-up"
+          icon={AlertTriangle}
+          tone="text-red-600"
+        />
       </div>
 
       {isRecruitOpen && (
@@ -651,5 +698,34 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
       <span className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</span>
       {children}
     </label>
+  );
+}
+
+function InfluencerSummaryCard({
+  label,
+  value,
+  detail,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</p>
+          <p className={`mt-2 text-3xl font-black tabular-nums ${tone}`}>{value}</p>
+          <p className="mt-1 text-xs font-semibold text-muted-foreground">{detail}</p>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary text-gc-orange">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </div>
   );
 }

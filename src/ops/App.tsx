@@ -28,6 +28,8 @@ import CampaignIntake from './pages/CampaignIntake';
 import CampaignDetail from './pages/CampaignDetail';
 import CampaignSetup from './pages/CampaignSetup';
 import CampaignClosure from './pages/CampaignClosure';
+import InfluencerList from './pages/InfluencerList';
+import InfluencerProfile from './pages/InfluencerProfile';
 import Layout from './components/Layout';
 
 interface AuthContextType {
@@ -136,6 +138,7 @@ export default function App() {
               <Route path="daily-routines" element={allow('/daily-routines', <DailyRoutines />)} />
               <Route path="priority-board" element={<Navigate to="/tasks-daily-routines" replace />} />
               <Route path="profile" element={allow('/profile', <UserProfile />)} />
+              <Route path="performance" element={allow('/performance', <UserProfile />)} />
               <Route path="templates" element={allow('/templates', <Templates />)} />
               <Route path="updates" element={allow('/updates', <Updates />)} />
               <Route path="analytics" element={allow('/analytics', <Analytics />)} />
@@ -147,6 +150,8 @@ export default function App() {
               <Route path="campaigns/:id" element={allow('/', <CampaignDetail />)} />
               <Route path="campaigns/:id/setup" element={allow('/', <CampaignSetup />)} />
               <Route path="campaigns/:id/closure" element={allow('/', <CampaignClosure />)} />
+              <Route path="influencers" element={allow('/influencers', <InfluencerList />)} />
+              <Route path="influencers/:id" element={allow('/influencers', <InfluencerProfile />)} />
               <Route path="*" element={redirectHome} />
             </Route>
           </Routes>

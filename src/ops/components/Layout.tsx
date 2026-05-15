@@ -8,7 +8,7 @@ import {
   Sun, Moon, RefreshCw, Download,
   ChevronRight, FolderKanban,
   Search, X, SlidersHorizontal, Check, Clock, CircleAlert, CheckCircle2, UserRound,
-  Activity, ClipboardList, Trophy
+  Activity, ClipboardList, Trophy, Users
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { notificationService, AppNotification } from '../services/notificationService';
@@ -30,6 +30,7 @@ const OPS_NAV: NavItem[] = [
   { icon: UserRound,       label: 'My Dashboard',   path: '/my-dashboard' },
   { icon: Activity,        label: 'Live Ops',       path: '/live-ops' },
   { icon: FolderKanban,    label: 'Campaigns',      path: '/campaigns' },
+  { icon: Users,           label: 'Influencers',    path: '/influencers' },
   { icon: ClipboardList,   label: 'Daily Routine',  path: '/tasks-daily-routines' },
   { icon: RefreshCw,       label: 'Handover',       path: '/handover' },
   { icon: CheckSquare,     label: 'Tasks',          path: '/tasks' },
@@ -39,6 +40,7 @@ const OPS_NAV: NavItem[] = [
 
 const SYSTEM_NAV: NavItem[] = [
   { icon: UserRound,     label: 'Profile',     path: '/profile' },
+  { icon: BarChart3,     label: 'Performance', path: '/performance' },
   { icon: MessageSquare, label: 'Templates',  path: '/templates' },
   { icon: History,       label: 'Audit Logs', path: '/audit' },
   { icon: Settings,      label: 'Settings',   path: '/settings' },
@@ -75,6 +77,8 @@ function getPageLabel(pathname: string): string {
   if (pathname.startsWith('/campaigns/') && pathname.endsWith('/closure')) return 'Campaign Closure';
   if (pathname.startsWith('/campaigns/')) return 'Campaign Detail';
   if (pathname === '/campaigns') return 'Campaigns';
+  if (pathname === '/performance') return 'Performance';
+  if (pathname === '/influencers') return 'Influencers';
   if (pathname.startsWith('/influencers/')) return 'Influencer Profile';
   return 'Dashboard';
 }
