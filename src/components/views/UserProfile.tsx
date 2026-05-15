@@ -1,16 +1,100 @@
-import React, { useMemo } from 'react';
-import { User, TrendingUp, CheckCircle2, AlertCircle, Clock, Zap, Award, Activity, Target, ChevronRight } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
+import React, { useMemo, useState } from 'react';
+import { User, TrendingUp, CheckCircle2, AlertCircle, Clock, Zap, Award, Activity, Target, ChevronRight, X, Filter, Calendar, BarChart3 } from 'lucide-react';
+import { motion, useReducedMotion, AnimatePresence } from 'motion/react';
 import { Card } from '../ui/card';
 import { calculateMemberMetrics, getPerformanceSummary, generatePerformanceAlerts } from '../../lib/performanceService';
 import { useLocalData } from '../LocalDataContext';
-import { Task, Status, Member, PerformanceMetrics } from '../../types';
-import { formatDistance, parseISO } from 'date-fns';
+import { Task, Status, Member, PerformanceMetrics, Handover } from '../../types';
+import { formatDistance, parseISO, format } from 'date-fns';
+
+interface BreakdownModalProps {
+  title: string;
+  icon: React.ReactNode;
+  items: { title: string; subtitle: string; badge?: string; badgeColor?: string; date?: string }[];
+  onClose: () => void;
+  totalLabel?: string;
+  totalValue?: string | number;
+}
+
+function BreakdownModal({ title, icon, items, onClose, totalLabel, totalValue }: BreakdownModalProps) {
+  const shouldReduceMotion = useReducedMotion();
+
+  return (
+    <AnimatePresence>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={onClose}
+        />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 20 }}
+          transition={{ duration: shouldReduceMotion ? 0 : 0.2 }}
+          className="relative w-full max-w-2xl max-h-[80vh] bg-white rounded-3xl shadow-2xl overflow-hidden"
+        >
+          <div className="sticky top-0 z-10 bg-white border-b border-dawn p-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-citrus/10 rounded-xl">{icon}</div>
+              <div>
+                <h2 className="text-xl font-black text-ink">{title}</h2>
+                {totalLabel && totalValue !== undefined && (
+                  <p className="text-xs font-bold text-muted">{totalLabel}: <span className="text-citrus">{totalValue}</span></p>
+                )}
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 rounded-xl hover:bg-stone transition-colors">
+              <X className="w-5 h-5 text-muted" />
+            </button>
+          </div>
+
+          <div className="overflow-y-auto max-h-[calc(80vh-80px)] p-6">
+            {items.length > 0 ? (
+              <div className="space-y-3">
+                {items.map((item, idx) => (
+                  <div key={idx} className="p-4 rounded-2xl bg-stone/50 border border-dawn hover:bg-white hover:shadow-md transition-all">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-ink text-sm truncate">{item.title}</p>
+                        <p className="text-xs text-muted mt-0.5">{item.subtitle}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {item.badge && (
+                          <span className={`text-[9px] px-2 py-0.5 rounded-lg font-black uppercase tracking-widest whitespace-nowrap ${item.badgeColor || 'bg-stone text-muted'}`}>
+                            {item.badge}
+                          </span>
+                        )}
+                        {item.date && (
+                          <span className="text-[10px] font-bold text-muted/60">{item.date}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <BarChart3 className="w-12 h-12 text-muted/30 mx-auto mb-3" />
+                <p className="font-bold text-ink">No data available</p>
+                <p className="text-sm text-muted mt-1">Nothing to show in this category yet.</p>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      </div>
+    </AnimatePresence>
+  );
+}
 
 export default function UserProfilePage() {
   const shouldReduceMotion = useReducedMotion();
   const { user, members, tasks, handovers } = useLocalData();
   const normalizedUserName = user.name.trim().toLowerCase();
+
+  const [activeBreakdown, setActiveBreakdown] = useState<string | null>(null);
 
   const currentMember = useMemo((): Member => {
     const exactMember = members.find(
@@ -19,7 +103,6 @@ export default function UserProfilePage() {
 
     if (exactMember) return exactMember;
 
-    // Fallback profile so the page never gets stuck if the member registry is missing this user.
     return {
       id: `profile-${normalizedUserName || 'user'}`,
       name: user.name,
@@ -35,8 +118,7 @@ export default function UserProfilePage() {
     };
   }, [members, normalizedUserName, user.country, user.name, user.office, user.role, user.team]);
 
-  const metrics = useMemo((): PerformanceMetrics | null => {
-    if (!currentMember) return null;
+  const metrics = useMemo((): PerformanceMetrics => {
     return calculateMemberMetrics(currentMember.id, currentMember, tasks, handovers);
   }, [currentMember, tasks, handovers]);
 
@@ -44,40 +126,161 @@ export default function UserProfilePage() {
     return tasks.filter((t: Task) => t.owner.trim().toLowerCase() === normalizedUserName);
   }, [normalizedUserName, tasks]);
 
+  const completedTasks = useMemo(() => userTasks.filter(t => t.status === Status.DONE), [userTasks]);
+  const inProgressTasks = useMemo(() => userTasks.filter(t => t.status === Status.IN_PROGRESS), [userTasks]);
+  const blockedTasks = useMemo(() => userTasks.filter(t => t.status === Status.BLOCKED), [userTasks]);
+  const backlogTasks = useMemo(() => userTasks.filter(t => t.status === Status.BACKLOG), [userTasks]);
+  const waitingTasks = useMemo(() => userTasks.filter(t => t.status === Status.WAITING), [userTasks]);
+
+  const userHandovers = useMemo((): Handover[] => {
+    return handovers.filter(h => h.outgoing.trim().toLowerCase() === normalizedUserName || h.incoming.trim().toLowerCase() === normalizedUserName);
+  }, [normalizedUserName, handovers]);
+
+  const outgoingHandovers = useMemo(() => userHandovers.filter(h => h.outgoing.trim().toLowerCase() === normalizedUserName), [userHandovers, normalizedUserName]);
+  const acknowledgedHandovers = useMemo(() => outgoingHandovers.filter(h => h.status === 'Acknowledged'), [outgoingHandovers]);
+  const pendingHandovers = useMemo(() => outgoingHandovers.filter(h => h.status === 'Pending'), [outgoingHandovers]);
+
+  const totalTasks = userTasks.length;
+  const completionRatio = totalTasks > 0 ? Math.round((metrics.tasksCompleted / totalTasks) * 100) : 0;
+  const workloadRatio = totalTasks > 0 ? Math.round((metrics.tasksInProgress / totalTasks) * 100) : 0;
+
+  const alerts = useMemo((): string[] => {
+    return generatePerformanceAlerts(metrics);
+  }, [metrics]);
+
+  const formatTaskDate = (dateStr: string) => {
+    try {
+      return formatDistance(parseISO(dateStr), new Date(), { addSuffix: true });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const getStatusColor = (status: Status) => {
+    switch (status) {
+      case Status.DONE: return 'bg-emerald/10 text-emerald border-emerald/20';
+      case Status.IN_PROGRESS: return 'bg-sky/10 text-sky border-sky/20';
+      case Status.BLOCKED: return 'bg-red/10 text-red border-red/20';
+      case Status.WAITING: return 'bg-amber/10 text-amber border-amber/20';
+      default: return 'bg-stone text-muted border-dawn';
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'High': return 'bg-red text-white';
+      case 'Medium': return 'bg-amber text-white';
+      default: return 'bg-sky text-white';
+    }
+  };
+
+  const motionProps = shouldReduceMotion
+    ? { initial: false, animate: false as const }
+    : { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
+
+  const completedTaskItems = completedTasks.map(t => ({
+    title: t.title,
+    subtitle: t.details || t.campaign || `${t.team} • ${t.office}`,
+    badge: t.priority,
+    badgeColor: getPriorityColor(t.priority),
+    date: t.completedAt ? formatTaskDate(t.completedAt) : formatTaskDate(t.updatedAt),
+  }));
+
+  const inProgressTaskItems = inProgressTasks.map(t => ({
+    title: t.title,
+    subtitle: t.details || t.campaign || `${t.team} • ${t.office}`,
+    badge: t.priority,
+    badgeColor: getPriorityColor(t.priority),
+    date: formatTaskDate(t.updatedAt),
+  }));
+
+  const blockedTaskItems = blockedTasks.map(t => ({
+    title: t.title,
+    subtitle: t.blockedReason || t.details || `${t.team} • ${t.office}`,
+    badge: 'Blocked',
+    badgeColor: 'bg-red text-white',
+    date: t.blockedSince ? formatTaskDate(t.blockedSince) : formatTaskDate(t.updatedAt),
+  }));
+
+  const handoverItems = outgoingHandovers.map(h => ({
+    title: `${h.fromShift} → ${h.toShift}`,
+    subtitle: `${h.fromOffice} → ${h.toOffice} • ${h.team}`,
+    badge: h.status,
+    badgeColor: h.status === 'Acknowledged' ? 'bg-emerald/10 text-emerald border-emerald/20' : 'bg-amber/10 text-amber border-amber/20',
+    date: formatTaskDate(h.createdAt),
+  }));
+
+  const allTaskItems = [...userTasks]
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .map(t => ({
+      title: t.title,
+      subtitle: t.details || t.campaign || `${t.team} • ${t.office}`,
+      badge: t.status,
+      badgeColor: getStatusColor(t.status),
+      date: formatTaskDate(t.updatedAt),
+    }));
+
   const recentTasks = useMemo((): Task[] => {
     return [...userTasks]
       .sort((a: Task, b: Task) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 6);
   }, [userTasks]);
 
-  const completionRatio = useMemo(() => {
-    if (userTasks.length === 0) return 0;
-    return Math.round((metrics?.tasksCompleted || 0) / userTasks.length * 100);
-  }, [metrics?.tasksCompleted, userTasks.length]);
-
-  const workloadRatio = useMemo(() => {
-    if (userTasks.length === 0) return 0;
-    return Math.round((metrics?.tasksInProgress || 0) / userTasks.length * 100);
-  }, [metrics?.tasksInProgress, userTasks.length]);
-
-  const alerts = useMemo((): string[] => {
-    return metrics ? generatePerformanceAlerts(metrics) : [];
-  }, [metrics]);
-
-  const motionProps = shouldReduceMotion
-    ? { initial: false, animate: false as const }
-    : { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
-
-  if (!metrics) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <p className="text-muted font-bold animate-pulse">Loading premium profile...</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8 pb-12">
+      <AnimatePresence>
+        {activeBreakdown === 'completed' && (
+          <BreakdownModal
+            title="Tasks Completed"
+            icon={<CheckCircle2 className="w-5 h-5 text-citrus" />}
+            items={completedTaskItems}
+            totalLabel="Total"
+            totalValue={metrics.tasksCompleted}
+            onClose={() => setActiveBreakdown(null)}
+          />
+        )}
+        {activeBreakdown === 'inprogress' && (
+          <BreakdownModal
+            title="Tasks In Progress"
+            icon={<Activity className="w-5 h-5 text-sky" />}
+            items={inProgressTaskItems}
+            totalLabel="Total"
+            totalValue={metrics.tasksInProgress}
+            onClose={() => setActiveBreakdown(null)}
+          />
+        )}
+        {activeBreakdown === 'blocked' && (
+          <BreakdownModal
+            title="Blocked Tasks"
+            icon={<AlertCircle className="w-5 h-5 text-amber" />}
+            items={blockedTaskItems}
+            totalLabel="Total"
+            totalValue={metrics.tasksBlocked}
+            onClose={() => setActiveBreakdown(null)}
+          />
+        )}
+        {activeBreakdown === 'handovers' && (
+          <BreakdownModal
+            title="Handovers"
+            icon={<Target className="w-5 h-5 text-sky" />}
+            items={handoverItems}
+            totalLabel="Outgoing"
+            totalValue={metrics.handoversOut}
+            onClose={() => setActiveBreakdown(null)}
+          />
+        )}
+        {activeBreakdown === 'alltasks' && (
+          <BreakdownModal
+            title="All Tasks"
+            icon={<BarChart3 className="w-5 h-5 text-citrus" />}
+            items={allTaskItems}
+            totalLabel="Total"
+            totalValue={totalTasks}
+            onClose={() => setActiveBreakdown(null)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Premium Hero Banner */}
       <motion.div
         {...motionProps}
@@ -129,16 +332,121 @@ export default function UserProfilePage() {
         </div>
       </motion.div>
 
-      {/* KPI Cards */}
+      {/* KPI Cards - Clickable with breakdowns */}
       <motion.div
         {...motionProps}
         transition={{ delay: shouldReduceMotion ? 0 : 0.08 }}
-        className="grid grid-cols-1 md:grid-cols-4 gap-4"
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
       >
-        <StatCard label="Tasks Completed" value={String(metrics.tasksCompleted)} meta={`${metrics.thisMonthCompleted} this month`} icon={<CheckCircle2 className="w-5 h-5 text-citrus" />} accent="bg-citrus text-white" />
-        <StatCard label="On-Time Rate" value={`${metrics.onTimeRate}%`} meta="Delivery reliability" icon={<TrendingUp className="w-5 h-5 text-sky" />} accent="bg-sky text-white" />
-        <StatCard label="Quality Score" value={`${metrics.qualityScore}`} meta="Out of 100" icon={<Award className="w-5 h-5 text-emerald" />} accent="bg-emerald text-white" />
-        <StatCard label="Avg. Duration" value={`${metrics.avgCompletionTime}h`} meta="Per task average" icon={<Clock className="w-5 h-5 text-amber" />} accent="bg-amber text-white" />
+        <button onClick={() => setActiveBreakdown('completed')} className="text-left w-full focus:outline-none">
+          <Card className="p-6 h-full transition-all duration-300 hover:shadow-xl hover:scale-[1.03] active:scale-[0.98] group bg-white border-dawn hover:border-citrus/20 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-citrus text-white opacity-50 group-hover:opacity-100 transition-opacity" />
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted group-hover:text-ink transition-colors">Tasks Completed</p>
+              <div className="p-2 rounded-xl bg-stone group-hover:bg-white group-hover:shadow-sm transition-all">
+                <CheckCircle2 className="w-5 h-5 text-citrus" />
+              </div>
+            </div>
+            <p className="text-4xl font-black text-ink mb-1 group-hover:text-citrus transition-colors">{metrics.tasksCompleted}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted/60">{metrics.thisMonthCompleted} this month</p>
+            <div className="mt-3 pt-3 border-t border-dawn/50 flex items-center gap-1 text-xs font-bold text-citrus">
+              <Filter className="w-3 h-3" /> View breakdown
+            </div>
+          </Card>
+        </button>
+
+        <button onClick={() => setActiveBreakdown('inprogress')} className="text-left w-full focus:outline-none">
+          <Card className="p-6 h-full transition-all duration-300 hover:shadow-xl hover:scale-[1.03] active:scale-[0.98] group bg-white border-dawn hover:border-sky/20 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-sky text-white opacity-50 group-hover:opacity-100 transition-opacity" />
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted group-hover:text-ink transition-colors">In Progress</p>
+              <div className="p-2 rounded-xl bg-stone group-hover:bg-white group-hover:shadow-sm transition-all">
+                <Activity className="w-5 h-5 text-sky" />
+              </div>
+            </div>
+            <p className="text-4xl font-black text-ink mb-1 group-hover:text-sky transition-colors">{metrics.tasksInProgress}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted/60">Currently active</p>
+            <div className="mt-3 pt-3 border-t border-dawn/50 flex items-center gap-1 text-xs font-bold text-sky">
+              <Filter className="w-3 h-3" /> View breakdown
+            </div>
+          </Card>
+        </button>
+
+        <button onClick={() => setActiveBreakdown('blocked')} className="text-left w-full focus:outline-none">
+          <Card className="p-6 h-full transition-all duration-300 hover:shadow-xl hover:scale-[1.03] active:scale-[0.98] group bg-white border-dawn hover:border-amber/20 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-amber text-white opacity-50 group-hover:opacity-100 transition-opacity" />
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted group-hover:text-ink transition-colors">Blocked</p>
+              <div className="p-2 rounded-xl bg-stone group-hover:bg-white group-hover:shadow-sm transition-all">
+                <AlertCircle className="w-5 h-5 text-amber" />
+              </div>
+            </div>
+            <p className="text-4xl font-black text-ink mb-1 group-hover:text-amber transition-colors">{metrics.tasksBlocked}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted/60">Needs attention</p>
+            <div className="mt-3 pt-3 border-t border-dawn/50 flex items-center gap-1 text-xs font-bold text-amber">
+              <Filter className="w-3 h-3" /> View breakdown
+            </div>
+          </Card>
+        </button>
+
+        <button onClick={() => setActiveBreakdown('handovers')} className="text-left w-full focus:outline-none">
+          <Card className="p-6 h-full transition-all duration-300 hover:shadow-xl hover:scale-[1.03] active:scale-[0.98] group bg-white border-dawn hover:border-emerald/20 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-emerald text-white opacity-50 group-hover:opacity-100 transition-opacity" />
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted group-hover:text-ink transition-colors">Handovers Out</p>
+              <div className="p-2 rounded-xl bg-stone group-hover:bg-white group-hover:shadow-sm transition-all">
+                <Target className="w-5 h-5 text-emerald" />
+              </div>
+            </div>
+            <p className="text-4xl font-black text-ink mb-1 group-hover:text-emerald transition-colors">{metrics.handoversOut}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted/60">{metrics.handoversAcknowledged} acknowledged</p>
+            <div className="mt-3 pt-3 border-t border-dawn/50 flex items-center gap-1 text-xs font-bold text-emerald">
+              <Filter className="w-3 h-3" /> View breakdown
+            </div>
+          </Card>
+        </button>
+      </motion.div>
+
+      {/* Additional Stats Row */}
+      <motion.div
+        {...motionProps}
+        transition={{ delay: shouldReduceMotion ? 0 : 0.1 }}
+        className="grid grid-cols-1 md:grid-cols-3 gap-4"
+      >
+        <button onClick={() => setActiveBreakdown('alltasks')} className="text-left w-full focus:outline-none">
+          <Card className="p-5 h-full transition-all duration-300 hover:shadow-xl hover:scale-[1.02] group bg-white border-dawn">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted">Total Tasks</p>
+                <p className="text-3xl font-black text-ink mt-1">{totalTasks}</p>
+                <p className="text-[10px] font-bold text-muted/60 mt-1">{backlogTasks.length} backlog • {waitingTasks.length} waiting</p>
+              </div>
+              <BarChart3 className="w-8 h-8 text-citrus/50" />
+            </div>
+          </Card>
+        </button>
+
+        <Card className="p-5 h-full bg-white border-dawn">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted">On-Time Rate</p>
+              <p className="text-3xl font-black text-ink mt-1">{metrics.onTimeRate}%</p>
+              <p className="text-[10px] font-bold text-muted/60 mt-1">Delivery reliability</p>
+            </div>
+            <TrendingUp className="w-8 h-8 text-sky/50" />
+          </div>
+        </Card>
+
+        <Card className="p-5 h-full bg-white border-dawn">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted">Quality Score</p>
+              <p className="text-3xl font-black text-ink mt-1">{metrics.qualityScore}</p>
+              <p className="text-[10px] font-bold text-muted/60 mt-1">Out of 100</p>
+            </div>
+            <Award className="w-8 h-8 text-emerald/50" />
+          </div>
+        </Card>
       </motion.div>
 
       {/* Alerts */}
@@ -175,7 +483,7 @@ export default function UserProfilePage() {
         className="grid grid-cols-1 lg:grid-cols-3 gap-6"
       >
         <button 
-          onClick={() => window.location.hash = '#tasks'}
+          onClick={() => setActiveBreakdown('alltasks')}
           className="lg:col-span-2 text-left w-full focus:outline-none"
         >
           <Card className="p-8 h-full hover:shadow-xl hover:border-citrus/30 hover:scale-[1.01] transition-all duration-300 group bg-white/50 backdrop-blur-sm">
@@ -190,15 +498,15 @@ export default function UserProfilePage() {
             </div>
 
             <div className="space-y-6">
-              <ProgressRow label="In Progress" value={metrics.tasksInProgress} total={userTasks.length} barClass="bg-sky" />
-              <ProgressRow label="Blocked" value={metrics.tasksBlocked} total={userTasks.length} barClass="bg-amber" />
-              <ProgressRow label="Done" value={metrics.tasksCompleted} total={userTasks.length} barClass="bg-emerald" />
+              <ProgressRow label="In Progress" value={metrics.tasksInProgress} total={totalTasks} barClass="bg-sky" />
+              <ProgressRow label="Blocked" value={metrics.tasksBlocked} total={totalTasks} barClass="bg-amber" />
+              <ProgressRow label="Done" value={metrics.tasksCompleted} total={totalTasks} barClass="bg-emerald" />
             </div>
           </Card>
         </button>
 
         <button 
-          onClick={() => window.location.hash = '#handovers'}
+          onClick={() => setActiveBreakdown('handovers')}
           className="text-left w-full focus:outline-none"
         >
           <Card className="p-8 h-full hover:shadow-xl hover:border-sky/30 hover:scale-[1.01] transition-all duration-300 group bg-white/50 backdrop-blur-sm">
@@ -214,12 +522,16 @@ export default function UserProfilePage() {
             
             <div className="space-y-4">
               <div className="p-4 rounded-2xl bg-stone/50 border border-dawn flex items-center justify-between group-hover:bg-white transition-colors">
-                <span className="text-xs font-black uppercase tracking-widest text-muted">Handovers Out</span>
+                <span className="text-xs font-black uppercase tracking-widest text-muted">Outgoing</span>
                 <span className="text-xl font-black text-ink">{metrics.handoversOut}</span>
               </div>
               <div className="p-4 rounded-2xl bg-stone/50 border border-dawn flex items-center justify-between group-hover:bg-white transition-colors">
                 <span className="text-xs font-black uppercase tracking-widest text-muted">Acknowledged</span>
                 <span className="text-xl font-black text-emerald">{metrics.handoversAcknowledged}</span>
+              </div>
+              <div className="p-4 rounded-2xl bg-stone/50 border border-dawn flex items-center justify-between group-hover:bg-white transition-colors">
+                <span className="text-xs font-black uppercase tracking-widest text-muted">Pending</span>
+                <span className="text-xl font-black text-amber">{pendingHandovers.length}</span>
               </div>
               
               <div className="mt-6 p-4 rounded-2xl bg-emerald/5 border border-emerald/10 text-center">
@@ -259,7 +571,7 @@ export default function UserProfilePage() {
         <div className="flex items-center justify-between">
           <h3 className="text-2xl font-black text-ink tracking-tight">Recent Activity</h3>
           <button 
-            onClick={() => window.location.hash = '#tasks'}
+            onClick={() => setActiveBreakdown('alltasks')}
             className="text-xs font-black uppercase tracking-widest text-citrus hover:text-ink transition-colors flex items-center gap-1"
           >
             View All <ChevronRight className="w-3 h-3" />
@@ -279,12 +591,7 @@ export default function UserProfilePage() {
                     <div>
                       <div className="flex items-start justify-between gap-4 mb-3">
                         <p className="font-black text-ink text-lg leading-tight group-hover:text-citrus transition-colors line-clamp-2">{task.title}</p>
-                        <span className={`text-[9px] px-2.5 py-1 rounded-lg font-black uppercase tracking-widest whitespace-nowrap border ${
-                          task.status === Status.DONE ? 'bg-emerald/10 text-emerald border-emerald/20' :
-                          task.status === Status.IN_PROGRESS ? 'bg-sky/10 text-sky border-sky/20' :
-                          task.status === Status.BLOCKED ? 'bg-red/10 text-red border-red/20' :
-                          'bg-stone text-muted border-dawn'
-                        }`}>
+                        <span className={`text-[9px] px-2.5 py-1 rounded-lg font-black uppercase tracking-widest whitespace-nowrap border ${getStatusColor(task.status)}`}>
                           {task.status}
                         </span>
                       </div>
@@ -292,15 +599,11 @@ export default function UserProfilePage() {
                     </div>
                     
                     <div className="flex items-center justify-between pt-4 border-t border-dawn/50">
-                      <span className={`text-[10px] px-2.5 py-1 rounded-lg font-black uppercase tracking-widest hover:brightness-95 transition-all ${
-                        task.priority === 'High' ? 'bg-red text-white' :
-                        task.priority === 'Medium' ? 'bg-amber text-white' :
-                        'bg-sky text-white'
-                      }`}>
+                      <span className={`text-[10px] px-2.5 py-1 rounded-lg font-black uppercase tracking-widest hover:brightness-95 transition-all ${getPriorityColor(task.priority)}`}>
                         {task.priority}
                       </span>
                       <span className="text-[10px] font-bold text-muted/60 uppercase tracking-widest">
-                        {formatDistance(parseISO(task.updatedAt), new Date(), { addSuffix: true })}
+                        {formatTaskDate(task.updatedAt)}
                       </span>
                     </div>
                   </div>
@@ -319,40 +622,6 @@ export default function UserProfilePage() {
         )}
       </motion.div>
     </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  meta,
-  icon,
-  accent,
-}: {
-  label: string;
-  value: string;
-  meta: string;
-  icon: React.ReactNode;
-  accent: string;
-}) {
-  return (
-    <button 
-      onClick={() => window.location.hash = '#tasks'}
-      className="text-left w-full focus:outline-none"
-    >
-      <Card className="p-6 h-full transition-all duration-300 hover:shadow-xl hover:scale-[1.03] active:scale-[0.98] group bg-white border-dawn hover:border-citrus/20 relative overflow-hidden">
-        <div className={`absolute top-0 left-0 w-1 h-full ${accent} opacity-50 group-hover:opacity-100 transition-opacity`} />
-        
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-muted group-hover:text-ink transition-colors">{label}</p>
-          <div className="p-2 rounded-xl bg-stone group-hover:bg-white group-hover:shadow-sm transition-all">
-            {icon}
-          </div>
-        </div>
-        <p className="text-4xl font-black text-ink mb-1 group-hover:text-citrus transition-colors">{value}</p>
-        <p className="text-[10px] font-bold uppercase tracking-widest text-muted/60">{meta}</p>
-      </Card>
-    </button>
   );
 }
 
