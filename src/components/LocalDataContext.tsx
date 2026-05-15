@@ -2,7 +2,9 @@ import React, { createContext, useContext, useMemo, useState, useCallback, useEf
 import { AuthState, Handover, Member, Office, PendingSignupRequest, Shift, Task, User, WorkspaceUser } from '../types';
 import { WorkspaceSettings } from '../lib/localStore';
 import { MASTER_ADMIN_EMAIL } from '../constants';
-import { AuditEvent, clearAuthState, createId, getAuthState, importWorkspace, loadWorkspace, LocalWorkspace, normalizeTask, resetWorkspace, saveAuthState, saveWorkspace } from '../lib/localStore';
+import { AuditEvent, clearAuthState, createId, getAuthState, importWorkspace, loadWorkspace, LocalWorkspace, normalizeTask, resetWorkspace, saveAuthState } from '../lib/localStore';
+import { cloudStore } from '../lib/cloudStore';
+import { migrateLocalStorageToCloud } from '../lib/migration';
 import { AppPage, FeatureKey, filterHandoversByTeam, filterMembersByTeam, filterOfficesByTeam, filterTasksByTeam, getCurrentTeam, resolvePermissionProfile, WidgetKey } from '../lib/accessControl';
 import { hashPassword, verifyPassword, generateSessionId, calculateSessionExpiration } from '../lib/authService';
 import { addToast } from '../lib/toast';
@@ -90,11 +92,177 @@ function isMasterAccount(user?: Pick<User, 'email'>) {
 export function LocalDataProvider({ children }: { children: React.ReactNode }) {
   const [workspace, setWorkspace] = useState<LocalWorkspace>(() => loadWorkspace());
   const [auth, setAuth] = useState<AuthState>(() => getAuthState());
+  const [loading, setLoading] = useState(true);
+  const [syncState, setSyncState] = useState({ isOnline: navigator.onLine, isSyncing: false, lastSyncedAt: undefined as string | undefined, pendingChanges: 0, error: undefined as string | undefined });
 
-  const commit = (updater: (current: LocalWorkspace) => LocalWorkspace) => {
+  useEffect(() => {
+    const initCloudSync = async () => {
+      try {
+        setLoading(true);
+        await cloudStore.init();
+        
+        const [users, tasks, handovers, offices, members, settings, auditLogs, pendingSignups] = await Promise.all([
+          cloudStore.getUsers(),
+          cloudStore.getTasks(),
+          cloudStore.getHandovers(),
+          cloudStore.getOffices(),
+          cloudStore.getMembers(),
+          cloudStore.getSettings(),
+          cloudStore.getAuditLogs(),
+          cloudStore.getSignupRequests(),
+        ]);
+
+        const hasCloudData = users.length > 0 || tasks.length > 0;
+        
+        if (!hasCloudData) {
+          const migrated = await migrateLocalStorageToCloud();
+          if (migrated) {
+            const [migratedUsers, migratedTasks, migratedHandovers, migratedOffices, migratedMembers, migratedSettings, migratedAuditLogs, migratedSignups] = await Promise.all([
+              cloudStore.getUsers(),
+              cloudStore.getTasks(),
+              cloudStore.getHandovers(),
+              cloudStore.getOffices(),
+              cloudStore.getMembers(),
+              cloudStore.getSettings(),
+              cloudStore.getAuditLogs(),
+              cloudStore.getSignupRequests(),
+            ]);
+
+            const seed = loadWorkspace();
+            const cloudWorkspace: LocalWorkspace = {
+              user: workspace.user,
+              users: migratedUsers.length > 0 ? migratedUsers : seed.users,
+              pendingSignups: migratedSignups.length > 0 ? migratedSignups : seed.pendingSignups,
+              tasks: migratedTasks.length > 0 ? migratedTasks : seed.tasks,
+              handovers: migratedHandovers.length > 0 ? migratedHandovers : seed.handovers,
+              offices: migratedOffices.length > 0 ? migratedOffices : seed.offices,
+              members: migratedMembers.length > 0 ? migratedMembers : seed.members,
+              settings: migratedSettings || seed.settings,
+              auditLogs: migratedAuditLogs.length > 0 ? migratedAuditLogs : seed.auditLogs,
+            };
+
+            setWorkspace(cloudWorkspace);
+          }
+        } else {
+          const seed = loadWorkspace();
+          const cloudWorkspace: LocalWorkspace = {
+            user: workspace.user,
+            users: users.length > 0 ? users : seed.users,
+            pendingSignups: pendingSignups.length > 0 ? pendingSignups : seed.pendingSignups,
+            tasks: tasks.length > 0 ? tasks : seed.tasks,
+            handovers: handovers.length > 0 ? handovers : seed.handovers,
+            offices: offices.length > 0 ? offices : seed.offices,
+            members: members.length > 0 ? members : seed.members,
+            settings: settings || seed.settings,
+            auditLogs: auditLogs.length > 0 ? auditLogs : seed.auditLogs,
+          };
+
+          setWorkspace(cloudWorkspace);
+        }
+
+        setSyncState(prev => ({ ...prev, isOnline: true, lastSyncedAt: new Date().toISOString() }));
+
+        cloudStore.subscribeToTasks((payload) => {
+          setWorkspace(current => {
+            if (payload.eventType === 'INSERT') {
+              return { ...current, tasks: [payload.new as Task, ...current.tasks] };
+            } else if (payload.eventType === 'UPDATE') {
+              return { ...current, tasks: current.tasks.map(t => t.id === payload.new.id ? payload.new as Task : t) };
+            } else if (payload.eventType === 'DELETE') {
+              return { ...current, tasks: current.tasks.filter(t => t.id !== payload.old.id) };
+            }
+            return current;
+          });
+        });
+
+        cloudStore.subscribeToHandovers((payload) => {
+          setWorkspace(current => {
+            if (payload.eventType === 'INSERT') {
+              return { ...current, handovers: [payload.new as Handover, ...current.handovers] };
+            } else if (payload.eventType === 'UPDATE') {
+              return { ...current, handovers: current.handovers.map(h => h.id === payload.new.id ? payload.new as Handover : h) };
+            } else if (payload.eventType === 'DELETE') {
+              return { ...current, handovers: current.handovers.filter(h => h.id !== payload.old.id) };
+            }
+            return current;
+          });
+        });
+
+        cloudStore.subscribeToUsers((payload) => {
+          setWorkspace(current => {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const updatedUsers = current.users.filter(u => u.email !== payload.new.email);
+              return { ...current, users: [payload.new as WorkspaceUser, ...updatedUsers] };
+            } else if (payload.eventType === 'DELETE') {
+              return { ...current, users: current.users.filter(u => u.email !== payload.old.email) };
+            }
+            return current;
+          });
+        });
+
+        cloudStore.subscribeToMembers((payload) => {
+          setWorkspace(current => {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const updatedMembers = current.members.filter(m => m.id !== payload.new.id);
+              return { ...current, members: [payload.new as Member, ...updatedMembers] };
+            } else if (payload.eventType === 'DELETE') {
+              return { ...current, members: current.members.filter(m => m.id !== payload.old.id) };
+            }
+            return current;
+          });
+        });
+
+        cloudStore.subscribeToOffices((payload) => {
+          setWorkspace(current => {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const updatedOffices = current.offices.filter(o => o.id !== payload.new.id);
+              return { ...current, offices: [payload.new as Office, ...updatedOffices] };
+            } else if (payload.eventType === 'DELETE') {
+              return { ...current, offices: current.offices.filter(o => o.id !== payload.old.id) };
+            }
+            return current;
+          });
+        });
+
+        cloudStore.subscribeToSettings((payload) => {
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            setWorkspace(current => ({ ...current, settings: payload.new.settings }));
+          }
+        });
+
+        cloudStore.subscribeToSignupRequests((payload) => {
+          setWorkspace(current => {
+            if (payload.eventType === 'INSERT') {
+              return { ...current, pendingSignups: [payload.new as PendingSignupRequest, ...current.pendingSignups] };
+            } else if (payload.eventType === 'UPDATE') {
+              return { ...current, pendingSignups: current.pendingSignups.map(s => s.id === payload.new.id ? payload.new as PendingSignupRequest : s) };
+            } else if (payload.eventType === 'DELETE') {
+              return { ...current, pendingSignups: current.pendingSignups.filter(s => s.id !== payload.old.id) };
+            }
+            return current;
+          });
+        });
+
+      } catch (error) {
+        console.error('Failed to initialize cloud sync:', error);
+        setSyncState(prev => ({ ...prev, isOnline: false, error: 'Cloud sync failed, using local storage' }));
+        const localWorkspace = loadWorkspace();
+        setWorkspace(localWorkspace);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initCloudSync();
+
+    return () => {
+      cloudStore.unsubscribeAll();
+    };
+  }, []);
+
+  const commit = async (updater: (current: LocalWorkspace) => LocalWorkspace) => {
     setWorkspace(current => {
       const next = updater(current);
-      saveWorkspace(next);
       return next;
     });
   };
@@ -141,7 +309,6 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
           : current.user,
         users: nextUsers,
       };
-      saveWorkspace(next);
       return next;
     });
   }, []);
@@ -230,6 +397,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
           ? { ...u, loginAttempts: 0, lockedUntil: undefined, status: 'active' as const, lastLoginAt: new Date().toISOString() }
           : u
       );
+      cloudStore.updateUser(normalizedEmail, { lastLoginAt: new Date().toISOString(), loginAttempts: 0, lockedUntil: undefined, status: 'active' });
       return appendAudit({
         ...current,
         user: toSessionUser(account),
@@ -324,6 +492,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
     }
 
     const hashedNewPassword = await hashPassword(newPassword);
+    await cloudStore.updateUser(account.email, { password: hashedNewPassword });
     commit(current => appendAudit({
       ...current,
       user: { ...current.user, password: hashedNewPassword },
@@ -336,49 +505,48 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
     return { ok: true };
   }, [workspace.users, workspace.user.email]);
 
-  const value = useMemo<LocalDataContextType>(() => {
-    const sync = {
-      isOnline: navigator.onLine,
-      isSyncing: false,
-      pendingChanges: 0,
-      lastSyncedAt: undefined as string | undefined,
-      error: undefined as string | undefined,
-    };
+    const value = useMemo<LocalDataContextType>(() => {
+      const sync = {
+        isOnline: syncState.isOnline,
+        isSyncing: syncState.isSyncing,
+        pendingChanges: syncState.pendingChanges,
+        lastSyncedAt: syncState.lastSyncedAt,
+        error: syncState.error,
+      };
 
     return {
       ...workspace,
       auth,
-      loading: false,
-      isReady: true,
+      loading,
+      isReady: !loading,
       sync,
       login,
       requestSignup,
       approveSignup: async (id) => {
         if (!isMasterAdmin && !isSuperAdmin) return;
-        commit(current => {
-          const request = current.pendingSignups.find(item => item.id === id);
-          if (!request) return current;
+        
+        const request = workspace.pendingSignups.find(item => item.id === id);
+        if (!request) return;
 
-          const approvedAt = new Date().toISOString();
-          const nextUser: WorkspaceUser = {
-            id: createId('user'),
-            name: request.name,
-            role: 'Viewer',
-            office: request.office,
-            country: request.country,
-            email: request.email,
-            password: request.password,
-            team: request.team,
-            status: 'active',
-            createdAt: request.requestedAt,
-            approvedAt,
-          };
+        const approvedAt = new Date().toISOString();
+        const nextUser: WorkspaceUser = {
+          id: createId('user'),
+          name: request.name,
+          role: 'Viewer',
+          office: request.office,
+          country: request.country,
+          email: request.email,
+          password: request.password,
+          team: request.team,
+          status: 'active',
+          createdAt: request.requestedAt,
+          approvedAt,
+        };
 
-          const nextMembers = current.members.some(member => member.name === request.name)
-            ? current.members.map(member => member.name === request.name
-              ? { ...member, role: member.role || 'Viewer', team: request.team, office: request.office, country: request.country, updatedAt: approvedAt }
-              : member)
-            : [{
+        const existingMember = workspace.members.find(member => member.name === request.name);
+        const nextMember = existingMember
+          ? { ...existingMember, role: existingMember.role || 'Viewer', team: request.team, office: request.office, country: request.country, updatedAt: approvedAt }
+          : {
               id: createId('member'),
               name: request.name,
               team: request.team,
@@ -389,10 +557,18 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
               handoversOut: 0,
               onTime: 0,
               updatedAt: approvedAt,
-            }, ...current.members];
+              status: 'active' as const,
+            };
 
-          addToast(`${request.name}'s account has been approved.`, 'success', 4000);
+        await cloudStore.saveUser(nextUser);
+        await cloudStore.saveMember(nextMember);
+        await cloudStore.deleteSignupRequest(id);
 
+        commit(current => {
+          const nextMembers = current.members.find(m => m.id === nextMember.id)
+            ? current.members.map(m => m.id === nextMember.id ? nextMember : m)
+            : [nextMember, ...current.members];
+          
           return appendAudit({
             ...current,
             users: [nextUser, ...current.users.filter(user => user.email.toLowerCase() !== request.email.toLowerCase())],
@@ -400,9 +576,12 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
             members: nextMembers,
           }, 'SIGNUP_APPROVED', { email: request.email, role: 'Viewer' });
         });
+
+        addToast(`${request.name}'s account has been approved.`, 'success', 4000);
       },
       rejectSignup: async (id) => {
         if (!isMasterAdmin && !isSuperAdmin) return;
+        await cloudStore.deleteSignupRequest(id);
         commit(current => {
           const request = current.pendingSignups.find(item => item.id === id);
           if (!request) return current;
@@ -433,19 +612,23 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
       canUseFeature: feature => canUsePrivilegedFeature(feature),
       isWidgetEnabled: widget => workspace.settings.widgetConfig?.[widget] !== false,
       addTask: async task => {
+        const newTask = normalizeTask(task, workspace.user);
+        await cloudStore.saveTask(newTask);
         commit(current => appendAudit({
           ...current,
-          tasks: [normalizeTask(task, current.user), ...current.tasks],
+          tasks: [newTask, ...current.tasks],
         }, 'TASK_CREATE', { title: task.title }));
         addToast('Task created successfully.', 'success', 3000);
       },
       updateTask: async (id, patch) => {
+        await cloudStore.updateTask(id, patch);
         commit(current => appendAudit({
           ...current,
           tasks: current.tasks.map(task => task.id === id ? { ...task, ...patch, updatedAt: new Date().toISOString() } : task),
         }, 'TASK_UPDATE', { id, patch }));
       },
       deleteTasks: async ids => {
+        await cloudStore.deleteTasks(ids);
         commit(current => appendAudit({
           ...current,
           tasks: current.tasks.filter(task => !ids.includes(task.id)),
@@ -453,55 +636,63 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
         addToast(`${ids.length} task(s) deleted.`, 'info', 3000);
       },
       addHandover: async handover => {
+        const newHandover = {
+          id: createId('handover'),
+          date: handover.date || new Date().toISOString().split('T')[0],
+          fromShift: handover.fromShift!,
+          toShift: handover.toShift!,
+          fromOffice: handover.fromOffice || '',
+          toOffice: handover.toOffice || '',
+          team: handover.team || workspace.settings.teams[0],
+          country: handover.country || workspace.user.country,
+          outgoing: handover.outgoing || workspace.user.name,
+          incoming: handover.incoming || 'TBD',
+          status: handover.status || 'Pending',
+          watchouts: handover.watchouts || '',
+          taskIds: handover.taskIds || [],
+          createdAt: handover.createdAt || new Date().toISOString(),
+          ackAt: handover.ackAt,
+          creatorId: 'local-workspace',
+        };
+        await cloudStore.saveHandover(newHandover);
         commit(current => appendAudit({
           ...current,
-          handovers: [{
-            id: createId('handover'),
-            date: handover.date || new Date().toISOString().split('T')[0],
-            fromShift: handover.fromShift!,
-            toShift: handover.toShift!,
-            fromOffice: handover.fromOffice || '',
-            toOffice: handover.toOffice || '',
-            team: handover.team || current.settings.teams[0],
-            country: handover.country || current.user.country,
-            outgoing: handover.outgoing || current.user.name,
-            incoming: handover.incoming || 'TBD',
-            status: handover.status || 'Pending',
-            watchouts: handover.watchouts || '',
-            taskIds: handover.taskIds || [],
-            createdAt: handover.createdAt || new Date().toISOString(),
-            ackAt: handover.ackAt,
-            creatorId: 'local-workspace',
-          }, ...current.handovers],
+          handovers: [newHandover, ...current.handovers],
         }, 'HANDOVER_INITIATE', { taskCount: handover.taskIds?.length || 0 }));
         addToast('Handover created successfully.', 'success', 3000);
       },
       updateHandover: async (id, patch) => {
+        await cloudStore.updateHandover(id, patch);
         commit(current => appendAudit({
           ...current,
           handovers: current.handovers.map(handover => handover.id === id ? { ...handover, ...patch } : handover),
         }, 'HANDOVER_UPDATE', { id, patch }));
       },
       deleteHandover: async id => {
+        await cloudStore.deleteHandover(id);
         commit(current => appendAudit({
           ...current,
           handovers: current.handovers.filter(handover => handover.id !== id),
         }, 'HANDOVER_DELETE', { id }));
       },
       addOffice: async office => {
+        const newOffice = { id: createId('office'), name: office.name || 'New Hub', country: office.country || 'EG', lead: office.lead || workspace.user.name, shift: office.shift || Shift.MORNING, timezone: office.timezone, address: office.address, phone: office.phone };
+        await cloudStore.saveOffice(newOffice);
         commit(current => appendAudit({
           ...current,
-          offices: [{ id: createId('office'), name: office.name || 'New Hub', country: office.country || 'EG', lead: office.lead || current.user.name, shift: office.shift || Shift.MORNING, timezone: office.timezone, address: office.address, phone: office.phone }, ...current.offices],
+          offices: [newOffice, ...current.offices],
         }, 'OFFICE_REGISTER', { name: office.name }));
         addToast(`Office "${office.name}" registered.`, 'success', 3000);
       },
       updateOffice: async (id, patch) => {
+        await cloudStore.updateOffice(id, patch);
         commit(current => appendAudit({
           ...current,
           offices: current.offices.map(office => office.id === id ? { ...office, ...patch } : office),
         }, 'OFFICE_UPDATE', { id, patch }));
       },
       deleteOffice: async id => {
+        await cloudStore.deleteOffice(id);
         commit(current => appendAudit({
           ...current,
           offices: current.offices.filter(office => office.id !== id),
@@ -513,52 +704,58 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         const hashedMemberPassword = member.password ? await hashPassword(member.password) : '';
-        commit(current => {
-          const createdAt = new Date().toISOString();
-          const name = member.name?.trim() || 'New Member';
-          const role = member.role || 'Operations Agent';
-          const team = member.team || current.settings.teams[0];
-          const office = member.office || current.user.office;
-          const country = member.country || current.user.country;
-          const emailBase = name.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '');
-          const email = (member.email || `${emailBase || 'user'}@trygc.local`).trim().toLowerCase();
-          const password = hashedMemberPassword;
+        
+        const createdAt = new Date().toISOString();
+        const name = member.name?.trim() || 'New Member';
+        const role = member.role || 'Operations Agent';
+        const team = member.team || workspace.settings.teams[0];
+        const office = member.office || workspace.user.office;
+        const country = member.country || workspace.user.country;
+        const emailBase = name.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '');
+        const email = (member.email || `${emailBase || 'user'}@trygc.local`).trim().toLowerCase();
 
-          if (current.users.some(u => u.email.toLowerCase() === email)) {
-            addToast('A user with this email already exists.', 'error', 4000);
-            return current;
-          }
+        if (workspace.users.some(u => u.email.toLowerCase() === email)) {
+          addToast('A user with this email already exists.', 'error', 4000);
+          return;
+        }
 
-          return appendAudit({
-            ...current,
-            members: [{
-              id: createId('member'),
-              name,
-              team,
-              office,
-              country,
-              role,
-              tasksCompleted: member.tasksCompleted || 0,
-              handoversOut: member.handoversOut || 0,
-              onTime: member.onTime || 0,
-              updatedAt: createdAt,
-              status: 'active',
-            }, ...current.members],
-            users: [{
-              id: createId('user'),
-              name,
-              role,
-              office,
-              country,
-              email,
-              password,
-              team,
-              status: 'active',
-              createdAt,
-              approvedAt: createdAt,
-            }, ...current.users],
-          }, 'MEMBER_CREATE', { name, email });
-        });
+        const newMember: Member = {
+          id: createId('member'),
+          name,
+          team,
+          office,
+          country,
+          role,
+          tasksCompleted: member.tasksCompleted || 0,
+          handoversOut: member.handoversOut || 0,
+          onTime: member.onTime || 0,
+          updatedAt: createdAt,
+          status: 'active' as const,
+        };
+
+        const newUser: WorkspaceUser = {
+          id: createId('user'),
+          name,
+          role,
+          office,
+          country,
+          email,
+          password: hashedMemberPassword,
+          team,
+          status: 'active' as const,
+          createdAt,
+          approvedAt: createdAt,
+        };
+
+        await cloudStore.saveMember(newMember);
+        await cloudStore.saveUser(newUser);
+        
+        commit(current => appendAudit({
+          ...current,
+          members: [newMember, ...current.members],
+          users: [newUser, ...current.users],
+        }, 'MEMBER_CREATE', { name, email }));
+        
         addToast('Member added successfully.', 'success', 3000);
       },
       updateMember: async (id, patch) => {
@@ -566,6 +763,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
           addToast('Insufficient permissions to update members.', 'error', 4000);
           return;
         }
+        await cloudStore.updateMember(id, patch);
         commit(current => {
           const target = current.members.find(member => member.id === id);
           if (!target) return current;
@@ -592,6 +790,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
           addToast('Insufficient permissions to remove members.', 'error', 4000);
           return;
         }
+        await cloudStore.deleteMember(id);
         commit(current => {
           const target = current.members.find(member => member.id === id);
           if (!target) return current;
@@ -608,10 +807,12 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
           addToast('Only the master admin can change workspace settings.', 'error', 4000);
           return;
         }
+        await cloudStore.saveSettings(settings);
         commit(current => appendAudit({ ...current, settings }, 'SETTINGS_UPDATE', {}));
       },
       updateUser: async patch => {
         const safePatch = await sanitizeUserPatch(patch, workspace.user);
+        await cloudStore.updateUser(workspace.user.email, safePatch);
         commit(current => {
           const nextUser = { ...current.user, ...safePatch };
           const previousName = current.user.name;
@@ -637,17 +838,28 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
           return false;
         }
         setWorkspace(imported);
-        saveWorkspace(imported);
+        cloudStore.migrateFromLocal(imported);
         addToast('Workspace data imported successfully.', 'success', 4000);
         return true;
       },
       resetData: async () => {
         clearAuthState();
-        setWorkspace(resetWorkspace());
+        const defaultWorkspace = resetWorkspace();
+        await cloudStore.migrateFromLocal(defaultWorkspace);
+        setWorkspace(defaultWorkspace);
         setAuth({ isAuthenticated: false, isLocked: false, lastActivity: 0 });
         addToast('Workspace has been reset to default state.', 'warning', 6000);
       },
       logAction: async (action, details, severity) => {
+        const event: AuditEvent = {
+          id: createId('audit'),
+          action,
+          details: details || {},
+          timestamp: new Date().toISOString(),
+          userId: workspace.user.email,
+          severity,
+        };
+        await cloudStore.logAudit(event);
         commit(current => appendAudit(current, action, details, severity));
       },
       executeAITool: async (toolName, args) => {
@@ -811,7 +1023,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
         };
       },
     };
-  }, [workspace, auth, login, requestSignup, logout, lock, restoreSession, changePassword, currentTeam, isMasterAdmin, isSuperAdmin, hasAdminAccess, scopedTasks, scopedHandovers, scopedMembers, scopedOffices, permissionProfile, commit, appendAudit, sanitizeUserPatch, isMasterAccount]);
+  }, [workspace, auth, login, requestSignup, logout, lock, restoreSession, changePassword, currentTeam, isMasterAdmin, isSuperAdmin, hasAdminAccess, scopedTasks, scopedHandovers, scopedMembers, scopedOffices, permissionProfile, commit, appendAudit, sanitizeUserPatch, isMasterAccount, syncState, loading]);
 
   return <LocalDataContext.Provider value={value}>{children}</LocalDataContext.Provider>;
 }
