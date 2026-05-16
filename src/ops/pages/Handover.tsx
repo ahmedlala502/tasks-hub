@@ -128,7 +128,7 @@ function MultiSelectDropdown({
 }
 
 export default function HandoverCenter() {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const scope = getWorkspaceScope(role);
   
   const [handovers, setHandovers] = useState<Handover[]>(
@@ -243,7 +243,7 @@ export default function HandoverCenter() {
         incomingLead: (draft.assignTo || [])[0] || '',
         assignFrom: draft.assignFrom || [], assignTo: draft.assignTo || [],
         notes: draft.notes || '', taskIds: draft.taskIds || [], status: 'Pending',
-        createdAt: Date.now(), updatedAt: Date.now(), createdBy: 'system',
+        createdAt: Date.now(), updatedAt: Date.now(), createdBy: user?.displayName || 'Workspace User',
       };
       setHandovers(filterHandoversByRole(role, dataService.addHandover(next)));
       notify('Handover Created', `${next.fromShift} → ${next.toShift} relay for ${(next.assignTo || []).length} users`, 'green', '/handover');

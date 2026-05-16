@@ -262,7 +262,7 @@ export default function TasksCenter() {
       completed: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      createdBy: 'admin',
+      createdBy: user?.displayName || 'Workspace User',
     };
     dataService.addTask(task);
     refreshTasks();
