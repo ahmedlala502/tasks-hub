@@ -774,12 +774,11 @@ export default function Admin() {
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => { void updateUser(user.id, { status: user.status === 'Active' ? 'Suspended' : 'Active' }); }}
-                      disabled={!cloudBacked}
                       className={`h-9 px-3 rounded-lg border text-[10px] font-extrabold uppercase tracking-widest transition-colors ${
                         user.status === 'Active'
                           ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                           : 'bg-red-50 border-red-200 text-red-600'
-                      } disabled:cursor-not-allowed disabled:opacity-60`}
+                      }`}
                     >
                       {user.status}
                     </button>
@@ -788,8 +787,7 @@ export default function Admin() {
 
                   <button
                     onClick={() => { void updateUser(user.id, { role: user.role, status: 'Active' }); }}
-                    disabled={!cloudBacked}
-                    className="h-9 px-3 rounded-lg bg-secondary border border-border text-[10px] font-extrabold uppercase tracking-widest text-foreground hover:border-gc-orange hover:text-gc-orange transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-9 px-3 rounded-lg bg-secondary border border-border text-[10px] font-extrabold uppercase tracking-widest text-foreground hover:border-gc-orange hover:text-gc-orange transition-colors"
                   >
                     Full Access
                   </button>

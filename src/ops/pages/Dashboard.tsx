@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../App';
 import { filterBlockersByRole, filterCampaignsByRole, filterHandoversByRole, filterInfluencersByRole, filterTasksByRole } from '../lib/workspace';
 import { dataService } from '../services/dataService';
@@ -181,7 +181,7 @@ function EmployeeCard({
     <div className="rounded-xl border border-border bg-background p-4 hover:border-gc-orange/40 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[13px] font-extrabold text-foreground">{employee.name}</p>
+          <Link to="/profile" className="text-[13px] font-extrabold text-foreground hover:text-gc-orange transition-colors">{employee.name}</Link>
           <p className="text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground">
             Productivity Score {employee.score}
           </p>
