@@ -52,7 +52,14 @@ function hasUnresolvedBlockingFlag(task: Task): boolean {
 }
 
 export function isTaskOverdue(task: Task, now = Date.now()): boolean {
-  return !task.completed && Number.isFinite(task.dueDate) && task.dueDate < now;
+  if (task.completed) return false;
+  if (!Number.isFinite(task.dueDate)) return false;
+  const endOfToday = new Date(now).setHours(23, 59, 59, 999);
+  return task.dueDate < endOfToday && !sameCalendarDay(task.dueDate, now);
+}
+
+function sameCalendarDay(date1: number, date2: number): boolean {
+  return new Date(date1).toDateString() === new Date(date2).toDateString();
 }
 
 export function isNewTask(task: Task, now = Date.now()): boolean {

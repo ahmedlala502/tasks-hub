@@ -128,8 +128,8 @@ export default function CampaignDetail() {
       sla: 'Activity log',
       updatedAt: new Date(event.createdAt).getTime(),
     }));
-    return [...taskItems, ...updateItems].sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [campaignTasks, campaignUpdates]);
+    return [...taskItems].sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [campaignTasks]);
 
   React.useEffect(() => {
     if (campaign) setDraftCampaign(campaign as Campaign);
@@ -480,8 +480,8 @@ export default function CampaignDetail() {
                         <CheckCircle2 size={24} />
                      </div>
                      <div>
-                        <h3 className="font-condensed font-extrabold tracking-tight text-foreground text-[14px]">All Campaign Tasks / Routines / Updates</h3>
-                        <p className="text-[11px] text-[var(--ink-500)] font-bold uppercase tracking-widest mt-1">Expandable operational history for this campaign</p>
+<h3 className="font-condensed font-extrabold tracking-tight text-foreground text-[14px]">All Campaign Tasks / Routines</h3>
+                         <p className="text-[11px] text-[var(--ink-500)] font-bold uppercase tracking-widest mt-1">Tasks and routines assigned to this campaign</p>
                      </div>
                   </div>
                   <div className="rounded-xl border border-border bg-background px-4 py-2 text-right">
