@@ -8,6 +8,8 @@ import {
   Share2,
   MoreVertical,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Camera,
   PlayCircle,
@@ -21,7 +23,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from '../utils';
 import { dataService } from '../services/dataService';
 import { STAGE_NAMES } from '../constants';
-import { Campaign } from '../types';
+import { Campaign, Task } from '../types';
 import { exportCampaigns, readSpreadsheet } from '../services/spreadsheetService';
 
 const MILESTONES = [
@@ -68,6 +70,7 @@ export default function CampaignDetail() {
   const [activeTab, setActiveTab] = React.useState<'overview' | 'influencers' | 'media' | 'performance'>('overview');
   const [isEditingCampaign, setIsEditingCampaign] = React.useState(false);
   const [isAuditOpen, setIsAuditOpen] = React.useState(false);
+  const [expandedWorkId, setExpandedWorkId] = React.useState<string | null>(null);
   const [draftCampaign, setDraftCampaign] = React.useState<Campaign | null>(null);
   const [ownerDraft, setOwnerDraft] = React.useState('');
   const [newEntry, setNewEntry] = React.useState({ influencer: '@', time: 'Nov 10, 14:00', location: 'Riyadh', notes: '' });
@@ -83,6 +86,50 @@ export default function CampaignDetail() {
       influencer.campaignId === campaign?.name
     );
   }, [id, campaign?.id, campaign?.name, refreshToken]);
+
+  const campaignTasks = React.useMemo(() => {
+    if (!campaign) return [] as Task[];
+    return dataService.getTasks()
+      .filter((task) => task.campaignId === campaign.id || task.campaignId === campaign.name || task.campaignId === id)
+      .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+  }, [campaign, id, refreshToken]);
+
+  const campaignUpdates = React.useMemo(() => {
+    if (!campaign) return [];
+    const tokens = [campaign.id, campaign.name, id].filter(Boolean).map((value) => String(value).toLowerCase());
+    return dataService.getActivityLogs()
+      .filter((event) => {
+        const haystack = `${event.summary || ''} ${event.entityId || ''} ${JSON.stringify(event.metadata || {})}`.toLowerCase();
+        return tokens.some((token) => haystack.includes(token));
+      })
+      .slice(0, 12);
+  }, [campaign, id, refreshToken]);
+
+  const campaignWorkItems = React.useMemo(() => {
+    const taskItems = campaignTasks.map((task) => ({
+      id: `task-${task.id}`,
+      type: task.dailyTaskKey || task.cadence ? 'Routine' : 'Task',
+      title: task.title,
+      owner: task.ownerId || 'Unassigned',
+      status: task.completed ? 'Done' : task.status || 'In Progress',
+      due: task.dueDate,
+      details: task.description || task.nextStep || task.resultSummary || 'No additional task notes.',
+      sla: task.slaHrs ? `${task.slaHrs}h` : 'Tracked by due date',
+      updatedAt: task.updatedAt || task.createdAt,
+    }));
+    const updateItems = campaignUpdates.map((event) => ({
+      id: `update-${event.id}`,
+      type: 'Update',
+      title: event.summary || event.action,
+      owner: event.userName || event.userEmail || 'Workspace',
+      status: event.action,
+      due: new Date(event.createdAt).getTime(),
+      details: JSON.stringify(event.metadata || {}, null, 2),
+      sla: 'Activity log',
+      updatedAt: new Date(event.createdAt).getTime(),
+    }));
+    return [...taskItems, ...updateItems].sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [campaignTasks, campaignUpdates]);
 
   React.useEffect(() => {
     if (campaign) setDraftCampaign(campaign as Campaign);
@@ -425,8 +472,58 @@ export default function CampaignDetail() {
          {/* Live Performance Feed */}
          <div className="lg:col-span-8 space-y-8">
             
+            {activeTab === 'overview' && (
+            <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-sm">
+               <div className="p-8 border-b border-[var(--border)] flex justify-between items-center bg-[var(--bg)]/50">
+                  <div className="flex items-center gap-4">
+                     <div className="w-12 h-12 bg-[var(--gc-purple)]/10 text-[var(--gc-purple)] rounded-2xl flex items-center justify-center">
+                        <CheckCircle2 size={24} />
+                     </div>
+                     <div>
+                        <h3 className="font-condensed font-extrabold tracking-tight text-foreground text-[14px]">All Campaign Tasks / Routines / Updates</h3>
+                        <p className="text-[11px] text-[var(--ink-500)] font-bold uppercase tracking-widest mt-1">Expandable operational history for this campaign</p>
+                     </div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background px-4 py-2 text-right">
+                    <p className="text-2xl font-black text-foreground">{campaignWorkItems.length}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Items</p>
+                  </div>
+               </div>
+               <div className="divide-y divide-border">
+                 {campaignWorkItems.length ? campaignWorkItems.map((item) => {
+                   const isOpen = expandedWorkId === item.id;
+                   return (
+                    <div key={item.id} className="bg-card">
+                      <button onClick={() => setExpandedWorkId(isOpen ? null : item.id)} className="grid w-full grid-cols-1 gap-3 px-6 py-4 text-left transition-colors hover:bg-accent/40 md:grid-cols-[7rem_1fr_10rem_9rem_9rem_2rem] md:items-center">
+                        <span className="w-fit rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-gc-orange">{item.type}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-black text-foreground">{item.title}</span>
+                          <span className="mt-0.5 block text-xs font-semibold text-muted-foreground">{item.owner}</span>
+                        </span>
+                        <span className="text-xs font-bold text-muted-foreground">{item.status}</span>
+                        <span className="inline-flex items-center gap-1 text-xs font-bold text-gc-orange"><Clock size={13} /> {item.sla}</span>
+                        <span className="text-xs font-bold text-muted-foreground">{new Date(item.due).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>
+                        {isOpen ? <ChevronUp size={16} className="text-muted-foreground" /> : <ChevronDown size={16} className="text-muted-foreground" />}
+                      </button>
+                      {isOpen && (
+                        <div className="border-t border-border bg-muted/20 px-6 py-4">
+                          <p className="whitespace-pre-wrap text-sm font-medium leading-relaxed text-muted-foreground">{item.details}</p>
+                        </div>
+                      )}
+                    </div>
+                   );
+                 }) : (
+                   <div className="px-8 py-12 text-center">
+                     <CheckCircle2 size={36} className="mx-auto mb-3 text-muted-foreground/40" />
+                     <p className="text-sm font-bold text-muted-foreground">No task, routine, or update activity has been captured for this campaign yet.</p>
+                   </div>
+                 )}
+               </div>
+            </div>
+            )}
+
             {/* Delivery/Visit Schedule Section */}
-            {(activeTab === 'overview' || activeTab === 'influencers') && (
+            {activeTab === 'influencers' && (
             <div className="bg-card border border-border rounded-xl overflow-hidden rounded-3xl bg-[var(--white)] border border-[var(--border)] overflow-hidden shadow-sm">
                <div className="p-8 border-b border-[var(--border)] flex justify-between items-center bg-[var(--bg)]/50">
                   <div className="flex items-center gap-4">
@@ -540,7 +637,7 @@ export default function CampaignDetail() {
             </div>
             )}
 
-            {(activeTab === 'overview' || activeTab === 'media') && (
+            {activeTab === 'media' && (
             <div className="bg-card border border-border rounded-xl overflow-hidden rounded-3xl bg-[var(--white)] border border-[var(--border)] overflow-hidden shadow-sm">
                <div className="p-8 border-b border-[var(--border)] flex justify-between items-center bg-[var(--bg)]/50">
                   <div className="flex items-center gap-4">

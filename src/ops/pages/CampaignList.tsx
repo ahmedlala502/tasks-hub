@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Cloud, Download, Edit3, FileSpreadsheet, FolderKanban, Plus, Save, Search, Trash2, X } from 'lucide-react';
+import { ChevronDown, Clock3, Cloud, Download, Edit3, FileSpreadsheet, FolderKanban, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { CampaignStage, STAGE_NAMES } from '../constants';
@@ -27,6 +27,7 @@ type CampaignTaskDraft = {
   priority: Task['priority'];
   status: NonNullable<Task['status']>;
   dueDate: string;
+  slaHrs: string;
   nextStep: string;
   metricTarget: string;
   metricCON: string;
@@ -41,6 +42,7 @@ const EMPTY_TASK: CampaignTaskDraft = {
   priority: 'Medium',
   status: 'In Progress',
   dueDate: new Date().toISOString().slice(0, 10),
+  slaHrs: '24',
   nextStep: '',
   metricTarget: '',
   metricCON: '',
@@ -74,7 +76,7 @@ const TRACKER_COLUMNS: Array<{ label: string; value: (campaign: Campaign) => Rea
 
 export default function CampaignList() {
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const isMaster = role === 'master';
   const [campaigns, setCampaigns] = useState<Campaign[]>(dataService.getCampaigns());
   const [tasks, setTasks] = useState<Task[]>(dataService.getTasks());
@@ -87,7 +89,7 @@ export default function CampaignList() {
   const [onlineStatus, setOnlineStatus] = useState<'loading' | 'ready' | 'offline'>('loading');
 
   const assignmentOptions = useMemo(() => buildAssignmentOptions({
-    users: TEAM_MEMBERS,
+    users: [...TEAM_MEMBERS, user?.displayName].filter(Boolean) as string[],
     tasks,
     campaigns,
     handovers: dataService.getHandovers(),
@@ -149,6 +151,7 @@ export default function CampaignList() {
         priority: task.priority,
         status: getOperationalTaskStatus(task),
         dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+        slaHrs: String(task.slaHrs || ''),
         nextStep: task.nextStep || task.description || '',
         metricTarget: String(task.metricTarget || ''),
         metricCON: String(task.metricCON || ''),
@@ -163,6 +166,7 @@ export default function CampaignList() {
       ownerId: campaign.currentOwner || assignmentOptions[0] || '',
       department,
       metricTarget: String(campaign.targetInfluencers || ''),
+      slaHrs: '24',
     });
   };
 
@@ -186,6 +190,7 @@ export default function CampaignList() {
       priority: taskDraft.priority,
       status: taskDraft.status,
       dueDate,
+      slaHrs: Number(taskDraft.slaHrs) || undefined,
       completed: taskDraft.status === 'Done',
       completedAt: taskDraft.status === 'Done' ? now : undefined,
       metricTarget: Number(taskDraft.metricTarget) || 0,
@@ -393,6 +398,7 @@ export default function CampaignList() {
                                   <div className="min-w-0">
                                     <p className="truncate text-sm font-bold text-foreground">{task.title}</p>
                                     <p className="mt-1 text-[11px] text-muted-foreground">{task.ownerId || 'Unassigned'} - {task.priority}</p>
+                                    <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-gc-orange"><Clock3 size={11} /> SLA {task.slaHrs ? `${task.slaHrs}h` : 'tracked by due date'}</p>
                                   </div>
                                   <div className="flex shrink-0 gap-1">
                                     <button onClick={() => openTask(item.campaign, task, laneName)} className="icon-btn" title="Edit task"><Edit3 size={13} /></button>
@@ -436,6 +442,7 @@ export default function CampaignList() {
                 {[taskDraft.department, ...TEAM_BUCKETS].filter(Boolean).filter((item, index, array) => array.indexOf(item) === index).map((bucket) => <option key={bucket} value={bucket}>{bucket}</option>)}
               </select>
               <input className="settings-input" type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft({ ...taskDraft, dueDate: event.target.value })} />
+              <input className="settings-input" type="number" min="0.25" step="0.25" placeholder="SLA duration hours" value={taskDraft.slaHrs} onChange={(event) => setTaskDraft({ ...taskDraft, slaHrs: event.target.value })} />
               <select className="settings-input" value={taskDraft.priority} onChange={(event) => setTaskDraft({ ...taskDraft, priority: event.target.value as Task['priority'] })}>
                 {['Low', 'Medium', 'High', 'Critical'].map((priority) => <option key={priority} value={priority}>{priority}</option>)}
               </select>

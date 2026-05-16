@@ -76,6 +76,12 @@ const parseDateTimeInput = (dateValue: string, timeValue: string, fallback: unkn
 
 const isOverdue = (task: Task) => !task.completed && isPast(toValidDate(task.dueDate));
 
+const formatSla = (task: Pick<Task, 'slaHrs' | 'dueDate'>) => {
+  if (task.slaHrs && task.slaHrs > 0) return `${task.slaHrs}h`;
+  const hours = Math.max(1, Math.round((toValidTimestamp(task.dueDate) - Date.now()) / 3_600_000));
+  return `${hours}h left`;
+};
+
 const emptyDraft = (): Partial<Task> => ({
   title: '',
   description: '',
@@ -107,7 +113,7 @@ function isTaskBucket(value: string | undefined): value is TaskBucket {
 }
 
 export default function TasksCenter() {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const { bucket } = useParams();
   const navigate = useNavigate();
   const selectedBucket = isTaskBucket(bucket) ? bucket : null;
@@ -144,7 +150,7 @@ export default function TasksCenter() {
     ...tasks.map(t => t.campaignId?.trim()).filter(Boolean) as string[],
   ])).sort((a, b) => a.localeCompare(b));
   const owners = filterOwnerOptionsByRole(role, buildAssignmentOptions({
-    users: [...TEAM_MEMBERS, ...supabaseUsers],
+    users: [...TEAM_MEMBERS, ...supabaseUsers, user?.displayName].filter(Boolean) as string[],
     tasks,
     campaigns,
     handovers: dataService.getHandovers(),
@@ -205,6 +211,7 @@ export default function TasksCenter() {
       campaignId: editDraft.campaignId?.trim() || '',
       priority: editDraft.priority || 'Medium',
       dueDate: toValidTimestamp(editDraft.dueDate),
+      slaHrs: Number(editDraft.slaHrs) || undefined,
       completed: Boolean(editDraft.completed),
       updatedAt: Date.now(),
     });
@@ -251,6 +258,7 @@ export default function TasksCenter() {
       campaignId: createDraft.campaignId?.trim() || '',
       priority: createDraft.priority || 'Medium',
       dueDate: toValidTimestamp(createDraft.dueDate),
+      slaHrs: Number(createDraft.slaHrs) || undefined,
       completed: false,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -297,7 +305,7 @@ export default function TasksCenter() {
           </button>
           <BulkUploadButton<Task>
             title="Bulk Import Tasks"
-            templateHeaders={['id','title','description','ownerId','dueDate','campaignId','priority','status','department','category']}
+            templateHeaders={['id','title','description','campaignId','ownerId','dueDate','slaHrs','priority','status','department','category']}
             parse={rowsToTasks}
             validate={t => {
               const errs: string[] = [];
@@ -518,12 +526,13 @@ function TaskTable({
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-      <div className="hidden grid-cols-[2rem_1fr_11rem_12rem_9rem_9rem_8rem] items-center gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground md:grid">
+      <div className="hidden grid-cols-[2rem_1fr_11rem_12rem_9rem_8rem_9rem_8rem] items-center gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground md:grid">
         <span />
         <span>Task</span>
         <span>Assignee</span>
         <span>Campaign *</span>
         <span>Priority</span>
+        <span>SLA</span>
         <span>Due Date & Time</span>
         <span>Status</span>
       </div>
@@ -590,7 +599,7 @@ function TaskDisplayRow({
     <div
       onClick={() => onStartEdit(task)}
       className={cn(
-        'grid cursor-pointer grid-cols-1 items-center gap-x-4 gap-y-2 px-4 py-3.5 transition-colors md:grid-cols-[2rem_1fr_11rem_12rem_9rem_9rem_8rem]',
+        'grid cursor-pointer grid-cols-1 items-center gap-x-4 gap-y-2 px-4 py-3.5 transition-colors md:grid-cols-[2rem_1fr_11rem_12rem_9rem_8rem_9rem_8rem]',
         'hover:bg-muted/40',
         task.completed && 'opacity-60',
         overdue && !task.completed && 'bg-red-50/50 dark:bg-red-950/20',
@@ -624,6 +633,8 @@ function TaskDisplayRow({
           {task.priority}
         </span>
       </div>
+
+      <Cell label="SLA">{formatSla(task)}</Cell>
 
       <div className={cn('text-sm', overdue && !task.completed ? 'font-semibold text-red-600' : 'text-foreground')}>
         <span className="mr-1 text-[10px] font-bold uppercase text-muted-foreground md:hidden">Due:</span>
@@ -666,7 +677,7 @@ function EditRow({
   const rowId = draft.id || 'edit';
   return (
     <div className="border-l-4 border-gc-orange bg-orange-50/40 dark:bg-orange-950/10">
-      <div className="grid grid-cols-1 gap-3 px-4 py-4 md:grid-cols-[1fr_11rem_12rem_9rem_9rem_7rem]">
+      <div className="grid grid-cols-1 gap-3 px-4 py-4 md:grid-cols-[1fr_11rem_12rem_9rem_7rem_9rem_7rem]">
         <Field label="Title">
           <input
             autoFocus
@@ -695,6 +706,18 @@ function EditRow({
           <select className="settings-input" value={draft.priority || 'Medium'} onChange={e => setDraft(d => ({ ...d!, priority: e.target.value as Task['priority'] }))}>
             {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
+        </Field>
+
+        <Field label="SLA Hours">
+          <input
+            className="settings-input"
+            type="number"
+            min="0.25"
+            step="0.25"
+            placeholder="Duration"
+            value={draft.slaHrs ?? ''}
+            onChange={e => setDraft(d => ({ ...d!, slaHrs: e.target.value ? Number(e.target.value) : undefined }))}
+          />
         </Field>
 
         <Field label="Due Date & Time">
@@ -824,6 +847,18 @@ function CreateForm({
               onChange={e => setDraft(d => ({ ...d, dueDate: parseDateTimeInput(formatDateInput(d.dueDate), e.target.value, d.dueDate) }))}
             />
           </div>
+        </Field>
+
+        <Field label="SLA Hours">
+          <input
+            className="settings-input"
+            type="number"
+            min="0.25"
+            step="0.25"
+            placeholder="Duration"
+            value={draft.slaHrs ?? ''}
+            onChange={e => setDraft(d => ({ ...d, slaHrs: e.target.value ? Number(e.target.value) : undefined }))}
+          />
         </Field>
 
         <Field label="Description" className="lg:col-span-3">

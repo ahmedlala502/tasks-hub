@@ -215,8 +215,8 @@ export default function TaskBoard({ tasks, initialFilter = '', initialStatus = '
           {isMasterAdmin && (
             <BulkCSVImport
               label="Import CSV"
-              description="Import tasks from a CSV file. Expected columns: title, priority, status, owner, team, office, country, shift, due, campaign, details"
-              expectedHeaders={['title', 'priority', 'status']}
+              description="Import tasks from a CSV file. Expected columns: title, campaign, owner, due, estimatedHours, priority, status, team, office, country, shift, details"
+              expectedHeaders={['title', 'campaign', 'owner', 'due']}
               onImport={async (rows) => {
                 for (const row of rows) {
                   await addTask({
@@ -230,6 +230,7 @@ export default function TaskBoard({ tasks, initialFilter = '', initialStatus = '
                     shift: (row.shift || row.Shift || 'Morning') as any,
                     due: row.due || row.Due || new Date().toISOString(),
                     campaign: row.campaign || row.Campaign || '',
+                    estimatedHours: Number(row.estimatedHours || row.EstimatedHours || row.duration || row.Duration || row.slaHrs || row.SlaHrs) || undefined,
                     details: row.details || row.Details || '',
                     creatorId: 'local-workspace',
                   });
@@ -460,6 +461,11 @@ export default function TaskBoard({ tasks, initialFilter = '', initialStatus = '
                                   new Date(task.due).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
                                 )}
                               </div>
+                              <span className="text-muted/20">·</span>
+                              <div className="flex items-center gap-1 text-[8px] font-bold text-citrus uppercase">
+                                <Clock className="w-2.5 h-2.5 opacity-70" />
+                                SLA {task.estimatedHours ? `${task.estimatedHours}h` : 'Due'}
+                              </div>
                             </div>
 
                             <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-dawn/40">
@@ -560,6 +566,9 @@ export default function TaskBoard({ tasks, initialFilter = '', initialStatus = '
                   <th onClick={() => handleSort('due')} className="px-5 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-muted cursor-pointer hover:text-ink transition-colors group whitespace-nowrap">
                     <div className="flex items-center gap-1.5">Due{sortField === 'due' ? (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3 text-citrus" /> : <ChevronDown className="w-3 h-3 text-citrus" />) : <ArrowUpDown className="w-3 h-3 opacity-20 group-hover:opacity-60" />}</div>
                   </th>
+                  <th onClick={() => handleSort('estimatedHours')} className="px-5 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-muted cursor-pointer hover:text-ink transition-colors group whitespace-nowrap">
+                    <div className="flex items-center gap-1.5">SLA{sortField === 'estimatedHours' ? (sortOrder === 'asc' ? <ChevronUp className="w-3 h-3 text-citrus" /> : <ChevronDown className="w-3 h-3 text-citrus" />) : <ArrowUpDown className="w-3 h-3 opacity-20 group-hover:opacity-60" />}</div>
+                  </th>
                   <th className="px-5 py-4 w-12"></th>
                 </tr>
               </thead>
@@ -639,6 +648,12 @@ export default function TaskBoard({ tasks, initialFilter = '', initialStatus = '
                             <span>{new Date(task.due).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>
                           </div>
                         </td>
+                        <td className="px-5 py-4">
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-citrus/10 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-citrus">
+                            <Clock className="w-3 h-3" />
+                            {task.estimatedHours ? `${task.estimatedHours}h` : 'Due'}
+                          </span>
+                        </td>
                         <td className="px-5 py-4 text-right" onClick={e => e.stopPropagation()}>
                           <button
                             onClick={() => { setEditingTask(task); setIsModalOpen(true); }}
@@ -651,7 +666,7 @@ export default function TaskBoard({ tasks, initialFilter = '', initialStatus = '
                       </tr>
                       {expandedTaskId === task.id && (
                         <tr className="bg-stone/5 border-b border-dawn/60">
-                          <td colSpan={9} className="px-16 py-6">
+                          <td colSpan={10} className="px-16 py-6">
                             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 md:grid-cols-3 gap-8">
                               <div className="md:col-span-2 space-y-4">
                                 <div>

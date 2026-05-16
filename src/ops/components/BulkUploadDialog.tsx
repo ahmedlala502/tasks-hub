@@ -125,6 +125,15 @@ function BulkUploadDialog<T>({
     const sampleValues = templateHeaders.map((header) => {
       const key = header.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (key === 'id') return 'C-BULK-001';
+      if (key === 'title') return 'Confirm campaign content schedule';
+      if (key === 'description') return 'Align owner, campaign, SLA, and delivery date before execution.';
+      if (key === 'ownerid' || key === 'assignto' || key === 'assignee') return 'Operations Lead';
+      if (key === 'duedate') return '2026-06-07 18:00';
+      if (key === 'slahrs' || key === 'slahours' || key === 'duration') return '24';
+      if (key === 'campaignid') return 'Ramadan Launch KSA';
+      if (key === 'priority') return 'High';
+      if (key === 'department') return 'PMO';
+      if (key === 'category') return 'Campaign Ops';
       if (key === 'name' || key === 'campaignname') return 'Ramadan Launch KSA';
       if (key === 'country') return 'KSA';
       if (key === 'city') return 'Riyadh';

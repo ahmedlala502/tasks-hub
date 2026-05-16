@@ -194,6 +194,7 @@ export function rowsToTasks(rows: Row[]): Task[] {
       description: text(pick(row, ['description', 'details']), ''),
       ownerId: text(pick(row, ['ownerId', 'owner', 'assignee']), 'Ops'),
       dueDate,
+      slaHrs: num(pick(row, ['slaHrs', 'sla hrs', 'sla hours', 'duration', 'duration hours']), 0) || undefined,
       campaignId: text(pick(row, ['campaignId', 'campaign id', 'campaign']), ''),
       priority: normalizeValue(pick(row, ['priority']), ['Low', 'Medium', 'High', 'Critical'], 'Medium'),
       completed: bool(pick(row, ['completed', 'done'])),

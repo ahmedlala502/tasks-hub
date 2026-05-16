@@ -24,6 +24,7 @@ const createBlankTask = (teams: string[], office: string, country: string): Part
   status: Status.BACKLOG,
   shift: Shift.MORNING,
   due: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
+  estimatedHours: 24,
   carry: false,
   details: '',
   reminders: [],
@@ -262,6 +263,23 @@ export default function TaskModal({ isOpen, onClose, onSave, initialTask }: Task
                     onChange={e => setForm({ ...form, due: e.target.value })}
                     className="w-full bg-stone/50 border border-dawn rounded-xl px-4 py-3 text-sm font-bold focus:border-citrus outline-none"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted flex items-center gap-2">
+                    <Clock className="w-3 h-3" />
+                    <span>SLA Duration</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0.25"
+                    step="0.25"
+                    placeholder="Hours assigned to complete"
+                    value={form.estimatedHours ?? ''}
+                    onChange={e => setForm({ ...form, estimatedHours: e.target.value ? Number(e.target.value) : undefined })}
+                    className="w-full bg-stone/50 border border-dawn rounded-xl px-4 py-3 text-sm font-bold focus:border-citrus outline-none"
+                  />
+                  <p className="text-[9px] font-bold text-muted/60 uppercase tracking-wider">Shown to the assignee on the task card.</p>
                 </div>
               </div>
 

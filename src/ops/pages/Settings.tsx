@@ -544,7 +544,7 @@ export default function SettingsWorkspace() {
                       action={
                         <BulkUploadButton<Task>
                           title="Bulk Import Tasks"
-                          templateHeaders={['id','title','description','ownerId','dueDate','campaignId','priority','status','department','category']}
+                          templateHeaders={['id','title','description','campaignId','ownerId','dueDate','slaHrs','priority','status','department','category']}
                           parse={rowsToTasks}
                           validate={(task) => {
                             const errs: string[] = [];
