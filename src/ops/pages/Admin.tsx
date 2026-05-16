@@ -759,7 +759,7 @@ export default function Admin() {
                           : 'bg-red-50 border-red-200 text-red-600'
                       } disabled:cursor-not-allowed disabled:opacity-60`}
                     >
-                      {cloudBacked ? user.status : 'Pending'}
+                      {user.status}
                     </button>
                     <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{user.lastSeen}</span>
                   </div>

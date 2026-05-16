@@ -11,6 +11,7 @@ import {
   Send,
   Trash2,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../App';
 import { cn } from '../lib/utils';
 import { buildUpdatesFeed, type UpdateFeedItem } from '../lib/opsPageInsights';
@@ -362,9 +363,18 @@ function Badge({ label }: { label: string }) {
   return <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">{label}</span>;
 }
 
+function feedRoute(kind: UpdateFeedItem['kind']) {
+  switch (kind) {
+    case 'campaign': return '/campaigns';
+    case 'task': return '/tasks';
+    case 'handover': return '/handover';
+    case 'blocker': return '/live-ops';
+  }
+}
+
 function FeedCard({ item }: { item: UpdateFeedItem }) {
   return (
-    <div className="rounded-xl border border-border bg-background p-4">
+    <Link to={feedRoute(item.kind)} className="block rounded-xl border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
       <div className="flex items-start gap-3">
         <div className={cn('mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg border', toneClass(item.tone))}>
           <Megaphone size={16} />
@@ -378,7 +388,7 @@ function FeedCard({ item }: { item: UpdateFeedItem }) {
           <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{new Date(item.at).toLocaleString()} - {item.owner}</p>
         </div>
       </div>
-    </div>
+    </Link>
   );
 }
 

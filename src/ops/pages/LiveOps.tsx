@@ -102,7 +102,7 @@ export default function LiveOps() {
           <p className="mt-1 text-xs text-muted-foreground">Campaigns that should be checked first.</p>
           <div className="mt-4 space-y-3">
             {riskRows.length ? riskRows.map((campaign) => (
-              <div key={campaign.id} className="rounded-lg border border-border bg-background p-4">
+              <Link key={campaign.id} to={`/campaigns/${campaign.id}`} className="block rounded-lg border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-bold text-foreground">{campaign.name}</p>
@@ -112,7 +112,7 @@ export default function LiveOps() {
                     {campaign.recordHealth}
                   </span>
                 </div>
-              </div>
+              </Link>
             )) : <EmptyState label="No blocked or unhealthy campaigns." />}
           </div>
         </section>
@@ -128,13 +128,13 @@ export default function LiveOps() {
           <h3 className="mt-6 text-sm font-extrabold text-foreground">Team Activity</h3>
           <div className="mt-3 space-y-2">
             {ownerRows.map((row) => (
-              <div key={row.owner} className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
+              <Link key={row.owner} to="/tasks" className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
                 <div>
                   <p className="text-sm font-bold text-foreground">{row.owner}</p>
                   <p className="text-[11px] text-muted-foreground">{row.done} done - {row.blocked} blocked</p>
                 </div>
                 <span className="text-sm font-black text-gc-orange">{row.total}</span>
-              </div>
+              </Link>
             ))}
           </div>
         </section>
@@ -150,13 +150,13 @@ export default function LiveOps() {
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           {onlineRows.slice(0, 6).map((row) => (
-            <div key={row.name} className="rounded-lg border border-border bg-background p-3">
+            <Link key={row.name} to="/online-users" className="block rounded-lg border border-border bg-background p-3 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
               <div className="flex items-center gap-2">
                 <span className={cn('h-2.5 w-2.5 rounded-full', row.status === 'online' ? 'bg-emerald-500' : row.status === 'idle' ? 'bg-amber-500' : 'bg-muted-foreground/40')} />
                 <p className="truncate text-sm font-bold text-foreground">{row.name}</p>
               </div>
               <p className="mt-1 text-[11px] text-muted-foreground">{row.department || 'Workspace'} - {row.status}</p>
-            </div>
+            </Link>
           ))}
         </div>
       </section>
@@ -166,15 +166,17 @@ export default function LiveOps() {
           <h3 className="text-sm font-extrabold text-foreground">Recent Tasks</h3>
           <div className="mt-4 space-y-3">
             {recentTasks.length ? recentTasks.map((task) => (
-              <div key={task.id} className="rounded-lg border border-border bg-background p-4">
+              <Link key={task.id} to="/tasks" className="block rounded-lg border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-bold text-foreground">{task.title}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{task.campaignId || 'No campaign'} - {task.ownerId || 'Unassigned'}</p>
                   </div>
-                  <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">{getOperationalTaskStatus(task)}</span>
+                  <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase', statusBadgeColor(getOperationalTaskStatus(task)))}>
+                    {getOperationalTaskStatus(task)}
+                  </span>
                 </div>
-              </div>
+              </Link>
             )) : <EmptyState label="No recent tasks in this window." />}
           </div>
         </section>
@@ -183,15 +185,15 @@ export default function LiveOps() {
           <h3 className="text-sm font-extrabold text-foreground">Blocker Board</h3>
           <div className="mt-4 space-y-3">
             {blockers.filter((blocker) => blocker.status !== 'Resolved').slice(0, 8).map((blocker) => (
-              <div key={blocker.id} className="rounded-lg border border-border bg-background p-4">
+              <Link key={blocker.id} to="/tasks" className="block rounded-lg border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 text-gc-orange" />
+                  <AlertTriangle className="mt-0.5 h-4 w-4 text-gc-orange shrink-0" />
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-foreground">{blocker.summary}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{blocker.impact} - Owner: {blocker.ownerId || 'Unassigned'}</p>
                   </div>
                 </div>
-              </div>
+              </Link>
             ))}
             {insights.openBlockers === 0 && <EmptyState label="No open blockers." />}
           </div>
@@ -199,6 +201,15 @@ export default function LiveOps() {
       </div>
     </div>
   );
+}
+
+function statusBadgeColor(status: string) {
+  switch (status) {
+    case 'Done': return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600';
+    case 'Blocked': return 'border-red-500/20 bg-red-500/10 text-red-600';
+    case 'In Progress': return 'border-blue-500/20 bg-blue-500/10 text-blue-600';
+    default: return 'border-border text-muted-foreground';
+  }
 }
 
 function buildOwnerRows(tasks: Task[]) {

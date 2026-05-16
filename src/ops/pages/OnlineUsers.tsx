@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, Clock3, Search, UsersRound } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useAuth } from '../App';
 import type { OpsUser } from '../auth/types';
@@ -172,7 +173,7 @@ export default function OnlineUsers() {
               <p className="text-sm font-semibold">No online activity matches this filter.</p>
             </div>
           ) : visibleRows.map((row) => (
-            <div key={row.name} className="grid gap-4 p-4 xl:grid-cols-[1.1fr_0.75fr_0.85fr_0.75fr_0.75fr] xl:items-center">
+            <Link key={row.name} to="/online-users" className="grid gap-4 p-4 xl:grid-cols-[1.1fr_0.75fr_0.85fr_0.75fr_0.75fr] xl:items-center hover:bg-accent/40 transition-colors">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className={cn('h-2.5 w-2.5 rounded-full', row.status === 'online' ? 'bg-emerald-500' : row.status === 'idle' ? 'bg-amber-500' : 'bg-muted-foreground/40')} />
@@ -210,7 +211,7 @@ export default function OnlineUsers() {
                   <span className="text-[11px] font-bold text-muted-foreground">{row.tasksTouched} tasks / {row.handoversTouched} relays</span>
                 </div>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
         ) : (

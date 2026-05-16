@@ -5,7 +5,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, Clock3, Cloud, Download, Edit3, FileSpreadsheet, FolderKanban, Plus, Save, Search, Trash2, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { CampaignStage, STAGE_NAMES } from '../constants';
 import type { Campaign, Task } from '../types';
@@ -336,7 +336,7 @@ export default function CampaignList() {
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="truncate text-lg font-black text-foreground">{item.campaign.name}</h3>
+                      <Link to={`/campaigns/${item.campaign.id}`} className="truncate text-lg font-black text-foreground hover:text-gc-orange transition-colors">{item.campaign.name}</Link>
                       <StatusPill value={item.campaign.status} />
                       <HealthPill value={item.campaign.recordHealth} />
                     </div>
@@ -396,9 +396,9 @@ export default function CampaignList() {
                               <div key={task.id} className="rounded-lg border border-border bg-card p-3">
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0">
-                                    <p className="truncate text-sm font-bold text-foreground">{task.title}</p>
-                                    <p className="mt-1 text-[11px] text-muted-foreground">{task.ownerId || 'Unassigned'} - {task.priority}</p>
-                                    <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-gc-orange"><Clock3 size={11} /> SLA {task.slaHrs ? `${task.slaHrs}h` : 'tracked by due date'}</p>
+                                    <Link to="/tasks" className="truncate text-sm font-bold text-foreground hover:text-gc-orange transition-colors">{task.title}</Link>
+                                     <p className="mt-1 text-[11px] text-muted-foreground">{task.ownerId || 'Unassigned'} - {task.priority}</p>
+                                     <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-gc-orange"><Clock3 size={11} /> SLA {task.slaHrs ? `${task.slaHrs}h` : 'tracked by due date'}</p>
                                   </div>
                                   <div className="flex shrink-0 gap-1">
                                     <button onClick={() => openTask(item.campaign, task, laneName)} className="icon-btn" title="Edit task"><Edit3 size={13} /></button>
