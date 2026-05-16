@@ -98,17 +98,28 @@ export default function App() {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const signedInUser = await supabaseAuth.signIn(email, password);
-    await dataService.initializeCloudWorkspace();
-    dataService.recordActivity({
-      action: 'user.login',
-      entityType: 'user',
-      entityId: signedInUser.uid,
-      summary: `${signedInUser.displayName} signed in`,
-      metadata: { email: signedInUser.email, role: signedInUser.role },
-    });
-    setUser(signedInUser);
-    setRole(signedInUser.role);
+    try {
+      const signedInUser = await supabaseAuth.signIn(email, password);
+      await dataService.initializeCloudWorkspace();
+      dataService.recordActivity({
+        action: 'user.login',
+        entityType: 'user',
+        entityId: signedInUser.uid,
+        summary: `${signedInUser.displayName} signed in`,
+        metadata: { email: signedInUser.email, role: signedInUser.role },
+      });
+      setUser(signedInUser);
+      setRole(signedInUser.role);
+    } catch (error: any) {
+      dataService.recordActivity({
+        action: 'user.login_failed',
+        entityType: 'user',
+        entityId: email,
+        summary: `Failed login attempt for ${email}`,
+        metadata: { error: error?.message || 'Unknown error' },
+      });
+      throw error;
+    }
   };
 
   const logout = async () => {

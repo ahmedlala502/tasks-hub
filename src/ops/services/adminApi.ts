@@ -157,53 +157,55 @@ async function createUserWithSignupFallback(payload: {
 }): Promise<AdminApiUser> {
   const { data: sessionData } = await supabase.auth.getSession();
   const currentSession = sessionData.session;
+  const adminTokens = currentSession?.access_token && currentSession.refresh_token
+    ? { access_token: currentSession.access_token, refresh_token: currentSession.refresh_token }
+    : null;
   const normalizedEmail = payload.email.trim().toLowerCase();
   const displayName = payload.name.trim();
   const department = payload.department ?? (payload.role === 'community' ? 'Coordination' : 'Operations');
   const title = payload.title ?? (payload.role === 'master' ? 'Master Admin' : payload.role === 'community' ? 'Community Access' : 'Operations Access');
 
-  const { data, error } = await supabase.auth.signUp({
-    email: normalizedEmail,
-    password: payload.password,
-    options: {
-      data: {
-        display_name: displayName,
-        full_name: displayName,
-        role: payload.role,
-        office: payload.office,
-        department,
-        title,
-        timezone: 'Africa/Cairo',
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password: payload.password,
+      options: {
+        data: {
+          display_name: displayName,
+          full_name: displayName,
+          role: payload.role,
+          office: payload.office,
+          department,
+          title,
+          timezone: 'Africa/Cairo',
+        },
       },
-    },
-  });
-
-  if (currentSession?.access_token && currentSession.refresh_token) {
-    await supabase.auth.setSession({
-      access_token: currentSession.access_token,
-      refresh_token: currentSession.refresh_token,
     });
+
+    if (error) throw error;
+    if (!data.user) throw new Error('Unable to create fallback Supabase user.');
+
+    const createdUser: AdminApiUser = {
+      uid: data.user.id,
+      email: data.user.email || normalizedEmail,
+      displayName,
+      role: payload.role,
+      status: 'active',
+      office: payload.office,
+      department,
+      title,
+      timezone: 'Africa/Cairo',
+      createdAt: data.user.created_at,
+      lastSignInAt: null,
+    };
+
+    upsertUserCache(createdUser);
+    return createdUser;
+  } finally {
+    if (adminTokens) {
+      await supabase.auth.setSession(adminTokens);
+    }
   }
-
-  if (error) throw error;
-  if (!data.user) throw new Error('Unable to create fallback Supabase user.');
-
-  const createdUser: AdminApiUser = {
-    uid: data.user.id,
-    email: data.user.email || normalizedEmail,
-    displayName,
-    role: payload.role,
-    status: 'active',
-    office: payload.office,
-    department,
-    title,
-    timezone: 'Africa/Cairo',
-    createdAt: data.user.created_at,
-    lastSignInAt: null,
-  };
-
-  upsertUserCache(createdUser);
-  return createdUser;
 }
 
 async function updateUserWithDirectoryRpc(payload: {
@@ -278,8 +280,16 @@ export const adminApi = {
   },
 
   async deleteUser(id: string) {
-    const result = await invokeFunction<{ success: boolean }>('deleteUser', { id });
-    removeUserFromCache(id);
-    return result;
+    try {
+      const result = await invokeFunction<{ success: boolean }>('deleteUser', { id });
+      removeUserFromCache(id);
+      return result;
+    } catch (error) {
+      if (!isFunctionUnavailable(error)) throw error;
+      const { error: rpcError } = await (supabase as any).rpc('delete_ops_user_account', { p_id: id });
+      if (rpcError) throw rpcError;
+      removeUserFromCache(id);
+      return { success: true };
+    }
   },
 };

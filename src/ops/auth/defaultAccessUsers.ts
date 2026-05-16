@@ -2,7 +2,7 @@ import type { OpsDepartment, OpsOffice, OpsRole } from './types';
 import { REAL_EMPLOYEE_ROSTER } from '../data/employeeRoster';
 import { getRosterCredentialEmail } from '../lib/onlineUsers';
 
-export const DEFAULT_ACCESS_PASSWORD = 'Admin123';
+export const DEFAULT_ACCESS_PASSWORD = import.meta.env.VITE_DEFAULT_ACCESS_PASSWORD || 'Admin123';
 
 export type DefaultAccessUser = {
   name: string;
