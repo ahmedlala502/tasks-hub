@@ -74,12 +74,20 @@ export default function App() {
       setUser(sessionUser);
       setRole(sessionUser?.role || null);
       setLoading(false);
+    }).catch(() => {
+      if (!mounted) return;
+      setLoading(false);
     });
 
-    const subscription = supabaseAuth.onAuthStateChange((sessionUser) => {
+    const subscription = supabaseAuth.onAuthStateChange((sessionUser, event) => {
       if (!mounted) return;
-      setUser(sessionUser);
-      setRole(sessionUser?.role || null);
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setRole(null);
+      } else if (sessionUser) {
+        setUser(sessionUser);
+        setRole(sessionUser.role);
+      }
       setLoading(false);
     });
 

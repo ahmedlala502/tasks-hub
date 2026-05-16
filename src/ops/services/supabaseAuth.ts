@@ -105,14 +105,14 @@ export const supabaseAuth = {
     return mapSupabaseUser(data.user);
   },
 
-  onAuthStateChange(callback: (user: OpsUser | null) => void) {
-    const { data } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+  onAuthStateChange(callback: (user: OpsUser | null, event: AuthChangeEvent) => void) {
+    const { data } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
       if (!session?.user) {
-        callback(null);
+        callback(null, event);
         return;
       }
 
-      callback(mapSupabaseUser(session.user));
+      callback(mapSupabaseUser(session.user), event);
     });
 
     return data.subscription;

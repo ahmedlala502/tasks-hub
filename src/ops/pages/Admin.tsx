@@ -254,15 +254,37 @@ export default function Admin() {
   const updateUser = async (id: string, patch: Partial<AdminUser>) => {
     const targetUser = users.find(user => user.id === id);
     if (!targetUser) return;
-    if (!isCloudBackedUser(targetUser)) {
-      setSavedAt('Use Generate Access first to create this roster login');
-      return;
-    }
 
     const nextName = patch.name ?? targetUser.name;
     const nextRole = patch.role ?? targetUser.role;
     const nextStatus = patch.status ?? targetUser.status;
     const nextOffice = patch.office ?? targetUser.office;
+
+    if (!isCloudBackedUser(targetUser)) {
+      try {
+        const created = await adminApi.createUser({
+          name: nextName,
+          email: targetUser.email,
+          password: DEFAULT_ACCESS_PASSWORD,
+          role: roleToOpsRole(nextRole),
+          office: nextOffice,
+          department: nextRole === 'Community' ? 'Coordination' : 'Operations',
+          title: nextRole === 'Master' ? 'Master Admin' : `${nextRole} Access`,
+        });
+        setUsers(prev => prev.map(user => (user.id === id ? mapApiUserToAdminUser(created) : user)));
+        setSavedAt(`${nextName} activated in Supabase`);
+        dataService.recordActivity({
+          action: 'admin.user_created',
+          entityType: 'user',
+          entityId: created.uid,
+          summary: `Activated user ${nextName}`,
+          metadata: { email: targetUser.email, role: nextRole },
+        });
+      } catch (error: any) {
+        setSavedAt(error.message || 'Unable to activate user');
+      }
+      return;
+    }
 
     try {
       const updated = await adminApi.updateUser({
