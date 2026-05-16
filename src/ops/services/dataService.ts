@@ -12,6 +12,7 @@ import attachedWorkspaceExport from '../data/attached-workspace-export.json';
 import { CAMPAIGNS_20260515 } from '../data/campaigns-20260515';
 import { buildImportedCompletedTasks, deriveUsersFromCompletedTasks, extractUsersFromWorkspaceExport, parseCompletedTasksCsv } from '../lib/importedWorkspaceData';
 import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
+import { cloudWorkspaceService, type ActivityDraft, type UserActivityLog, type WorkspaceRecordType } from './cloudWorkspaceService';
 
 const buildCampaignId = (seed: number) => `C-${Date.now()}-${seed}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -136,6 +137,9 @@ export let INFLUENCERS_DATA: CampaignInfluencer[] = loadFromStorage(STORAGE_KEYS
 export let BLOCKERS_DATA: Blocker[] = loadFromStorage(STORAGE_KEYS.blockers, INITIAL_BLOCKERS_DATA);
 export let TASKS_DATA: Task[] = loadFromStorage(STORAGE_KEYS.tasks, INITIAL_TASKS_DATA);
 export let HANDOVERS_DATA: Handover[] = loadFromStorage(STORAGE_KEYS.handovers, INITIAL_HANDOVERS_DATA);
+let ACTIVITY_LOGS: UserActivityLog[] = [];
+let cloudInitialized = false;
+let cloudAvailable = true;
 
 const realHandovers = HANDOVERS_DATA.filter((handover) => !DEMO_HANDOVER_IDS.has(handover.id) && handover.createdBy !== 'system');
 if (realHandovers.length !== HANDOVERS_DATA.length) {
@@ -159,8 +163,123 @@ const mergeImportedCompletedTasks = () => {
 
 mergeImportedCompletedTasks();
 
+const persistRecord = (recordType: WorkspaceRecordType, data: unknown[]) => {
+  saveToStorage(STORAGE_KEYS[recordType], data);
+  if (!cloudInitialized) return;
+  cloudWorkspaceService.saveRecord(recordType, data)
+    .then(() => {
+      cloudAvailable = true;
+    })
+    .catch((error) => {
+      cloudAvailable = false;
+      console.error('Failed to sync workspace data to Supabase', error);
+    });
+};
+
+const rememberActivity = (event: UserActivityLog | null) => {
+  if (!event) return;
+  ACTIVITY_LOGS = [event, ...ACTIVITY_LOGS.filter((item) => item.id !== event.id)].slice(0, 200);
+};
+
+const logActivity = (draft: ActivityDraft) => {
+  if (!cloudInitialized) return;
+  cloudWorkspaceService.logActivity(draft)
+    .then((event) => {
+      cloudAvailable = true;
+      rememberActivity(event);
+    })
+    .catch((error) => {
+      cloudAvailable = false;
+      console.error('Failed to log user activity to Supabase', error);
+    });
+};
+
+const replaceWorkspaceFromCloud = (workspace: Partial<{
+  campaigns: Campaign[];
+  influencers: CampaignInfluencer[];
+  blockers: Blocker[];
+  tasks: Task[];
+  handovers: Handover[];
+}>) => {
+  if (workspace.campaigns) {
+    CAMPAIGNS_DATA = normalizeCampaignIds(workspace.campaigns).normalized;
+    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+  }
+  if (workspace.influencers) {
+    INFLUENCERS_DATA = workspace.influencers;
+    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+  }
+  if (workspace.blockers) {
+    BLOCKERS_DATA = workspace.blockers;
+    saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
+  }
+  if (workspace.tasks) {
+    TASKS_DATA = workspace.tasks;
+    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+  }
+  if (workspace.handovers) {
+    HANDOVERS_DATA = workspace.handovers.filter((handover) => !DEMO_HANDOVER_IDS.has(handover.id) && handover.createdBy !== 'system');
+    saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
+  }
+};
+
 // Service Methods
 export const dataService = {
+  async initializeCloudWorkspace() {
+    if (cloudInitialized && cloudAvailable) return { cloud: cloudAvailable, activityCount: ACTIVITY_LOGS.length };
+    try {
+      const [cloudWorkspace, activityLogs] = await Promise.all([
+        cloudWorkspaceService.loadWorkspace(),
+        cloudWorkspaceService.listActivity(),
+      ]);
+      const hasCloudData = Object.values(cloudWorkspace).some((value) => Array.isArray(value));
+
+      if (hasCloudData) {
+        replaceWorkspaceFromCloud(cloudWorkspace);
+        await Promise.all((['campaigns', 'influencers', 'blockers', 'tasks', 'handovers'] as WorkspaceRecordType[])
+          .filter((recordType) => !Array.isArray((cloudWorkspace as any)[recordType]))
+          .map((recordType) => cloudWorkspaceService.saveRecord(recordType, {
+            campaigns: CAMPAIGNS_DATA,
+            influencers: INFLUENCERS_DATA,
+            blockers: BLOCKERS_DATA,
+            tasks: TASKS_DATA,
+            handovers: HANDOVERS_DATA,
+          }[recordType])));
+      } else {
+        await cloudWorkspaceService.saveWorkspace({
+          campaigns: CAMPAIGNS_DATA,
+          influencers: INFLUENCERS_DATA,
+          blockers: BLOCKERS_DATA,
+          tasks: TASKS_DATA,
+          handovers: HANDOVERS_DATA,
+        });
+      }
+
+      ACTIVITY_LOGS = activityLogs;
+      cloudAvailable = true;
+    } catch (error) {
+      cloudAvailable = false;
+      console.error('Unable to initialize Supabase workspace data. Browser cache will be used.', error);
+    } finally {
+      cloudInitialized = true;
+    }
+
+    return { cloud: cloudAvailable, activityCount: ACTIVITY_LOGS.length };
+  },
+  isCloudReady: () => cloudInitialized && cloudAvailable,
+  getActivityLogs: () => [...ACTIVITY_LOGS],
+  async refreshActivityLogs(limit = 200) {
+    if (!cloudInitialized) return [...ACTIVITY_LOGS];
+    try {
+      ACTIVITY_LOGS = await cloudWorkspaceService.listActivity(limit);
+      cloudAvailable = true;
+    } catch (error) {
+      cloudAvailable = false;
+      console.error('Failed to refresh activity logs from Supabase', error);
+    }
+    return [...ACTIVITY_LOGS];
+  },
+  recordActivity: (draft: ActivityDraft) => logActivity(draft),
   getCampaigns: () => [...CAMPAIGNS_DATA],
   updateCampaign: (id: string, updates: Partial<Campaign>) => {
     const targetIndex = CAMPAIGNS_DATA.findIndex((campaign) => campaign.id === id);
@@ -169,7 +288,8 @@ export const dataService = {
     CAMPAIGNS_DATA = CAMPAIGNS_DATA.map((campaign, index) =>
       index === targetIndex ? { ...campaign, ...updates, updatedAt: Date.now() } : campaign
     );
-    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+    persistRecord('campaigns', CAMPAIGNS_DATA);
+    logActivity({ action: 'campaign.updated', entityType: 'campaign', entityId: id, summary: `Updated campaign "${CAMPAIGNS_DATA.find((campaign) => campaign.id === id)?.name || id}"`, metadata: { updates } });
     return [...CAMPAIGNS_DATA];
   },
   addCampaign: (campaign: Campaign) => {
@@ -182,7 +302,8 @@ export const dataService = {
     }
 
     CAMPAIGNS_DATA = [{ ...campaign, id: nextId, createdAt: Date.now(), updatedAt: Date.now() }, ...CAMPAIGNS_DATA];
-    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+    persistRecord('campaigns', CAMPAIGNS_DATA);
+    logActivity({ action: 'campaign.created', entityType: 'campaign', entityId: nextId, summary: `Created campaign "${campaign.name || nextId}"`, metadata: { campaignId: nextId } });
     return [...CAMPAIGNS_DATA];
   },
   upsertCampaigns: (incoming: Campaign[]) => {
@@ -200,7 +321,8 @@ export const dataService = {
       }
     });
     CAMPAIGNS_DATA = Array.from(byId.values());
-    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+    persistRecord('campaigns', CAMPAIGNS_DATA);
+    logActivity({ action: 'campaigns.imported', entityType: 'campaign', summary: `Imported campaigns: ${inserted} added, ${updated} updated`, metadata: { inserted, updated } });
     return { campaigns: [...CAMPAIGNS_DATA], inserted, updated };
   },
   upsertInfluencers: (incoming: CampaignInfluencer[]) => {
@@ -217,7 +339,8 @@ export const dataService = {
       }
     });
     INFLUENCERS_DATA = Array.from(byId.values());
-    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+    persistRecord('influencers', INFLUENCERS_DATA);
+    logActivity({ action: 'influencers.imported', entityType: 'influencer', summary: `Imported influencers: ${inserted} added, ${updated} updated`, metadata: { inserted, updated } });
     return { influencers: [...INFLUENCERS_DATA], inserted, updated };
   },
   upsertTasks: (incoming: Task[]) => {
@@ -234,7 +357,8 @@ export const dataService = {
       }
     });
     TASKS_DATA = Array.from(byId.values());
-    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+    persistRecord('tasks', TASKS_DATA);
+    logActivity({ action: 'tasks.imported', entityType: 'task', summary: `Imported tasks: ${inserted} added, ${updated} updated`, metadata: { inserted, updated } });
     return { tasks: [...TASKS_DATA], inserted, updated };
   },
   addCampaigns: (campaigns: Campaign[]) => {
@@ -251,7 +375,8 @@ export const dataService = {
     });
 
     CAMPAIGNS_DATA = [...safeCampaigns, ...CAMPAIGNS_DATA];
-    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+    persistRecord('campaigns', CAMPAIGNS_DATA);
+    logActivity({ action: 'campaigns.created', entityType: 'campaign', summary: `Added ${safeCampaigns.length} campaigns`, metadata: { count: safeCampaigns.length } });
     return [...CAMPAIGNS_DATA];
   },
   getTasks: () => [...TASKS_DATA],
@@ -259,18 +384,22 @@ export const dataService = {
     const result = ensureDailyOperatingTasks(TASKS_DATA, now);
     if (result.createdCount > 0) {
       TASKS_DATA = result.tasks;
-      saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+      persistRecord('tasks', TASKS_DATA);
+      logActivity({ action: 'tasks.auto_created', entityType: 'task', summary: `Created ${result.createdCount} daily operating tasks`, metadata: { count: result.createdCount } });
     }
     return { tasks: [...TASKS_DATA], createdCount: result.createdCount };
   },
   updateTask: (id: string, updates: Partial<Task>) => {
     TASKS_DATA = TASKS_DATA.map(t => t.id === id ? { ...t, ...updates } : t);
-    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+    persistRecord('tasks', TASKS_DATA);
+    const updatedTask = TASKS_DATA.find((task) => task.id === id);
+    logActivity({ action: 'task.updated', entityType: 'task', entityId: id, summary: `Updated task "${updatedTask?.title || id}"`, metadata: { updates } });
     return [...TASKS_DATA];
   },
   addTask: (task: Task) => {
     TASKS_DATA = [task, ...TASKS_DATA];
-    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+    persistRecord('tasks', TASKS_DATA);
+    logActivity({ action: 'task.created', entityType: 'task', entityId: task.id, summary: `Created task "${task.title || task.id}"`, metadata: { campaignId: task.campaignId, ownerId: task.ownerId } });
     return [...TASKS_DATA];
   },
   getHandovers: () => [...HANDOVERS_DATA],
@@ -278,59 +407,70 @@ export const dataService = {
     HANDOVERS_DATA = HANDOVERS_DATA.map((handover) =>
       handover.id === id ? { ...handover, ...updates, updatedAt: Date.now() } : handover
     );
-    saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
+    persistRecord('handovers', HANDOVERS_DATA);
+    logActivity({ action: 'handover.updated', entityType: 'handover', entityId: id, summary: `Updated ${HANDOVERS_DATA.find((handover) => handover.id === id)?.team || 'handover'} relay`, metadata: { updates } });
     return [...HANDOVERS_DATA];
   },
   addHandover: (handover: Handover) => {
     HANDOVERS_DATA = [handover, ...HANDOVERS_DATA];
-    saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
+    persistRecord('handovers', HANDOVERS_DATA);
+    logActivity({ action: 'handover.created', entityType: 'handover', entityId: handover.id, summary: `Created ${handover.team} handover`, metadata: { assignTo: handover.assignTo, assignFrom: handover.assignFrom } });
     return [...HANDOVERS_DATA];
   },
   deleteHandover: (id: string) => {
     HANDOVERS_DATA = HANDOVERS_DATA.filter((handover) => handover.id !== id);
-    saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
+    persistRecord('handovers', HANDOVERS_DATA);
+    logActivity({ action: 'handover.deleted', entityType: 'handover', entityId: id, summary: `Deleted handover ${id}`, metadata: { id } });
     return [...HANDOVERS_DATA];
   },
   clearTasks: () => {
     TASKS_DATA = [];
-    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+    persistRecord('tasks', TASKS_DATA);
+    logActivity({ action: 'tasks.cleared', entityType: 'task', summary: 'Cleared all tasks', metadata: {} });
     return [...TASKS_DATA];
   },
   getBlockers: () => [...BLOCKERS_DATA],
   updateBlocker: (id: string, updates: Partial<Blocker>) => {
     BLOCKERS_DATA = BLOCKERS_DATA.map(blocker => blocker.id === id ? { ...blocker, ...updates, updatedAt: Date.now() } : blocker);
-    saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
+    persistRecord('blockers', BLOCKERS_DATA);
+    logActivity({ action: 'blocker.updated', entityType: 'blocker', entityId: id, summary: `Updated blocker "${BLOCKERS_DATA.find((blocker) => blocker.id === id)?.summary || id}"`, metadata: { updates } });
     return [...BLOCKERS_DATA];
   },
   addBlocker: (blocker: Blocker) => {
     BLOCKERS_DATA = [blocker, ...BLOCKERS_DATA];
-    saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
+    persistRecord('blockers', BLOCKERS_DATA);
+    logActivity({ action: 'blocker.created', entityType: 'blocker', entityId: blocker.id, summary: `Created blocker "${blocker.summary || blocker.id}"`, metadata: { campaignId: blocker.campaignId, ownerId: blocker.ownerId } });
     return [...BLOCKERS_DATA];
   },
   clearBlockers: () => {
     BLOCKERS_DATA = [];
-    saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
+    persistRecord('blockers', BLOCKERS_DATA);
+    logActivity({ action: 'blockers.cleared', entityType: 'blocker', summary: 'Cleared all blockers', metadata: {} });
     return [...BLOCKERS_DATA];
   },
   getInfluencers: () => [...INFLUENCERS_DATA],
   updateInfluencer: (id: string, updates: Partial<CampaignInfluencer>) => {
     INFLUENCERS_DATA = INFLUENCERS_DATA.map(inf => inf.id === id ? { ...inf, ...updates, updatedAt: Date.now() } : inf);
-    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+    persistRecord('influencers', INFLUENCERS_DATA);
+    logActivity({ action: 'influencer.updated', entityType: 'influencer', entityId: id, summary: `Updated influencer "${INFLUENCERS_DATA.find((influencer) => influencer.id === id)?.username || id}"`, metadata: { updates } });
     return [...INFLUENCERS_DATA];
   },
   addInfluencers: (influencers: CampaignInfluencer[]) => {
     INFLUENCERS_DATA = [...influencers, ...INFLUENCERS_DATA];
-    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+    persistRecord('influencers', INFLUENCERS_DATA);
+    logActivity({ action: 'influencers.created', entityType: 'influencer', summary: `Added ${influencers.length} influencers`, metadata: { count: influencers.length } });
     return [...INFLUENCERS_DATA];
   },
   clearInfluencers: () => {
     INFLUENCERS_DATA = [];
-    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+    persistRecord('influencers', INFLUENCERS_DATA);
+    logActivity({ action: 'influencers.cleared', entityType: 'influencer', summary: 'Cleared all influencers', metadata: {} });
     return [...INFLUENCERS_DATA];
   },
   clearCampaigns: () => {
     CAMPAIGNS_DATA = [];
-    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+    persistRecord('campaigns', CAMPAIGNS_DATA);
+    logActivity({ action: 'campaigns.cleared', entityType: 'campaign', summary: 'Cleared all campaigns', metadata: {} });
     return [...CAMPAIGNS_DATA];
   },
   clearWorkspaceData: () => {
@@ -339,11 +479,12 @@ export const dataService = {
     BLOCKERS_DATA = [];
     TASKS_DATA = [];
     HANDOVERS_DATA = [];
-    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
-    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
-    saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
-    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
-    saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
+    persistRecord('campaigns', CAMPAIGNS_DATA);
+    persistRecord('influencers', INFLUENCERS_DATA);
+    persistRecord('blockers', BLOCKERS_DATA);
+    persistRecord('tasks', TASKS_DATA);
+    persistRecord('handovers', HANDOVERS_DATA);
+    logActivity({ action: 'workspace.cleared', entityType: 'workspace', summary: 'Cleared workspace data', metadata: {} });
     return {
       campaigns: [...CAMPAIGNS_DATA],
       influencers: [...INFLUENCERS_DATA],
@@ -354,27 +495,32 @@ export const dataService = {
   },
   bulkUpdateInfluencerStatus: (ids: string[], status: CampaignInfluencer['status']) => {
     INFLUENCERS_DATA = INFLUENCERS_DATA.map(inf => ids.includes(inf.id) ? { ...inf, status, updatedAt: Date.now() } : inf);
-    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+    persistRecord('influencers', INFLUENCERS_DATA);
+    logActivity({ action: 'influencers.updated', entityType: 'influencer', summary: `Updated ${ids.length} influencer statuses`, metadata: { ids, status } });
     return [...INFLUENCERS_DATA];
   },
   deleteCampaign: (id: string) => {
     CAMPAIGNS_DATA = CAMPAIGNS_DATA.filter(c => c.id !== id);
-    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+    persistRecord('campaigns', CAMPAIGNS_DATA);
+    logActivity({ action: 'campaign.deleted', entityType: 'campaign', entityId: id, summary: `Deleted campaign ${id}`, metadata: { id } });
     return [...CAMPAIGNS_DATA];
   },
   deleteTask: (id: string) => {
     TASKS_DATA = TASKS_DATA.filter(t => t.id !== id);
-    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+    persistRecord('tasks', TASKS_DATA);
+    logActivity({ action: 'task.deleted', entityType: 'task', entityId: id, summary: `Deleted task ${id}`, metadata: { id } });
     return [...TASKS_DATA];
   },
   deleteBlocker: (id: string) => {
     BLOCKERS_DATA = BLOCKERS_DATA.filter(b => b.id !== id);
-    saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
+    persistRecord('blockers', BLOCKERS_DATA);
+    logActivity({ action: 'blocker.deleted', entityType: 'blocker', entityId: id, summary: `Deleted blocker ${id}`, metadata: { id } });
     return [...BLOCKERS_DATA];
   },
   deleteInfluencer: (id: string) => {
     INFLUENCERS_DATA = INFLUENCERS_DATA.filter(i => i.id !== id);
-    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+    persistRecord('influencers', INFLUENCERS_DATA);
+    logActivity({ action: 'influencer.deleted', entityType: 'influencer', entityId: id, summary: `Deleted influencer ${id}`, metadata: { id } });
     return [...INFLUENCERS_DATA];
   },
 };
@@ -400,24 +546,31 @@ export function importAllData(data: {
 }) {
   if (Array.isArray(data.campaigns)) {
     CAMPAIGNS_DATA = data.campaigns;
-    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+    persistRecord('campaigns', CAMPAIGNS_DATA);
   }
   if (Array.isArray(data.influencers)) {
     INFLUENCERS_DATA = data.influencers;
-    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+    persistRecord('influencers', INFLUENCERS_DATA);
   }
   if (Array.isArray(data.blockers)) {
     BLOCKERS_DATA = data.blockers;
-    saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
+    persistRecord('blockers', BLOCKERS_DATA);
   }
   if (Array.isArray(data.tasks)) {
     TASKS_DATA = data.tasks;
-    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+    persistRecord('tasks', TASKS_DATA);
   }
   if (Array.isArray(data.handovers)) {
     HANDOVERS_DATA = data.handovers;
-    saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
+    persistRecord('handovers', HANDOVERS_DATA);
   }
+  logActivity({ action: 'workspace.imported', entityType: 'workspace', summary: 'Imported workspace backup data', metadata: {
+    campaigns: data.campaigns?.length,
+    influencers: data.influencers?.length,
+    blockers: data.blockers?.length,
+    tasks: data.tasks?.length,
+    handovers: data.handovers?.length,
+  } });
 }
 
 export function downloadJson(data: object, filename: string) {

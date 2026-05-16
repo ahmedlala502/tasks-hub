@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Settings as SettingsIcon,
   Shield,
@@ -24,8 +25,10 @@ import {
   Server,
   UploadCloud,
   Users,
+  History,
 } from 'lucide-react';
 import { useAuth } from '../App';
+import AuditLogs from './AuditLogs';
 import { BulkUploadButton } from '../components/BulkUploadDialog';
 import { adminApi } from '../services/adminApi';
 import { dataService } from '../services/dataService';
@@ -45,6 +48,7 @@ const SETTING_SECTIONS = [
   { id: 'security', label: 'Security & API', icon: Shield },
   { id: 'notifications', label: 'Alert Protocols', icon: Bell },
   { id: 'cloud', label: 'Cloud Resources', icon: Cloud },
+  { id: 'audit-log', label: 'Audit Log', icon: History, masterOnly: true },
   { id: 'bulk-upload', label: 'Bulk Upload Center', icon: UploadCloud, masterOnly: true },
 ];
 
@@ -83,7 +87,9 @@ const DEFAULT_AI_PROVIDER: AiProviderConfig = {
 export default function SettingsWorkspace() {
   const { role } = useAuth();
   const isMaster = role === 'master';
-  const [activeRoot, setActiveRoot] = useState('general');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sectionParam = searchParams.get('section');
+  const [activeRoot, setActiveRoot] = useState(sectionParam || 'general');
   const [saved, setSaved] = useState(false);
   const [bulkMessage, setBulkMessage] = useState('');
   const savedTimerRef = useRef<number | null>(null);
@@ -156,6 +162,12 @@ export default function SettingsWorkspace() {
     }
   }, [activeRoot, visibleSettingSections]);
 
+  useEffect(() => {
+    if (sectionParam && visibleSettingSections.some((section) => section.id === sectionParam)) {
+      setActiveRoot(sectionParam);
+    }
+  }, [sectionParam, visibleSettingSections]);
+
   const updateSetting = (key: keyof typeof settings, value: string) => {
     setSettings((current: typeof settings) => ({ ...current, [key]: value }));
   };
@@ -164,6 +176,12 @@ export default function SettingsWorkspace() {
     localStorage.setItem('trygc-settings', JSON.stringify({ settings, toggleStates, aiProvider }));
     if (supabaseUrl.trim()) localStorage.setItem('trygc-supabase-url', supabaseUrl.trim());
     if (supabaseKey.trim()) localStorage.setItem('trygc-supabase-key', supabaseKey.trim());
+    dataService.recordActivity({
+      action: 'settings.updated',
+      entityType: 'settings',
+      summary: 'Updated system settings',
+      metadata: { activeSection: activeRoot, aiProvider: aiProvider.provider, aiMode: aiProvider.mode },
+    });
     setSaved(true);
     if (savedTimerRef.current !== null) window.clearTimeout(savedTimerRef.current);
     savedTimerRef.current = window.setTimeout(() => setSaved(false), 1800) as unknown as number;
@@ -236,6 +254,13 @@ export default function SettingsWorkspace() {
       setBulkMessage(`Users updated: ${inserted} added.`);
     }
 
+    dataService.recordActivity({
+      action: 'users.imported',
+      entityType: 'user',
+      summary: `Imported users: ${inserted} added, ${errors.length} failed`,
+      metadata: { inserted, failed: errors.length },
+    });
+
     return { inserted, updated: 0 };
   };
 
@@ -264,7 +289,10 @@ export default function SettingsWorkspace() {
           {visibleSettingSections.map((section) => (
             <button
               key={section.id}
-              onClick={() => setActiveRoot(section.id)}
+              onClick={() => {
+                setActiveRoot(section.id);
+                setSearchParams(section.id === 'general' ? {} : { section: section.id });
+              }}
               className={cn(
                 'w-full flex items-center gap-2.5 px-4 py-2.5 rounded-lg transition-all font-bold text-[12px] border-l-2',
                 activeRoot === section.id
@@ -464,6 +492,10 @@ export default function SettingsWorkspace() {
                     <p className="mt-1 text-xs text-muted-foreground">Production-ready controls for market routing, Firebase project mapping, and export destinations.</p>
                   </div>
                 </div>
+              )}
+
+              {activeRoot === 'audit-log' && isMaster && (
+                <AuditLogs />
               )}
 
               {activeRoot === 'bulk-upload' && isMaster && (

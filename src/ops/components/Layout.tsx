@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import {
   LayoutDashboard, LogOut, Bell,
-  Settings, ShieldCheck, AlertTriangle, History,
+  Settings, ShieldCheck, AlertTriangle,
   Shield, BarChart3, MessageSquare, CheckSquare,
   Sun, Moon, RefreshCw, Download,
   ChevronRight, FolderKanban,
@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { notificationService, AppNotification } from '../services/notificationService';
-import { exportAllData, downloadJson } from '../services/dataService';
+import { dataService, exportAllData, downloadJson } from '../services/dataService';
 import { canAccessPath, getRoleLabel } from '../lib/access';
 import { getWorkspaceLabel } from '../lib/workspace';
 import { opsUpdatesService } from '../services/opsUpdatesService';
@@ -41,7 +41,6 @@ const SYSTEM_NAV: NavItem[] = [
   { icon: UserRound,     label: 'Profile',     path: '/profile' },
   { icon: BarChart3,     label: 'Performance', path: '/performance' },
   { icon: MessageSquare, label: 'Templates',  path: '/templates' },
-  { icon: History,       label: 'Audit Logs', path: '/audit' },
   { icon: Settings,      label: 'Settings',   path: '/settings' },
   { icon: Shield,        label: 'Admin',      path: '/admin' },
 ];
@@ -206,6 +205,37 @@ export default function Layout() {
   const systemNav = SYSTEM_NAV.filter(item => canAccessPath(role, item.path));
   const workspaceLabel = getWorkspaceLabel(role);
 
+  useEffect(() => {
+    dataService.recordActivity({
+      action: 'tool.page_viewed',
+      entityType: 'page',
+      entityId: location.pathname,
+      summary: `Opened ${getPageLabel(location.pathname)}`,
+      metadata: { path: location.pathname, search: location.search },
+    });
+  }, [location.pathname, location.search]);
+
+  const handleRefresh = () => {
+    dataService.recordActivity({
+      action: 'tool.refreshed',
+      entityType: 'page',
+      entityId: location.pathname,
+      summary: `Refreshed ${getPageLabel(location.pathname)}`,
+      metadata: { path: location.pathname },
+    });
+    window.location.reload();
+  };
+
+  const handleExport = () => {
+    dataService.recordActivity({
+      action: 'workspace.exported',
+      entityType: 'workspace',
+      summary: 'Exported workspace data',
+      metadata: { path: location.pathname },
+    });
+    downloadJson(exportAllData(), `trygc-export-${new Date().toISOString().slice(0, 10)}.json`);
+  };
+
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
 
@@ -335,7 +365,7 @@ export default function Layout() {
             )}
 
             <button
-              onClick={() => window.location.reload()}
+              onClick={handleRefresh}
               className="flex items-center gap-1.5 px-2.5 py-1.5 border border-border rounded-lg text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:border-gc-orange/50 transition-all"
             >
               <RefreshCw className="h-3 w-3" />
@@ -343,7 +373,7 @@ export default function Layout() {
             </button>
 
             <button
-              onClick={() => downloadJson(exportAllData(), `trygc-export-${new Date().toISOString().slice(0, 10)}.json`)}
+              onClick={handleExport}
               className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gc-orange text-white rounded-lg text-[11px] font-semibold hover:bg-gc-orange/90 transition-all"
               title="Export all workspace data as JSON"
             >

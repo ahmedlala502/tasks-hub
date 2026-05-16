@@ -58,6 +58,11 @@ function normalizeRole(role: unknown): OpsRole {
   return 'operations';
 }
 
+function resolveStoredRole(role: unknown, email: string): OpsRole {
+  if (role === 'master' || role === 'operations' || role === 'community') return role;
+  return masterEmails.has(email.toLowerCase()) ? 'master' : 'operations';
+}
+
 function isOpsOffice(value: unknown): value is OpsOffice {
   return value === 'KSA' || value === 'UAE' || value === 'Kuwait' || value === 'Egypt';
 }
@@ -89,8 +94,7 @@ function mapUser(user: {
   banned_until?: string | null;
 }) {
   const email = user.email ?? '';
-  const metadataRole = normalizeRole(user.app_metadata?.role);
-  const effectiveRole = masterEmails.has(email.toLowerCase()) ? 'master' : metadataRole;
+  const effectiveRole = resolveStoredRole(user.app_metadata?.role, email);
   const displayName =
     String(
       user.user_metadata?.display_name ??

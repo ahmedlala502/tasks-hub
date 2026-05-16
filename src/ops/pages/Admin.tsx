@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Archive,
@@ -44,6 +44,7 @@ type AdminUser = {
   access: AccessLevel;
   status: 'Active' | 'Suspended';
   lastSeen: string;
+  source: 'cloud' | 'roster';
 };
 
 type ModulePolicy = {
@@ -86,6 +87,7 @@ const defaultUsers: AdminUser[] = DEFAULT_ACCESS_USERS.map((user) => ({
   access: user.role === 'master' ? 'Full' : 'Scoped',
   status: 'Active',
   lastSeen: 'Never',
+  source: 'roster',
 }));
 
 const defaultPolicies: ModulePolicy[] = [
@@ -163,7 +165,16 @@ const mapApiUserToAdminUser = (user: {
   access: user.role === 'master' ? 'Full' : 'Scoped',
   status: user.status === 'suspended' ? 'Suspended' : 'Active',
   lastSeen: formatLastSeen(user.lastSignInAt),
+  source: 'cloud',
 });
+
+const mergeCloudAndRosterUsers = (cloudUsers: AdminUser[]) => {
+  const cloudEmails = new Set(cloudUsers.map(user => user.email.toLowerCase()));
+  const missingRosterUsers = defaultUsers.filter(user => !cloudEmails.has(user.email.toLowerCase()));
+  return [...cloudUsers, ...missingRosterUsers];
+};
+
+const isCloudBackedUser = (user: AdminUser) => user.source === 'cloud';
 
 export default function Admin() {
   const { user: currentUser } = useAuth();
@@ -180,6 +191,22 @@ export default function Admin() {
   const [generatingAccess, setGeneratingAccess] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const restoreRef = useRef<HTMLInputElement>(null);
+
+  const refreshUsers = useCallback(async (showStatus = false) => {
+    setUsersLoading(true);
+    try {
+      const apiUsers = await adminApi.listUsers();
+      const cloudUsers = apiUsers.map(mapApiUserToAdminUser);
+      const mergedUsers = mergeCloudAndRosterUsers(cloudUsers);
+      setUsers(mergedUsers);
+      if (showStatus) setSavedAt(`Users refreshed: ${cloudUsers.length} cloud accounts + ${mergedUsers.length - cloudUsers.length} roster users`);
+    } catch (error: any) {
+      setUsers((current) => (current.length > 0 ? current : defaultUsers));
+      setSavedAt(error.message || 'Admin API unavailable');
+    } finally {
+      setUsersLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -207,27 +234,10 @@ export default function Admin() {
   }, [flags, hydrated, policies]);
 
   useEffect(() => {
-    let mounted = true;
-
-    adminApi.listUsers()
-      .then((apiUsers) => {
-        if (!mounted) return;
-        setUsers(apiUsers.map(mapApiUserToAdminUser));
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setUsers(defaultUsers);
-        setSavedAt('Admin API unavailable');
-      })
-      .finally(() => {
-        if (!mounted) return;
-        setUsersLoading(false);
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    void refreshUsers();
+    const interval = window.setInterval(() => { void refreshUsers(); }, 30000);
+    return () => window.clearInterval(interval);
+  }, [refreshUsers]);
 
   const visibleUsers = useMemo(() => {
     const value = search.trim().toLowerCase();
@@ -244,6 +254,10 @@ export default function Admin() {
   const updateUser = async (id: string, patch: Partial<AdminUser>) => {
     const targetUser = users.find(user => user.id === id);
     if (!targetUser) return;
+    if (!isCloudBackedUser(targetUser)) {
+      setSavedAt('Use Generate Access first to create this roster login');
+      return;
+    }
 
     const nextName = patch.name ?? targetUser.name;
     const nextRole = patch.role ?? targetUser.role;
@@ -261,6 +275,13 @@ export default function Admin() {
 
       setUsers(prev => prev.map(user => (user.id === id ? mapApiUserToAdminUser(updated) : user)));
       setSavedAt('Supabase user updated');
+      dataService.recordActivity({
+        action: 'admin.user_updated',
+        entityType: 'user',
+        entityId: id,
+        summary: `Updated user ${nextName}`,
+        metadata: { role: nextRole, status: nextStatus, office: nextOffice },
+      });
     } catch (error: any) {
       setSavedAt(error.message || 'Unable to update user');
     }
@@ -269,11 +290,25 @@ export default function Admin() {
   const updatePolicy = (id: string, patch: Partial<ModulePolicy>) => {
     setPolicies(prev => prev.map(policy => (policy.id === id ? { ...policy, ...patch } : policy)));
     setSavedAt('Saved locally');
+    dataService.recordActivity({
+      action: 'admin.policy_updated',
+      entityType: 'policy',
+      entityId: id,
+      summary: `Updated module policy ${id}`,
+      metadata: { patch },
+    });
   };
 
   const updateFlag = (id: string) => {
     setFlags(prev => prev.map(flag => (flag.id === id ? { ...flag, enabled: !flag.enabled } : flag)));
     setSavedAt('Saved locally');
+    dataService.recordActivity({
+      action: 'admin.feature_toggled',
+      entityType: 'feature',
+      entityId: id,
+      summary: `Toggled feature ${id}`,
+      metadata: {},
+    });
   };
 
   const createUser = async (event: React.FormEvent) => {
@@ -309,6 +344,13 @@ export default function Admin() {
 
       setNewUser({ name: '', email: '', password: '', role: 'Operations', office: 'Egypt', access: 'Scoped' });
       setSavedAt('Supabase user created');
+      dataService.recordActivity({
+        action: 'admin.user_created',
+        entityType: 'user',
+        entityId: createdUser.uid,
+        summary: `Created user ${name}`,
+        metadata: { email, role: newUser.role, office: newUser.office },
+      });
     } catch (error: any) {
       setUserCreateError(error.message || 'Unable to create Supabase user.');
     }
@@ -320,6 +362,10 @@ export default function Admin() {
       setSavedAt('Cannot remove current user');
       return;
     }
+    if (!isCloudBackedUser(targetUser)) {
+      setSavedAt('Roster user is not a Supabase account yet');
+      return;
+    }
 
     const confirmed = window.confirm(`Remove ${targetUser.name} (${targetUser.email})? This removes the Supabase account and access profile.`);
     if (!confirmed) return;
@@ -328,6 +374,13 @@ export default function Admin() {
       .then(() => {
         setUsers(prev => prev.filter(user => user.id !== targetUser.id));
         setSavedAt('Supabase user removed');
+        dataService.recordActivity({
+          action: 'admin.user_deleted',
+          entityType: 'user',
+          entityId: targetUser.id,
+          summary: `Removed user ${targetUser.name}`,
+          metadata: { email: targetUser.email, role: targetUser.role },
+        });
       })
       .catch((error: any) => {
         setSavedAt(error.message || 'Unable to remove user');
@@ -375,8 +428,15 @@ export default function Admin() {
         created += 1;
       }
 
-      setUsers(latestUsers.map(mapApiUserToAdminUser));
+      const cloudUsers = latestUsers.map(mapApiUserToAdminUser);
+      setUsers(mergeCloudAndRosterUsers(cloudUsers));
       setSavedAt(`Default access ready: ${created} created, ${updated} updated · password ${DEFAULT_ACCESS_PASSWORD}`);
+      dataService.recordActivity({
+        action: 'admin.default_access_generated',
+        entityType: 'user',
+        summary: `Generated default access: ${created} created, ${updated} updated`,
+        metadata: { created, updated },
+      });
     } catch (error: any) {
       setSavedAt(error.message || 'Unable to generate default access');
       setUserCreateError(error.message || 'Unable to generate default access.');
@@ -392,24 +452,48 @@ export default function Admin() {
     setPolicies(prev => prev.map(policy => ({ ...policy, enabled: true })));
     setFlags(prev => prev.map(flag => (flag.id === 'maintenance' ? { ...flag, enabled: false } : { ...flag, enabled: true })));
     setSavedAt('Full access enabled');
+    dataService.recordActivity({
+      action: 'admin.full_access_granted',
+      entityType: 'policy',
+      summary: 'Granted full workspace access',
+      metadata: { users: users.length, policies: policies.length, flags: flags.length },
+    });
   };
 
   const resetDefaults = () => {
     setPolicies(defaultPolicies);
     setFlags(defaultFlags);
     setSavedAt('Defaults restored');
+    dataService.recordActivity({
+      action: 'admin.defaults_restored',
+      entityType: 'settings',
+      summary: 'Restored admin defaults',
+      metadata: {},
+    });
   };
 
   const handleExport = () => {
     const data = exportAllData();
     downloadJson(data, `trygc-export-${new Date().toISOString().slice(0, 10)}.json`);
     setSavedAt('Export downloaded');
+    dataService.recordActivity({
+      action: 'workspace.exported',
+      entityType: 'workspace',
+      summary: 'Exported workspace data from Admin',
+      metadata: getDataCounts(),
+    });
   };
 
   const handleBackup = () => {
     const data = exportAllData();
     downloadJson(data, `trygc-backup-${Date.now()}.json`);
     setSavedAt('Backup file created');
+    dataService.recordActivity({
+      action: 'workspace.backup_created',
+      entityType: 'workspace',
+      summary: 'Created workspace backup',
+      metadata: getDataCounts(),
+    });
   };
 
   const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -503,9 +587,15 @@ export default function Admin() {
                   onClick={generateDefaultAccess}
                   disabled={generatingAccess}
                   className="h-10 px-4 rounded-lg border border-gc-orange/30 bg-gc-orange/10 text-gc-orange text-[11px] font-extrabold uppercase tracking-widest hover:bg-gc-orange/15 transition-colors flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
-                  title={`Create missing screenshot users with password ${DEFAULT_ACCESS_PASSWORD}`}
+                  title={`Create missing roster users with password ${DEFAULT_ACCESS_PASSWORD}`}
                 >
                   <Key size={14} /> {generatingAccess ? 'Generating...' : 'Generate Access'}
+                </button>
+                <button
+                  onClick={() => { void refreshUsers(true); }}
+                  className="h-10 px-4 rounded-lg border border-border bg-card text-[11px] font-extrabold uppercase tracking-widest text-foreground hover:border-gc-orange hover:text-gc-orange transition-colors flex items-center justify-center gap-2"
+                >
+                  <RotateCcw size={14} /> Refresh Users
                 </button>
                 <BulkUploadButton<UserImportRow>
                   label="Bulk Upload"
@@ -540,7 +630,7 @@ export default function Admin() {
                     }
                     try {
                       const latest = await adminApi.listUsers();
-                      setUsers(latest.map(mapApiUserToAdminUser));
+                      setUsers(mergeCloudAndRosterUsers(latest.map(mapApiUserToAdminUser)));
                     } catch {
                       /* refresh failed; UI will re-sync on next page load */
                     }
@@ -617,14 +707,23 @@ export default function Admin() {
             <div className="divide-y divide-border">
                   {usersLoading ? (
                     <div className="p-5 text-[12px] font-semibold text-muted-foreground">Loading Supabase users...</div>
-                  ) : visibleUsers.map(user => (
+                  ) : visibleUsers.map(user => {
+                    const cloudBacked = isCloudBackedUser(user);
+                    return (
                 <div key={user.id} className="p-5 grid grid-cols-1 lg:grid-cols-[1.1fr_1fr_0.75fr_auto_auto] gap-4 items-center">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="h-11 w-11 rounded-lg bg-gc-orange/10 text-gc-orange flex items-center justify-center font-condensed font-black text-[14px]">
                       {user.name.split(' ').map(part => part[0]).join('').slice(0, 2)}
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[13px] font-extrabold text-foreground truncate">{user.name}</p>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <p className="text-[13px] font-extrabold text-foreground truncate">{user.name}</p>
+                        {!cloudBacked && (
+                          <span className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-widest text-amber-700">
+                            Roster
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[11px] font-semibold text-muted-foreground truncate">{user.email}</p>
                     </div>
                   </div>
@@ -634,49 +733,55 @@ export default function Admin() {
                       value={user.role}
                       onChange={value => { void updateUser(user.id, { role: value as AdminRole }); }}
                       options={['Master', 'Operations', 'Community']}
+                      disabled={!cloudBacked}
                     />
                     <Select
                       value={user.office}
                       onChange={value => { void updateUser(user.id, { office: value as OpsOffice }); }}
                       options={[...OPS_OFFICES]}
+                      disabled={!cloudBacked}
                     />
                     <Select
                       value={user.access}
                       onChange={() => {}}
                       options={['Full', 'Scoped', 'Read Only']}
+                      disabled={!cloudBacked}
                     />
                   </div>
 
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => { void updateUser(user.id, { status: user.status === 'Active' ? 'Suspended' : 'Active' }); }}
+                      disabled={!cloudBacked}
                       className={`h-9 px-3 rounded-lg border text-[10px] font-extrabold uppercase tracking-widest transition-colors ${
                         user.status === 'Active'
                           ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                           : 'bg-red-50 border-red-200 text-red-600'
-                      }`}
+                      } disabled:cursor-not-allowed disabled:opacity-60`}
                     >
-                      {user.status}
+                      {cloudBacked ? user.status : 'Pending'}
                     </button>
                     <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{user.lastSeen}</span>
                   </div>
 
                   <button
                     onClick={() => { void updateUser(user.id, { role: user.role, status: 'Active' }); }}
-                    className="h-9 px-3 rounded-lg bg-secondary border border-border text-[10px] font-extrabold uppercase tracking-widest text-foreground hover:border-gc-orange hover:text-gc-orange transition-colors"
+                    disabled={!cloudBacked}
+                    className="h-9 px-3 rounded-lg bg-secondary border border-border text-[10px] font-extrabold uppercase tracking-widest text-foreground hover:border-gc-orange hover:text-gc-orange transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Full Access
                   </button>
 
                   <button
                     onClick={() => removeUser(user)}
-                    disabled={currentUser?.email?.toLowerCase() === user.email.toLowerCase()}
+                    disabled={!cloudBacked || currentUser?.email?.toLowerCase() === user.email.toLowerCase()}
                     className="h-9 px-3 rounded-lg border border-red-200 bg-red-50 text-[10px] font-extrabold uppercase tracking-widest text-red-700 hover:bg-red-100 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Remove
                   </button>
                 </div>
-              ))}
+              );
+                  })}
             </div>
           </section>
 
@@ -876,12 +981,13 @@ function Metric({ label, value, tone }: { label: string; value: string; tone: 'o
   );
 }
 
-function Select({ value, options, onChange }: { value: string; options: string[]; onChange: (value: string) => void }) {
+function Select({ value, options, onChange, disabled = false }: { value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean }) {
   return (
     <select
       value={value}
       onChange={event => onChange(event.target.value)}
-      className="h-9 w-full rounded-lg border border-border bg-card px-3 text-[11px] font-bold text-foreground outline-none focus:border-gc-orange"
+      disabled={disabled}
+      className="h-9 w-full rounded-lg border border-border bg-card px-3 text-[11px] font-bold text-foreground outline-none focus:border-gc-orange disabled:cursor-not-allowed disabled:opacity-60"
     >
       {options.map(option => (
         <option key={option} value={option}>

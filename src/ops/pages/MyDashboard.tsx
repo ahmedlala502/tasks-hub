@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AlertCircle, CheckCircle2, Handshake, ListChecks, Plus, Target } from 'lucide-react';
+import { Activity, AlertCircle, CheckCircle2, Handshake, Plus, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../App';
 import { dataService } from '../services/dataService';
@@ -24,7 +24,10 @@ export default function MyDashboard() {
   const tasks = dataService.getTasks();
   const campaigns = dataService.getCampaigns();
   const handovers = dataService.getHandovers();
+  const activityLogs = dataService.getActivityLogs();
   const displayName = user?.displayName || 'Workspace User';
+  const userEmail = user?.email?.toLowerCase() || '';
+  const userId = user?.uid || '';
   const insights = useMemo(() => buildMyDashboardInsights(tasks, campaigns, displayName), [campaigns, displayName, tasks]);
   const myTasks = useMemo(() => {
     const byId = new Map<string, Task>();
@@ -38,6 +41,16 @@ export default function MyDashboard() {
   }, [displayName, tasks]);
   const myHandovers = useMemo(() => handovers.filter((handover) => isHandoverForUser(handover, displayName)).slice(0, 6), [displayName, handovers]);
   const campaignMatrix = useMemo(() => buildMyCampaignMatrix(campaigns, tasks).filter((item) => insights.campaignNames.includes(item.campaign.name)).slice(0, 5), [campaigns, insights.campaignNames, tasks]);
+  const myActivity = useMemo(() => activityLogs.filter((event) => {
+    const eventEmail = event.userEmail?.toLowerCase() || '';
+    const eventName = event.userName?.toLowerCase() || '';
+    const name = displayName.toLowerCase();
+    return Boolean(
+      (userId && event.userId === userId) ||
+      (userEmail && eventEmail === userEmail) ||
+      (name && eventName === name)
+    );
+  }).slice(0, 10), [activityLogs, displayName, userEmail, userId]);
 
   return (
     <div className="mx-auto max-w-[1240px] space-y-6 pb-12">
@@ -65,6 +78,31 @@ export default function MyDashboard() {
         <Metric title="Blocked" value={insights.blockedTasks} detail={`${insights.pendingTasks} pending`} icon={AlertCircle} tone="red" />
         <Metric title="Handovers" value={myHandovers.length} detail="Assigned to/from you" icon={Handshake} tone="purple" />
       </div>
+
+      <section className="rounded-xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-extrabold text-foreground">My Recent Activity</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Actions saved under your account from any browser.</p>
+          </div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-gc-orange/20 bg-gc-orange/10 text-gc-orange">
+            <Activity size={17} />
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {myActivity.length ? myActivity.map((event) => (
+            <div key={event.id} className="rounded-lg border border-border bg-background p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-foreground">{event.summary}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{formatActivityLabel(event.action)} - {event.entityType}</p>
+                </div>
+                <span className="shrink-0 text-[11px] font-bold text-muted-foreground">{formatActivityTime(event.createdAt)}</span>
+              </div>
+            </div>
+          )) : <EmptyState label="No saved account activity yet." />}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-xl border border-border bg-card p-5">
@@ -165,4 +203,14 @@ function Metric({ title, value, detail, icon: Icon, tone = 'orange' }: { title: 
 
 function EmptyState({ label }: { label: string }) {
   return <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">{label}</div>;
+}
+
+function formatActivityLabel(action: string) {
+  return action.split('.').map((part) => part.charAt(0).toUpperCase() + part.slice(1).replace(/_/g, ' ')).join(' ');
+}
+
+function formatActivityTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }

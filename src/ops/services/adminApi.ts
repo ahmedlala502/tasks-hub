@@ -1,4 +1,12 @@
-import type { OpsDepartment, OpsOffice, OpsRole, OpsUser } from '../auth/types';
+import {
+  getDepartmentFromMetadata,
+  getOfficeFromMetadata,
+  getRoleFromMetadata,
+  type OpsDepartment,
+  type OpsOffice,
+  type OpsRole,
+  type OpsUser,
+} from '../auth/types';
 import { supabase } from '../lib/supabase';
 
 type AdminApiUser = OpsUser;
@@ -112,6 +120,32 @@ async function invokeFunction<T>(action: string, payload?: Record<string, unknow
   }
 }
 
+function mapDirectoryRow(row: any): AdminApiUser {
+  return {
+    uid: row.uid,
+    email: row.email || '',
+    displayName: row.display_name || row.email?.split('@')[0] || 'Workspace User',
+    role: getRoleFromMetadata(row.role),
+    status: row.status === 'suspended' ? 'suspended' : 'active',
+    office: getOfficeFromMetadata(row.office),
+    department: getDepartmentFromMetadata(row.department),
+    title: row.title || 'Team Member',
+    timezone: row.timezone || 'Africa/Cairo',
+    createdAt: row.created_at ?? null,
+    lastSignInAt: row.last_sign_in_at ?? null,
+  };
+}
+
+async function listUsersFromDirectory(): Promise<AdminApiUser[]> {
+  const { data, error } = await supabase
+    .from('ops_user_directory' as any)
+    .select('uid,email,display_name,role,status,office,department,title,timezone,created_at,last_sign_in_at')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map(mapDirectoryRow);
+}
+
 async function createUserWithSignupFallback(payload: {
   name: string;
   email: string;
@@ -172,8 +206,42 @@ async function createUserWithSignupFallback(payload: {
   return createdUser;
 }
 
+async function updateUserWithDirectoryRpc(payload: {
+  id: string;
+  name?: string;
+  role?: OpsRole;
+  status?: 'active' | 'suspended';
+  office?: OpsOffice;
+  department?: OpsDepartment;
+  title?: string;
+}): Promise<AdminApiUser> {
+  const { data, error } = await (supabase as any).rpc('update_ops_user_account', {
+    p_id: payload.id,
+    p_name: payload.name ?? null,
+    p_role: payload.role ?? null,
+    p_status: payload.status ?? null,
+    p_office: payload.office ?? null,
+    p_department: payload.department ?? null,
+    p_title: payload.title ?? null,
+  });
+
+  if (error) throw error;
+  if (!data) throw new Error('Unable to update user profile.');
+  return mapDirectoryRow(data);
+}
+
 export const adminApi = {
   async listUsers(): Promise<AdminApiUser[]> {
+    try {
+      const users = await listUsersFromDirectory();
+      if (users.length > 0) {
+        writeUserCache(users);
+        return users;
+      }
+    } catch {
+      // The Edge Function remains a fallback for projects before the directory migration.
+    }
+
     try {
       const users = await invokeFunction<AdminApiUser[]>('listUsers');
       writeUserCache(users);
@@ -197,9 +265,16 @@ export const adminApi = {
   },
 
   async updateUser(payload: { id: string; name?: string; password?: string; role?: OpsRole; status?: 'active' | 'suspended'; office?: OpsOffice; department?: OpsDepartment; title?: string }) {
-    const user = await invokeFunction<AdminApiUser>('updateUser', payload);
-    upsertUserCache(user);
-    return user;
+    try {
+      const user = await invokeFunction<AdminApiUser>('updateUser', payload);
+      upsertUserCache(user);
+      return user;
+    } catch (error) {
+      if (!isFunctionUnavailable(error) || payload.password) throw error;
+      const user = await updateUserWithDirectoryRpc(payload);
+      upsertUserCache(user);
+      return user;
+    }
   },
 
   async deleteUser(id: string) {

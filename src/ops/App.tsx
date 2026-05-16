@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from './components/ui/sonner';
 import { canAccessPath, getHomePath } from './lib/access';
+import { dataService } from './services/dataService';
 import { supabaseAuth } from './services/supabaseAuth';
 import ErrorBoundary from '../components/ErrorBoundary';
 import type { OpsDepartment, OpsOffice, OpsRole, OpsUser } from './auth/types';
@@ -9,7 +10,6 @@ import type { OpsDepartment, OpsOffice, OpsRole, OpsUser } from './auth/types';
 import Dashboard from './pages/Dashboard';
 import MyDashboard from './pages/MyDashboard';
 import LiveOps from './pages/LiveOps';
-import AuditLogs from './pages/AuditLogs';
 import Admin from './pages/Admin';
 import Reporting from './pages/Reporting';
 import Tasks from './pages/Tasks';
@@ -58,7 +58,9 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
 
-    supabaseAuth.getSessionUser().then((sessionUser) => {
+    supabaseAuth.getSessionUser().then(async (sessionUser) => {
+      if (!mounted) return;
+      if (sessionUser) await dataService.initializeCloudWorkspace();
       if (!mounted) return;
       setUser(sessionUser);
       setRole(sessionUser?.role || null);
@@ -80,11 +82,28 @@ export default function App() {
 
   const login = async (email: string, password: string) => {
     const signedInUser = await supabaseAuth.signIn(email, password);
+    await dataService.initializeCloudWorkspace();
+    dataService.recordActivity({
+      action: 'user.login',
+      entityType: 'user',
+      entityId: signedInUser.uid,
+      summary: `${signedInUser.displayName} signed in`,
+      metadata: { email: signedInUser.email, role: signedInUser.role },
+    });
     setUser(signedInUser);
     setRole(signedInUser.role);
   };
 
   const logout = async () => {
+    if (user) {
+      dataService.recordActivity({
+        action: 'user.logout',
+        entityType: 'user',
+        entityId: user.uid,
+        summary: `${user.displayName} signed out`,
+        metadata: { email: user.email, role: user.role },
+      });
+    }
     await supabaseAuth.signOut();
     setUser(null);
     setRole(null);
@@ -92,6 +111,13 @@ export default function App() {
 
   const updateProfile = async (payload: { displayName: string; office: OpsOffice; department: OpsDepartment; title: string; timezone: string }) => {
     const updatedUser = await supabaseAuth.updateProfile(payload);
+    dataService.recordActivity({
+      action: 'user.profile_updated',
+      entityType: 'user',
+      entityId: updatedUser.uid,
+      summary: `${updatedUser.displayName} updated their profile`,
+      metadata: { office: updatedUser.office, department: updatedUser.department, title: updatedUser.title },
+    });
     setUser(updatedUser);
     setRole(updatedUser.role);
   };
@@ -130,7 +156,7 @@ export default function App() {
               <Route path="handover" element={allow('/handover', <Handover />)} />
               <Route path="online-users" element={allow('/online-users', <OnlineUsers />)} />
               <Route path="blockers" element={<Navigate to="/live-ops" replace />} />
-              <Route path="audit" element={allow('/audit', <AuditLogs />)} />
+              <Route path="audit" element={allow('/audit', <Navigate to="/settings?section=audit-log" replace />)} />
               <Route path="reporting" element={allow('/reporting', <Reporting />)} />
               <Route path="tasks" element={allow('/tasks', <Tasks />)} />
               <Route path="tasks/:bucket" element={allow('/tasks', <Tasks />)} />
