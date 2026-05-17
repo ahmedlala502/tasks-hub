@@ -9,8 +9,8 @@ if %errorlevel% neq 0 (
   exit /b 1
 )
 
-echo Deploying to Cloudflare Pages...
-call wrangler pages deploy dist --project-name=trygc-tasks-hub
+echo Deploying to Cloudflare Pages (production)...
+call npx wrangler pages deploy dist --project-name=trygc-tasks-hub
 
 echo Deployment complete!
 pause
