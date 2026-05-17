@@ -284,8 +284,8 @@ export default function DailyRoutines() {
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">
                 {selectedUser ? 'User Drill-Down' : 'Team Workspace'}
               </p>
-              <h1 className="font-condensed text-[26px] font-extrabold uppercase tracking-tight text-foreground">
-                {selectedUser ? selectedUser : 'Team Tasks Dashboard'}
+              <h1 className="font-condensed text-[28px] font-extrabold uppercase tracking-tight text-foreground">
+                {selectedUser ? selectedUser : 'People & Tasks'}
               </h1>
               <p className="mt-0.5 text-sm font-medium text-muted-foreground">
                 {selectedUser
