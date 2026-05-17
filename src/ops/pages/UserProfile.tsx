@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
   BarChart3,
   CheckCircle2,
@@ -87,6 +87,7 @@ function mapOpsUser(user: OpsUser): PerformanceUser {
 export default function UserProfile() {
   const { user, role, updateProfile, updatePassword } = useAuth();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [office, setOffice] = useState<OpsOffice>(user?.office || 'Egypt');
   const [department, setDepartment] = useState<OpsDepartment>(user?.department || 'Operations');
@@ -100,6 +101,11 @@ export default function UserProfile() {
   const [workspaceFilter, setWorkspaceFilter] = useState<'all' | 'operations' | 'community'>('all');
   const [teamFilter, setTeamFilter] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
+
+  useEffect(() => {
+    const targetUser = searchParams.get('user');
+    if (targetUser) setAgentFilter(targetUser);
+  }, [searchParams]);
 
   useEffect(() => {
     if (role !== 'master') return;
@@ -425,7 +431,7 @@ export default function UserProfile() {
 
           <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
             <PerformanceTable title="Teams" rows={filteredTeamRows} mode="team" onPick={(row) => setTeamFilter(row.team || 'all')} />
-            <PerformanceTable title="Agents" rows={filteredAgentRows} mode="agent" onPick={(row) => setAgentFilter(row.name)} />
+            <PerformanceTable title="Agents" rows={filteredAgentRows} mode="agent" onPick={(row) => setAgentFilter(row.name)} highlightName={agentFilter !== 'all' ? agentFilter : undefined} />
           </div>
         </section>
       )}
@@ -530,7 +536,7 @@ function PerformanceCard({ label, value, tone, icon: Icon }: { label: string; va
   );
 }
 
-function PerformanceTable({ title, rows, mode, onPick }: { title: string; rows: PerformanceRow[]; mode: 'team' | 'agent'; onPick: (row: PerformanceRow) => void }) {
+function PerformanceTable({ title, rows, mode, onPick, highlightName }: { title: string; rows: PerformanceRow[]; mode: 'team' | 'agent'; onPick: (row: PerformanceRow) => void; highlightName?: string }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-background">
       <div className="border-b border-border bg-muted/30 px-4 py-3">
@@ -540,7 +546,7 @@ function PerformanceTable({ title, rows, mode, onPick }: { title: string; rows: 
         {rows.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm font-medium text-muted-foreground">No performance rows match these filters.</div>
         ) : rows.slice(0, 12).map((row) => (
-          <button key={`${mode}-${row.name}`} onClick={() => onPick(row)} className="grid w-full gap-3 px-4 py-3 text-left hover:bg-muted/40 md:grid-cols-[1fr_5rem_5rem_5rem_5rem] md:items-center">
+          <button key={`${mode}-${row.name}`} onClick={() => onPick(row)} className={cn('grid w-full gap-3 px-4 py-3 text-left hover:bg-muted/40 md:grid-cols-[1fr_5rem_5rem_5rem_5rem] md:items-center', highlightName && row.name === highlightName ? 'bg-gc-orange/5 ring-1 ring-inset ring-gc-orange/30' : '')}>
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-foreground">{row.name}</p>
               <p className="truncate text-xs font-medium text-muted-foreground">{row.team || row.title || 'Workspace'}</p>

@@ -173,11 +173,11 @@ export default function OnlineUsers() {
               <p className="text-sm font-semibold">No online activity matches this filter.</p>
             </div>
           ) : visibleRows.map((row) => (
-            <Link key={row.name} to="/online-users" className="grid gap-4 p-4 xl:grid-cols-[1.1fr_0.75fr_0.85fr_0.75fr_0.75fr] xl:items-center hover:bg-accent/40 transition-colors">
+            <Link key={row.name} to={`/performance?user=${encodeURIComponent(row.name)}`} className="grid gap-4 p-4 xl:grid-cols-[1.1fr_0.75fr_0.85fr_0.75fr_0.75fr] xl:items-center hover:bg-accent/40 transition-colors">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className={cn('h-2.5 w-2.5 rounded-full', row.status === 'online' ? 'bg-emerald-500' : row.status === 'idle' ? 'bg-amber-500' : 'bg-muted-foreground/40')} />
-                  <Link to="/profile" className="truncate text-sm font-extrabold text-foreground hover:text-gc-orange transition-colors" onClick={(e) => e.stopPropagation()}>{row.name}</Link>
+                  <span className="truncate text-sm font-extrabold text-foreground hover:text-gc-orange transition-colors">{row.name}</span>
                 </div>
                 <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">{row.email || row.rosterSource || 'Workspace activity only'}</p>
                 {row.credentialEmail && (
@@ -233,9 +233,9 @@ export default function OnlineUsers() {
               </thead>
               <tbody className="divide-y divide-border">
                 {visibleRosterEntries.map((employee) => (
-                  <tr key={`${employee.city}-${employee.name}`} className="hover:bg-accent/40">
+                  <tr key={`${employee.city}-${employee.name}`} className="hover:bg-accent/40 cursor-pointer" onClick={() => window.location.href = `/performance?user=${encodeURIComponent(employee.name)}`}>
                     <td className="sticky left-0 z-10 bg-card px-4 py-3">
-                      <Link to="/profile" className="block">
+                      <Link to={`/performance?user=${encodeURIComponent(employee.name)}`} onClick={e => e.stopPropagation()} className="block">
                         <p className="text-sm font-black text-foreground hover:text-gc-orange transition-colors">{employee.name}</p>
                       </Link>
                       <p className="text-[11px] font-semibold text-muted-foreground">{employee.source}</p>

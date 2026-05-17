@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Clock3, Cloud, Download, Edit3, FileSpreadsheet, FolderKanban, Plus, Save, Search, Trash2, X } from 'lucide-react';
+import { ChevronDown, Clock3, Cloud, Copy, Download, Edit3, FileSpreadsheet, FolderKanban, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { CampaignStage, STAGE_NAMES } from '../constants';
@@ -237,6 +237,13 @@ export default function CampaignList() {
     notify('Campaign Task Deleted', `"${task.title}" removed`, 'red', '/campaigns');
   };
 
+  const duplicateTask = (task: Task) => {
+    const now = Date.now();
+    const copy: Task = { ...task, id: `campaign-task-${now}`, title: `${task.title} (copy)`, createdAt: now, updatedAt: now, completed: false, completedAt: undefined };
+    setTasks(dataService.addTask(copy));
+    notify('Task Duplicated', `"${copy.title}" added`, 'orange', '/campaigns');
+  };
+
   const deleteCampaign = async (campaign: Campaign) => {
     if (!isMaster) return;
     const localCampaigns = dataService.deleteCampaign(campaign.id);
@@ -421,6 +428,7 @@ export default function CampaignList() {
                                   </div>
                                   <div className="flex shrink-0 gap-1">
                                     {canEditTask(task) && <button onClick={() => openTask(item.campaign, task, laneName)} className="icon-btn" title="Edit task"><Edit3 size={13} /></button>}
+                                    <button onClick={() => duplicateTask(task)} className="icon-btn" title="Duplicate task"><Copy size={13} /></button>
                                     {isMaster && <button onClick={() => deleteTask(task)} className="icon-btn text-red-500" title="Delete task"><Trash2 size={13} /></button>}
                                   </div>
                                 </div>
