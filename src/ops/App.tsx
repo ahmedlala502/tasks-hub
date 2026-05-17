@@ -32,6 +32,7 @@ const CampaignSetup = lazy(() => import('./pages/CampaignSetup'));
 const CampaignClosure = lazy(() => import('./pages/CampaignClosure'));
 const InfluencerList = lazy(() => import('./pages/InfluencerList'));
 const InfluencerProfile = lazy(() => import('./pages/InfluencerProfile'));
+const LiveReportPage = lazy(() => import('./pages/LiveReportPage'));
 
 interface AuthContextType {
   user: OpsUser | null;
@@ -187,6 +188,9 @@ export default function App() {
                 <Route path="blockers" element={<Navigate to="/live-ops" replace />} />
                 <Route path="audit" element={allow('/audit', <Navigate to="/settings?section=audit-log" replace />)} />
                 <Route path="reporting" element={allow('/reporting', <Reporting />)} />
+                <Route path="system-live-report" element={allow('/system-live-report', <LiveReportPage reportKey="system" />)} />
+                <Route path="dropbox-live-report" element={allow('/dropbox-live-report', <LiveReportPage reportKey="dropbox" />)} />
+                <Route path="try-dashboard" element={<Navigate to="/system-live-report" replace />} />
                 <Route path="tasks" element={allow('/tasks', <Tasks />)} />
                 <Route path="tasks/:bucket" element={allow('/tasks', <Tasks />)} />
                 <Route path="tasks-daily-routines" element={allow('/tasks-daily-routines', <DailyRoutines />)} />

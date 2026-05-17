@@ -8,7 +8,7 @@ import {
   Sun, Moon, RefreshCw, Download,
   ChevronRight, FolderKanban,
   Search, X, SlidersHorizontal, Check, Clock, CircleAlert, CheckCircle2, UserRound,
-  Activity, ClipboardList, Trophy, Users
+  Activity, ClipboardList, Trophy, Database
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { notificationService, AppNotification } from '../services/notificationService';
@@ -35,6 +35,8 @@ const OPS_NAV: NavItem[] = [
   { icon: CheckSquare,     label: 'Tasks',          path: '/tasks' },
   { icon: Trophy,          label: 'Updates',        path: '/updates' },
   { icon: BarChart3,       label: 'Reporting',      path: '/reporting' },
+  { icon: BarChart3,       label: 'System live report',  path: '/system-live-report' },
+  { icon: Database,        label: 'Dropbox live report', path: '/dropbox-live-report' },
 ];
 
 const SYSTEM_NAV: NavItem[] = [
@@ -76,6 +78,8 @@ function getPageLabel(pathname: string): string {
   if (pathname.startsWith('/campaigns/')) return 'Campaign Detail';
   if (pathname === '/campaigns') return 'Campaigns';
   if (pathname === '/performance') return 'Performance';
+  if (pathname === '/try-dashboard' || pathname === '/system-live-report') return 'System live report';
+  if (pathname === '/dropbox-live-report') return 'Dropbox live report';
   if (pathname === '/influencers') return 'Influencers';
   if (pathname.startsWith('/influencers/')) return 'Influencer Profile';
   return 'Dashboard';

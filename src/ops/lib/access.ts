@@ -16,6 +16,9 @@ const OPERATIONS_PATHS = new Set([
   '/analytics',
   '/assets',
   '/reporting',
+  '/try-dashboard',
+  '/system-live-report',
+  '/dropbox-live-report',
   '/performance',
   '/templates',
 ]);

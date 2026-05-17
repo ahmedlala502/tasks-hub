@@ -14,6 +14,15 @@ describe('ops access rules', () => {
     expect(canAccessPath('community', '/online-users')).toBe(true);
   });
 
+  it('lets signed-in users open live report pages', () => {
+    expect(canAccessPath('master', '/system-live-report')).toBe(true);
+    expect(canAccessPath('operations', '/system-live-report')).toBe(true);
+    expect(canAccessPath('community', '/system-live-report')).toBe(true);
+    expect(canAccessPath('master', '/dropbox-live-report')).toBe(true);
+    expect(canAccessPath('operations', '/dropbox-live-report')).toBe(true);
+    expect(canAccessPath('community', '/dropbox-live-report')).toBe(true);
+  });
+
   it('keeps system administration master-only', () => {
     expect(canAccessPath('master', '/admin')).toBe(true);
     expect(canAccessPath('operations', '/admin')).toBe(false);
