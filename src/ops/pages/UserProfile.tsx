@@ -214,6 +214,12 @@ export default function UserProfile() {
     return true;
   });
 
+  const targetUserName = searchParams.get('user');
+  const targetAgentRow = targetUserName ? insights.agentRows.find(r => r.name === targetUserName) : null;
+  const targetRosterUser = targetUserName ? roster.find(r => r.name === targetUserName) : null;
+  const viewedName = targetUserName || user.displayName;
+  const viewedSummary = targetAgentRow?.summary || personal;
+
   const saveProfile = async () => {
     if (!displayName.trim()) return;
     setSaving(true);
@@ -264,16 +270,24 @@ export default function UserProfile() {
               <UserRound className="h-7 w-7" />
             </div>
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">Performance Profile</p>
-              <h2 className="text-2xl font-extrabold text-foreground">{isPerformancePage ? "TRYGC KPI's Performance Matrix" : user.displayName}</h2>
-              <p className="text-xs font-semibold text-muted-foreground">{user.email} - credentials handled by Supabase Auth</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">
+                {targetUserName ? 'Team Member Profile' : 'Performance Profile'}
+              </p>
+              <h2 className="text-2xl font-extrabold text-foreground">
+                {targetUserName ? viewedName : isPerformancePage ? "TRYGC KPI's Performance Matrix" : user.displayName}
+              </h2>
+              <p className="text-xs font-semibold text-muted-foreground">
+                {targetUserName
+                  ? `${targetRosterUser?.role || targetAgentRow?.role || 'Team Member'} · ${targetRosterUser?.office || targetAgentRow?.team || 'Workspace'}`
+                  : `${user.email} - credentials handled by Supabase Auth`}
+              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
-            <Metric label="Role" value={user.role} />
-            <Metric label="Office" value={user.office} />
-            <Metric label="Done" value={String(personal.done)} />
-            <Metric label="Pending" value={String(personal.pending)} />
+            <Metric label="Role" value={targetRosterUser?.role || user.role} />
+            <Metric label="Office" value={targetRosterUser?.office || user.office} />
+            <Metric label="Done" value={String(viewedSummary.done)} />
+            <Metric label="Pending" value={String(viewedSummary.pending)} />
           </div>
         </div>
       </section>
@@ -331,14 +345,14 @@ export default function UserProfile() {
       )}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <PerformanceCard label="Tasks Done" value={personal.done} tone="text-emerald-600" icon={CheckCircle2} />
-        <PerformanceCard label="In Progress" value={personal.inProgress} tone="text-gc-orange" icon={Clock3} />
-        <PerformanceCard label="Pending" value={personal.pending} tone="text-amber-600" icon={ListChecks} />
-        <PerformanceCard label="Blocked" value={personal.blocked} tone="text-red-600" icon={CircleAlert} />
-        <PerformanceCard label="Campaigns" value={personal.campaigns} tone="text-purple-600" icon={Layers3} />
-        <PerformanceCard label="Creators" value={personal.creators} tone="text-sky-600" icon={UsersRound} />
-        <PerformanceCard label="Handovers" value={personal.handovers} tone="text-indigo-600" icon={ShieldCheck} />
-        <PerformanceCard label="All Tasks" value={personal.tasks} tone="text-foreground" icon={BarChart3} />
+        <PerformanceCard label="Tasks Done" value={viewedSummary.done} tone="text-emerald-600" icon={CheckCircle2} />
+        <PerformanceCard label="In Progress" value={viewedSummary.inProgress} tone="text-gc-orange" icon={Clock3} />
+        <PerformanceCard label="Pending" value={viewedSummary.pending} tone="text-amber-600" icon={ListChecks} />
+        <PerformanceCard label="Blocked" value={viewedSummary.blocked} tone="text-red-600" icon={CircleAlert} />
+        <PerformanceCard label="Campaigns" value={viewedSummary.campaigns} tone="text-purple-600" icon={Layers3} />
+        <PerformanceCard label="Creators" value={viewedSummary.creators} tone="text-sky-600" icon={UsersRound} />
+        <PerformanceCard label="Handovers" value={viewedSummary.handovers} tone="text-indigo-600" icon={ShieldCheck} />
+        <PerformanceCard label="All Tasks" value={viewedSummary.tasks} tone="text-foreground" icon={BarChart3} />
       </section>
 
       {role === 'master' && (
@@ -436,7 +450,7 @@ export default function UserProfile() {
         </section>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+      {!targetUserName && <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
         <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
           <div className="mb-5 flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-gc-orange" />
@@ -505,7 +519,7 @@ export default function UserProfile() {
             </div>
           )}
         </section>
-      </div>
+      </div>}
     </div>
   );
 }
