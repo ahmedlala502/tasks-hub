@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+build/
+dist/
+output/
+coverage/
+
+# Environment
+.env*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# IDE / AI agent configs (don't track in source)
+.vercel/
+.adal/
+.claude/
+.claude-launcher/
+.codeartsdoer/
+.codebuddy/
+.codemaker/
+.codestudio/
+.commandcode/
+.continue/
+.cortex/
+.crush/
+.devin/
+.factory/
+.forge/
+.goose/
+.hermes/
+.iflow/
+.junie/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.rovodev/
+.tabnine/
+.trae/
+.vibe/
+.windsurf/
+.wrangler/
+.zencoder/
+
+supabase/.temp/
+.vercel

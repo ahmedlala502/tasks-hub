@@ -1,0 +1,45 @@
+name,email,role,team,office,city,shift,password,status
+Mohamed Atia,m.atia@trygc.com,Operation Manager,Operation Manager,Egypt,Cairo,Morning,Admin123,active
+Mohamed ayman,m.ayman@trygc.com,Team leader,Team leader,Egypt,Cairo,Morning,Admin123,active
+Israa,israa@trygc.com,Whatsapp,Whatsapp,Egypt,Cairo,Morning,Admin123,active
+Ziad Ahmed,z.ahmed@trygc.com,Coordination,Coordination,Egypt,Cairo,Night,Admin123,active
+Adel,adel@trygc.com,Lead generation,Lead generation,Egypt,Cairo,Night,Admin123,active
+Adham Ragab,a.ragab@trygc.com,Coordination,Coordination,Egypt,Cairo,Overnight,Admin123,active
+Ahmed Ehab,a.ehab@trygc.com,Whatsapp - Activation,Whatsapp - Activation,Egypt,Cairo,Overnight,Admin123,active
+Mohamed Mahmoud,m.mahmoud@trygc.com,Whatsapp - Activation,Whatsapp - Activation,Egypt,Cairo,Morning,Admin123,active
+Mostafa Mohamed,m.mohamed@trygc.com,Whatsapp,Whatsapp,Egypt,Cairo,Morning,Admin123,active
+Yasser,yasser@trygc.com,Whatsapp,Whatsapp,Egypt,Cairo,Morning,Admin123,active
+Omar Ibrahim,o.ibrahim@trygc.com,Coordination,Coordination,Egypt,Cairo,Overnight,Admin123,active
+Nesma Ashraf,n.ashraf@trygc.com,On Boarding,On Boarding,Egypt,Mansoura,Morning,Admin123,active
+Yasmine,yasmine@trygc.com,On Boarding,On Boarding,Egypt,Mansoura,Morning,Admin123,active
+Nourhan Kamal,n.kamal@trygc.com,On Boarding,On Boarding,Egypt,Mansoura,Morning,Admin123,active
+Mahmoud Wael,m.wael@trygc.com,Coordination,Coordination,Egypt,Mansoura,Morning,Admin123,active
+Manar Hossam,m.hossam@trygc.com,Coverage,Coverage,Egypt,Mansoura,Morning,Admin123,active
+Hoda Ahmed,h.ahmed@trygc.com,On Boarding,On Boarding,Egypt,Mansoura,Morning,Admin123,active
+Mariem Essam,m.essam@trygc.com,Coverage,Coverage,Egypt,Mansoura,Morning,Admin123,active
+Madonna,madonna@trygc.com,Whatsapp Specialist,Whatsapp Specialist,Egypt,Mansoura,Morning,Admin123,active
+Donia,donia@trygc.com,Whatsapp Specialist,Whatsapp Specialist,Egypt,Mansoura,Morning,Admin123,active
+Mohamed Salah,m.salah@trygc.com,On Boarding,On Boarding,Egypt,Mansoura,Between,Admin123,active
+Khaled Ayman,k.ayman@trygc.com,Coordination,Coordination,Egypt,Mansoura,Between,Admin123,active
+Maged Yasser,m.yasser@trygc.com,Coverage,Coverage,Egypt,Mansoura,Between,Admin123,active
+ElAmir Ahmed,e.ahmed@trygc.com,Joker,Joker,Egypt,Mansoura,Night,Admin123,active
+Ahmed Maher,a.maher@trygc.com,Elite,Elite,Egypt,Mansoura,Between,Admin123,active
+Nour Zein,n.zein@trygc.com,Elite,Elite,Egypt,Mansoura,Between,Admin123,active
+Mohamed Hasan,m.hasan@trygc.com,Whatsapp Specialist,Whatsapp Specialist,Egypt,Mansoura,Between,Admin123,active
+Mohamed Gamal Elsayed,m.gamal@trygc.com,Whatsapp Specialist,Whatsapp Specialist,Egypt,Mansoura,Between,Admin123,active
+Adham,adham@trygc.com,Coordination,Coordination,Egypt,Mansoura,Morning,Admin123,active
+Ahmed AbdulRizk,a.abdulrizk@trygc.com,Coverage,Coverage,Egypt,Mansoura,Night,Admin123,active
+Islam Mohamed,i.mohamed@trygc.com,Coverage,Coverage,Egypt,Mansoura,Night,Admin123,active
+Mahmoud Nassef,m.nassef@trygc.com,Elite,Elite,Egypt,Mansoura,Night,Admin123,active
+shouq_ksa,shouq_ksa@trygc.com,Community Access,Coordination,KSA,Cairo,Morning,Admin123,active
+sara_ksa,sara_ksa@trygc.com,Community Access,Coordination,KSA,Cairo,Morning,Admin123,active
+aljazi_ksa,aljazi_ksa@trygc.com,Community Access,Coordination,KSA,Cairo,Morning,Admin123,active
+Lamia,lamiaa@trygc.com,Master Admin,Operations,Egypt,Cairo,Morning,Admin123,active
+M.Tarek,m.tarek@trygc.com,Community Access,Coordination,KSA,Cairo,Morning,Admin123,active
+Ahmed Mahdi,mahdi@trygc.com,Community Access,Coordination,KSA,Cairo,Morning,Admin123,active
+Adel Hammad,adel@grand-community.com,Master Admin,Operations,Egypt,Cairo,Morning,Admin123,active
+Sabry,sabry@trygc.com,Master Admin,Operations,Egypt,Cairo,Morning,Admin123,active
+Ismail,a.ismail@trygc.com,Master Admin,Operations,Egypt,Cairo,Morning,Admin123,active
+Shahd,shahd@trygc.com,Community Access,Coordination,KSA,Cairo,Morning,Admin123,active
+Nada Seliman,nada@trygc.com,Operations Access,Operations,Egypt,Cairo,Morning,Admin123,active
+admin,admin@trygc.com,Master Admin,Operations,Egypt,Cairo,Morning,Admin123,active

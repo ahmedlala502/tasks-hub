@@ -1,0 +1,177 @@
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
+
+# Trygc Hub Manager
+
+A comprehensive operations management platform for coordinating multi-shift, multi-region teams across global offices.
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Node.js 18+ 
+- npm or yarn
+- Supabase CLI (for edge functions)
+
+### 1. Install Dependencies
+```bash
+npm install
+```
+
+### 2. Configure Environment
+Copy `.env` and ensure these variables are set:
+```env
+VITE_SUPABASE_URL=https://waicnakckbpljtiikups.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
+VITE_SUPABASE_ANON_KEY=your_anon_key
+VITE_MASTER_ADMIN_EMAIL=admin@trygc.com
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+### 3. Deploy Edge Functions (Required for User Management)
+```bash
+# Windows
+deploy-edge-functions.bat
+
+# Mac/Linux
+chmod +x deploy-edge-functions.sh
+./deploy-edge-functions.sh
+```
+
+**Important:** You need to set the service role key when prompted. Get it from:
+https://supabase.com/dashboard/project/waicnakckbpljtiikups/settings/api
+
+### 4. Run the App
+```bash
+npm run dev
+```
+
+The app will be available at: http://localhost:3000
+
+---
+
+## 📚 Documentation
+
+- **[Edge Function Setup](EDGE_FUNCTION_SETUP.md)** - Fix "Failed to connect to edge functions" error
+- **[Supabase Configuration](SUPABASE_SETUP_COMPLETE.md)** - Database setup and configuration
+- **[Technology Stack](.kiro/steering/tech.md)** - Full tech stack details
+- **[Project Structure](.kiro/steering/structure.md)** - Code organization
+- **[Product Overview](.kiro/steering/product.md)** - Features and capabilities
+
+---
+
+## 🔧 Common Issues
+
+### "Failed to connect to edge functions"
+**Solution:** Deploy the edge functions
+```bash
+deploy-edge-functions.bat  # Windows
+./deploy-edge-functions.sh # Mac/Linux
+```
+See [EDGE_FUNCTION_SETUP.md](EDGE_FUNCTION_SETUP.md) for detailed instructions.
+
+### Check System Status
+```bash
+check-edge-functions.bat  # Windows
+```
+
+---
+
+## 💾 Data Persistence
+
+Your data is 100% safe and persisted in:
+- ✅ **Supabase PostgreSQL** - Primary database (automatically backed up)
+- ✅ **Local Storage** - Browser cache for offline access
+- ✅ **Export/Import** - Manual backup via User Manager
+
+**Data will NOT be lost** even if:
+- You close the browser
+- You restart the server
+- Edge functions are not deployed (fallback mode works)
+
+---
+
+## 🎯 Key Features
+
+- **Task Management** - Track tasks across offices, teams, and shifts
+- **Shift Handovers** - Structured handover flow with acknowledgment tracking
+- **Office Registry** - Manage regional operating hubs
+- **Team Performance** - Monitor member-level metrics
+- **AI Copilot** - Operational intelligence assistant
+- **User Management** - Role-based access control (requires edge functions)
+- **Activity Auditing** - Real-time audit log (master-only)
+- **Reporting** - Statistical analysis and performance reports
+
+---
+
+## 🔐 User Roles
+
+- **Master** - Full system access including user management
+- **Admin** - Team and office management
+- **Member** - Standard task and handover operations
+
+---
+
+## 🛠️ Development
+
+### Available Scripts
+
+```bash
+npm run dev          # Start dev server (port 3000)
+npm run build        # Build for production
+npm run preview      # Preview production build
+npm run lint         # Type check with TypeScript
+npm test             # Run tests
+npm run clean        # Remove dist folder
+```
+
+### AI Proxy Server
+```bash
+npm run ai-proxy     # Start AI proxy (port 8787)
+```
+
+---
+
+## 🚢 Deployment
+
+### Cloudflare Pages
+```bash
+# Windows
+deploy-cloudflare.bat
+
+# Mac/Linux
+./deploy-cloudflare.sh
+```
+
+See [CLOUDFLARE_DEPLOYMENT.md](CLOUDFLARE_DEPLOYMENT.md) for details.
+
+---
+
+## 📞 Support
+
+### Quick Checks
+1. ✅ Dependencies installed? `npm install`
+2. ✅ Environment configured? Check `.env` file
+3. ✅ Edge functions deployed? Run `check-edge-functions.bat`
+4. ✅ Supabase healthy? Check https://status.supabase.com
+
+### Documentation
+- [Edge Function Setup](EDGE_FUNCTION_SETUP.md)
+- [Supabase Setup](SUPABASE_SETUP_COMPLETE.md)
+- [Cloudflare Deployment](CLOUDFLARE_DEPLOYMENT.md)
+
+---
+
+## 📊 Project Status
+
+- **Database**: PostgreSQL 17.6 on Supabase ✅
+- **Frontend**: React 19 + Vite 6 ✅
+- **Backend**: Supabase + Edge Functions ✅
+- **Deployment**: Cloudflare Pages ✅
+- **Status**: Production Ready ✅
+
+---
+
+**Built with**: React, TypeScript, Tailwind CSS, Supabase, Vite  
+**Maintained by**: Trygc Team  
+**License**: Proprietary

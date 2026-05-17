@@ -1,0 +1,9 @@
+{
+    "nextflow.telemetry.enabled": true,
+    "nextflow.completion.extended": true,
+    "nextflow.debug": true,
+    "nextflow.formatting.harshilAlignment": true,
+    "nextflow.formatting.maheshForm": true,
+    "nextflow.formatting.sortDeclarations": true,
+    "nextflow.typeChecking": true
+}
