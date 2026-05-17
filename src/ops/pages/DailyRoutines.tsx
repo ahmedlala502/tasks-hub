@@ -1,5 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle2, ClipboardList, Clock3, Edit3, Handshake, Plus, Save, Search, Users, X } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  ClipboardList,
+  Clock3,
+  Edit3,
+  Handshake,
+  Loader2,
+  Plus,
+  Save,
+  Search,
+  Users,
+  X,
+  Zap,
+} from 'lucide-react';
 import { useAuth } from '../App';
 import { dataService } from '../services/dataService';
 import { canEditTaskRecord } from '../lib/workspace';
@@ -46,13 +62,6 @@ type UserStats = {
   completionRate: number;
 };
 
-const STATUS_STYLES: Record<string, string> = {
-  Done: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600',
-  'In Progress': 'border-blue-500/20 bg-blue-500/10 text-blue-600',
-  Pending: 'border-amber-500/20 bg-amber-500/10 text-amber-600',
-  Blocked: 'border-red-500/20 bg-red-500/10 text-red-600',
-};
-
 function draftFromTask(task: Task): TaskDraft {
   return {
     id: task.id,
@@ -82,7 +91,7 @@ function collectUserNames(tasks: Task[], handovers: Handover[], platformUsers: s
 
 function getUserStats(name: string, tasks: Task[], handovers: Handover[]): UserStats {
   const userTasks = tasks.filter(t => t.ownerId?.toLowerCase() === name.toLowerCase());
-  const done = userTasks.filter(t => t.completed).length;
+  const done = userTasks.filter(t => getOperationalTaskStatus(t) === 'Done').length;
   const inProgress = userTasks.filter(t => getOperationalTaskStatus(t) === 'In Progress').length;
   const pending = userTasks.filter(t => getOperationalTaskStatus(t) === 'Pending').length;
   const blocked = userTasks.filter(t => getOperationalTaskStatus(t) === 'Blocked').length;
@@ -105,6 +114,22 @@ function getUserStats(name: string, tasks: Task[], handovers: Handover[]): UserS
   };
 }
 
+const STATUS_ORDER = ['Blocked', 'In Progress', 'Pending', 'Done'] as const;
+
+const STATUS_META: Record<string, { label: string; bg: string; text: string; border: string; dot: string }> = {
+  Done:        { label: 'Done',        bg: 'bg-emerald-50 dark:bg-emerald-900/10', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800', dot: 'bg-emerald-500' },
+  'In Progress':{ label: 'In Progress', bg: 'bg-blue-50 dark:bg-blue-900/10',     text: 'text-blue-700 dark:text-blue-300',       border: 'border-blue-200 dark:border-blue-800',       dot: 'bg-blue-500'    },
+  Pending:     { label: 'Pending',      bg: 'bg-amber-50 dark:bg-amber-900/10',   text: 'text-amber-700 dark:text-amber-300',     border: 'border-amber-200 dark:border-amber-800',     dot: 'bg-amber-500'   },
+  Blocked:     { label: 'Blocked',      bg: 'bg-red-50 dark:bg-red-900/10',       text: 'text-red-700 dark:text-red-300',         border: 'border-red-200 dark:border-red-800',         dot: 'bg-red-500'     },
+};
+
+const PRIORITY_META: Record<string, { label: string; bg: string; text: string; border: string }> = {
+  Critical: { label: 'Critical', bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200'    },
+  High:     { label: 'High',     bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
+  Medium:   { label: 'Medium',   bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200'  },
+  Low:      { label: 'Low',      bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200'  },
+};
+
 export default function DailyRoutines() {
   const { role, user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>(dataService.getTasks());
@@ -115,6 +140,7 @@ export default function DailyRoutines() {
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [detailTab, setDetailTab] = useState<'tasks' | 'handovers'>('tasks');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   useEffect(() => {
     let alive = true;
@@ -138,9 +164,12 @@ export default function DailyRoutines() {
     return stats;
   }, [allUserNames, tasks, handovers]);
 
-  const filteredStats = useMemo(() => {
-    return filteredUserNames.map(n => allStats.get(n.toLowerCase())!).sort((a, b) => b.totalTasks - a.totalTasks);
-  }, [filteredUserNames, allStats]);
+  const filteredStats = useMemo(() =>
+    filteredUserNames
+      .map(n => allStats.get(n.toLowerCase())!)
+      .sort((a, b) => b.totalTasks - a.totalTasks),
+    [filteredUserNames, allStats],
+  );
 
   const selectedStats = selectedUser ? allStats.get(selectedUser.toLowerCase()) : null;
 
@@ -149,10 +178,17 @@ export default function DailyRoutines() {
     return tasks
       .filter(t => t.ownerId?.toLowerCase() === selectedUser.toLowerCase())
       .sort((a, b) => {
-        if (a.completed !== b.completed) return a.completed ? 1 : -1;
+        const ao = STATUS_ORDER.indexOf(getOperationalTaskStatus(a) as typeof STATUS_ORDER[number]);
+        const bo = STATUS_ORDER.indexOf(getOperationalTaskStatus(b) as typeof STATUS_ORDER[number]);
+        if (ao !== bo) return ao - bo;
         return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt);
       });
   }, [selectedUser, tasks]);
+
+  const filteredDetailTasks = useMemo(() => {
+    if (statusFilter === 'all') return selectedUserTasks;
+    return selectedUserTasks.filter(t => getOperationalTaskStatus(t) === statusFilter);
+  }, [selectedUserTasks, statusFilter]);
 
   const selectedUserHandovers = useMemo(() => {
     if (!selectedUser) return [];
@@ -160,7 +196,7 @@ export default function DailyRoutines() {
       (h.assignFrom || []).some(n => n.toLowerCase() === selectedUser.toLowerCase()) ||
       (h.assignTo || []).some(n => n.toLowerCase() === selectedUser.toLowerCase()) ||
       h.outgoingLead?.toLowerCase() === selectedUser.toLowerCase() ||
-      h.incomingLead?.toLowerCase() === selectedUser.toLowerCase()
+      h.incomingLead?.toLowerCase() === selectedUser.toLowerCase(),
     );
   }, [selectedUser, handovers]);
 
@@ -172,22 +208,23 @@ export default function DailyRoutines() {
   const canEditTask = (task: Task) => canEditTaskRecord(role, user?.displayName, task);
 
   const totals = useMemo(() => {
-    let totalUsers = 0, totalTasks = 0, totalDone = 0, totalBlocked = 0;
+    let totalTasks = 0, totalDone = 0, totalInProgress = 0, totalPending = 0, totalBlocked = 0;
     filteredStats.forEach(s => {
-      totalUsers++;
       totalTasks += s.totalTasks;
       totalDone += s.doneTasks;
+      totalInProgress += s.inProgressTasks;
+      totalPending += s.pendingTasks;
       totalBlocked += s.blockedTasks;
     });
-    return { totalUsers, totalTasks, totalDone, totalBlocked };
+    return { totalUsers: filteredStats.length, totalTasks, totalDone, totalInProgress, totalPending, totalBlocked };
   }, [filteredStats]);
 
   const saveTask = () => {
     if (!draft?.title.trim()) return;
     const now = Date.now();
-    const existing = draft.id ? tasks.find((task) => task.id === draft.id) : undefined;
+    const existing = draft.id ? tasks.find(t => t.id === draft.id) : undefined;
     if (existing && !canEditTask(existing)) {
-      notify('View Only', 'Only the assigned user or Master can edit this routine task.', 'orange', '/daily-routines');
+      notify('View Only', 'Only the assigned user or Master can edit this task.', 'orange', '/daily-routines');
       setDraft(null);
       return;
     }
@@ -229,295 +266,508 @@ export default function DailyRoutines() {
   };
 
   return (
-    <div className="mx-auto max-w-[1360px] space-y-6 pb-12">
-      <section className="rounded-xl border border-border bg-card p-6">
+    <div className="mx-auto max-w-[1400px] space-y-6 pb-12">
+
+      {/* ── Page header ── */}
+      <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-gc-orange">Team Workspace</p>
-            <h2 className="text-2xl font-extrabold tracking-tight text-foreground">
-              {selectedUser ? (
-                <span className="inline-flex items-center gap-3">
-                  <button onClick={() => { setSelectedUser(null); setDetailTab('tasks'); }} className="inline-flex items-center gap-1.5 text-sm font-bold text-gc-orange hover:underline">
-                    <ArrowLeft size={16} /> Back
-                  </button>
-                  <span className="border-l border-border pl-3">{selectedUser}</span>
-                </span>
-              ) : (
-                'Team Tasks Dashboard'
-              )}
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {selectedUser
-                ? `Tasks and handovers assigned to ${selectedUser}`
-                : 'User widgets with task counts, handovers, and drill-down details.'}
-            </p>
+          <div className="flex items-center gap-4">
+            {selectedUser && (
+              <button
+                onClick={() => { setSelectedUser(null); setDetailTab('tasks'); setStatusFilter('all'); }}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              >
+                <ArrowLeft size={16} />
+              </button>
+            )}
+            <div>
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">
+                {selectedUser ? 'User Drill-Down' : 'Team Workspace'}
+              </p>
+              <h1 className="font-condensed text-[26px] font-extrabold uppercase tracking-tight text-foreground">
+                {selectedUser ? selectedUser : 'Team Tasks Dashboard'}
+              </h1>
+              <p className="mt-0.5 text-sm font-medium text-muted-foreground">
+                {selectedUser
+                  ? `All tasks and handovers assigned to ${selectedUser}`
+                  : 'Per-user task widgets — click any card to drill into their work.'}
+              </p>
+            </div>
           </div>
           {!selectedUser && (
-            <button onClick={() => setDraft({ ...EMPTY_DRAFT, ownerId: assignmentOptions[0] || '', campaignId: campaigns[0]?.name || '' })} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-xs font-bold text-white hover:bg-gc-orange/90">
-              <Plus size={15} /> Add task
+            <button
+              onClick={() => setDraft({ ...EMPTY_DRAFT, ownerId: assignmentOptions[0] || '', campaignId: campaigns[0]?.name || '' })}
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-gc-orange px-4 py-2.5 text-xs font-extrabold uppercase tracking-wide text-white hover:bg-gc-orange/90"
+            >
+              <Plus size={14} /> Add Task
             </button>
           )}
         </div>
       </section>
 
+      {/* ── OVERVIEW: summary metrics + grid ── */}
       {!selectedUser ? (
         <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-            <Metric title="Team Members" value={totals.totalUsers} icon={Users} />
-            <Metric title="Total Tasks" value={totals.totalTasks} icon={ClipboardList} />
-            <Metric title="Completed" value={totals.totalDone} icon={CheckCircle2} tone="green" />
-            <Metric title="Blocked" value={totals.totalBlocked} icon={Clock3} tone="red" />
-            <Metric title="Handovers" value={handovers.length} icon={Handshake} tone="purple" />
+          {/* Summary bar */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <SummaryTile label="Members" value={totals.totalUsers} color="text-gc-orange" icon={Users} />
+            <SummaryTile label="All Tasks" value={totals.totalTasks} color="text-foreground" icon={ClipboardList} />
+            <SummaryTile label="Done" value={totals.totalDone} color="text-emerald-600" icon={CheckCircle2} />
+            <SummaryTile label="In Progress" value={totals.totalInProgress} color="text-blue-600" icon={Loader2} />
+            <SummaryTile label="Pending" value={totals.totalPending} color="text-amber-600" icon={Clock3} />
+            <SummaryTile label="Blocked" value={totals.totalBlocked} color="text-red-600" icon={AlertCircle} />
           </div>
 
-          <section className="rounded-xl border border-border bg-card p-4">
-            <div className="relative">
-              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input className="settings-input w-full pl-9" placeholder="Search team members..." value={query} onChange={(e) => setQuery(e.target.value)} />
-            </div>
-          </section>
+          {/* Search */}
+          <div className="relative">
+            <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="settings-input w-full pl-10"
+              placeholder="Search team members..."
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
 
+          {/* User widget grid */}
           {filteredStats.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">
+            <div className="rounded-xl border border-dashed border-border bg-card p-14 text-center text-sm text-muted-foreground">
               No team members found.
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredStats.map((stats) => (
-                <UserWidget
-                  key={stats.name}
-                  stats={stats}
-                  onClick={() => setSelectedUser(stats.name)}
-                />
+              {filteredStats.map(stats => (
+                <UserWidget key={stats.name} stats={stats} onClick={() => setSelectedUser(stats.name)} />
               ))}
-            </div>
-          )}
-
-          {draft && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-5 shadow-xl">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-black text-foreground">{draft.id ? 'Edit daily task' : 'Add daily task'}</h3>
-                  <button onClick={() => setDraft(null)} className="icon-btn"><X size={16} /></button>
-                </div>
-                <TaskForm draft={draft} setDraft={setDraft} campaigns={campaigns} assignmentOptions={assignmentOptions} />
-                <div className="mt-5 flex justify-end gap-2">
-                  <button onClick={() => setDraft(null)} className="rounded-lg border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">Cancel</button>
-                  <button onClick={saveTask} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-xs font-bold text-white hover:bg-gc-orange/90"><Save size={15} /> Save</button>
-                </div>
-              </div>
             </div>
           )}
         </>
       ) : (
-        <div className="space-y-6">
+        /* ── DETAIL: per-user task view ── */
+        <div className="space-y-5">
+
+          {/* User stat strip */}
           {selectedStats && (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
-              <Metric title="Total Tasks" value={selectedStats.totalTasks} icon={ClipboardList} />
-              <Metric title="Completed" value={selectedStats.doneTasks} icon={CheckCircle2} tone="green" />
-              <Metric title="In Progress" value={selectedStats.inProgressTasks} icon={Clock3} tone="blue" />
-              <Metric title="Pending" value={selectedStats.pendingTasks} icon={ClipboardList} tone="amber" />
-              <Metric title="Blocked" value={selectedStats.blockedTasks} icon={Clock3} tone="red" />
-              <Metric title="Handovers" value={selectedStats.totalHandovers} icon={Handshake} tone="purple" />
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <SummaryTile label="All Tasks" value={selectedStats.totalTasks} color="text-foreground" icon={ClipboardList} />
+              <SummaryTile label="Done" value={selectedStats.doneTasks} color="text-emerald-600" icon={CheckCircle2} />
+              <SummaryTile label="In Progress" value={selectedStats.inProgressTasks} color="text-blue-600" icon={Loader2} />
+              <SummaryTile label="Pending" value={selectedStats.pendingTasks} color="text-amber-600" icon={Clock3} />
+              <SummaryTile label="Blocked" value={selectedStats.blockedTasks} color="text-red-600" icon={AlertCircle} />
+              <SummaryTile label="Handovers" value={selectedStats.totalHandovers} color="text-purple-600" icon={Handshake} />
             </div>
           )}
 
-          <div className="flex gap-2 border-b border-border">
-            <button onClick={() => setDetailTab('tasks')} className={cn('px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors', detailTab === 'tasks' ? 'border-gc-orange text-gc-orange' : 'border-transparent text-muted-foreground hover:text-foreground')}>
-              Tasks ({selectedUserTasks.length})
-            </button>
-            <button onClick={() => setDetailTab('handovers')} className={cn('px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors', detailTab === 'handovers' ? 'border-gc-orange text-gc-orange' : 'border-transparent text-muted-foreground hover:text-foreground')}>
-              Handovers ({selectedUserHandovers.length})
-            </button>
+          {/* Tab bar */}
+          <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1.5 w-fit">
+            {([
+              { id: 'tasks', label: `Tasks (${selectedUserTasks.length})` },
+              { id: 'handovers', label: `Handovers (${selectedUserHandovers.length})` },
+            ] as { id: 'tasks' | 'handovers'; label: string }[]).map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setDetailTab(tab.id)}
+                className={cn(
+                  'rounded-lg px-4 py-1.5 text-xs font-extrabold uppercase tracking-wide transition-colors',
+                  detailTab === tab.id ? 'bg-gc-orange text-white' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
           {detailTab === 'tasks' ? (
-            <div className="rounded-xl border border-border bg-card shadow-sm">
-              <div className="hidden grid-cols-[1fr_10rem_8rem_8rem_10rem_7rem] items-center gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground md:grid">
-                <span>Task</span>
-                <span>Campaign</span>
-                <span>Priority</span>
-                <span>Status</span>
-                <span>Due Date</span>
-                <span>Actions</span>
-              </div>
-              <div className="divide-y divide-border">
-                {selectedUserTasks.length === 0 ? (
-                  <div className="py-12 text-center text-sm text-muted-foreground">No tasks assigned to this user.</div>
-                ) : (
-                  selectedUserTasks.map(task => {
-                    const status = getOperationalTaskStatus(task);
-                    const canEdit = canEditTask(task);
-                    return (
-                      <div key={task.id} className="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-[1fr_10rem_8rem_8rem_10rem_7rem] items-center md:gap-4">
-                        <div className="min-w-0">
-                          <p className={cn('truncate text-sm font-semibold text-foreground', task.completed && 'line-through text-muted-foreground')}>{task.title}</p>
-                          {task.description && <p className="truncate text-xs text-muted-foreground">{task.description}</p>}
-                        </div>
-                        <div className="text-xs text-muted-foreground">{task.campaignId || '-'}</div>
-                        <div>
-                          <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold', task.priority === 'Critical' ? 'border-red-200 bg-red-50 text-red-700' : task.priority === 'High' ? 'border-orange-200 bg-orange-50 text-orange-700' : task.priority === 'Medium' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-green-200 bg-green-50 text-green-700')}>{task.priority}</span>
-                        </div>
-                        <div>
-                          <select className={cn('h-7 rounded border px-1.5 text-[10px] font-bold uppercase', STATUS_STYLES[status])} value={status} disabled={!canEdit} onChange={(e) => updateStatus(task.id, e.target.value as NonNullable<Task['status']>)}>
-                            {['Pending', 'In Progress', 'Blocked', 'Done'].map(s => <option key={s} value={s}>{s}</option>)}
-                          </select>
-                        </div>
-                        <div className={cn('text-xs', !task.completed && task.dueDate && task.dueDate < Date.now() ? 'font-semibold text-red-600' : 'text-foreground')}>
-                          {task.dueDate ? new Date(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {canEdit && <button onClick={() => setDraft(draftFromTask(task))} className="icon-btn" title="Edit"><Edit3 size={13} /></button>}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
+            <TaskDetailView
+              tasks={filteredDetailTasks}
+              allTasks={selectedUserTasks}
+              statusFilter={statusFilter}
+              setStatusFilter={setStatusFilter}
+              canEditTask={canEditTask}
+              updateStatus={updateStatus}
+              onEdit={task => setDraft(draftFromTask(task))}
+              onAdd={() => setDraft({ ...EMPTY_DRAFT, ownerId: selectedUser || '', campaignId: campaigns[0]?.name || '' })}
+            />
           ) : (
-            <div className="space-y-3">
-              {selectedUserHandovers.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground">No handovers involving this user.</div>
-              ) : (
-                selectedUserHandovers.map(handover => (
-                  <div key={handover.id} className="rounded-xl border border-border bg-card p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-foreground">{handover.team}</span>
-                          <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-bold uppercase', handover.status === 'Reviewed' ? 'bg-green-50 text-green-700' : handover.status === 'Acknowledged' ? 'bg-purple-50 text-purple-700' : 'bg-orange-50 text-orange-700')}>{handover.status}</span>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {handover.fromShift} → {handover.toShift} · {handover.region} · {handover.handoffDate}
-                        </p>
-                        {(handover.assignFrom || handover.assignTo) && (
-                          <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                            {handover.assignFrom && handover.assignFrom.length > 0 && (
-                              <span className="rounded bg-red-50 px-2 py-0.5 font-bold text-red-700">From: {handover.assignFrom.join(', ')}</span>
-                            )}
-                            {handover.assignTo && handover.assignTo.length > 0 && (
-                              <span className="rounded bg-green-50 px-2 py-0.5 font-bold text-green-700">To: {handover.assignTo.join(', ')}</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-xs text-muted-foreground">{new Date(handover.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                    </div>
-                    {handover.notes && <p className="mt-2 text-xs text-muted-foreground">{handover.notes}</p>}
-                  </div>
-                ))
-              )}
-            </div>
+            <HandoverDetailView handovers={selectedUserHandovers} userName={selectedUser} />
           )}
+        </div>
+      )}
 
-          {draft && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-5 shadow-xl">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-black text-foreground">{draft.id ? 'Edit daily task' : 'Add daily task'}</h3>
-                  <button onClick={() => setDraft(null)} className="icon-btn"><X size={16} /></button>
-                </div>
-                <TaskForm draft={draft} setDraft={setDraft} campaigns={campaigns} assignmentOptions={assignmentOptions} />
-                <div className="mt-5 flex justify-end gap-2">
-                  <button onClick={() => setDraft(null)} className="rounded-lg border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">Cancel</button>
-                  <button onClick={saveTask} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-xs font-bold text-white hover:bg-gc-orange/90"><Save size={15} /> Save</button>
-                </div>
-              </div>
+      {/* ── Task modal ── */}
+      {draft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-extrabold text-foreground">{draft.id ? 'Edit Task' : 'New Task'}</h3>
+              <button onClick={() => setDraft(null)} className="icon-btn"><X size={16} /></button>
             </div>
-          )}
+            <TaskForm draft={draft} setDraft={setDraft} campaigns={campaigns} assignmentOptions={assignmentOptions} />
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setDraft(null)} className="rounded-lg border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">
+                Cancel
+              </button>
+              <button onClick={saveTask} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-xs font-extrabold text-white hover:bg-gc-orange/90">
+                <Save size={14} /> Save Task
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
+/* ─────────────────────────────────────────────
+   UserWidget — the main overview card
+───────────────────────────────────────────── */
 function UserWidget({ stats, onClick }: { stats: UserStats; onClick: () => void }) {
   const initials = stats.name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+  const rate = stats.completionRate;
+  const rateColor = rate === 100 ? 'text-emerald-600' : rate >= 70 ? 'text-gc-orange' : rate >= 40 ? 'text-amber-600' : 'text-red-600';
+  const barColor = rate === 100 ? 'bg-emerald-500' : rate >= 70 ? 'bg-gc-orange' : rate >= 40 ? 'bg-amber-500' : 'bg-red-500';
+
   return (
-    <button onClick={onClick} className="group rounded-xl border border-border bg-card p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-gc-orange hover:shadow-md w-full">
+    <button
+      onClick={onClick}
+      className="group flex flex-col rounded-xl border border-border bg-card p-5 text-left shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:border-gc-orange/60 hover:shadow-md w-full"
+    >
+      {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-gc-orange/10 text-sm font-black text-gc-orange">{initials}</div>
+        <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gc-orange/10 text-base font-black text-gc-orange ring-1 ring-gc-orange/20">
+          {initials}
+          {stats.blockedTasks > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-black text-white ring-2 ring-card">
+              {stats.blockedTasks}
+            </span>
+          )}
+        </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-extrabold text-foreground">{stats.name}</p>
-          <p className="text-xs text-muted-foreground">{stats.totalTasks} tasks · {stats.totalHandovers} handovers</p>
+          <p className="truncate text-sm font-extrabold text-foreground group-hover:text-gc-orange transition-colors">{stats.name}</p>
+          <p className="text-[11px] font-semibold text-muted-foreground">
+            {stats.totalTasks} tasks · {stats.totalHandovers} handovers
+          </p>
         </div>
+        <span className={cn('shrink-0 text-sm font-black tabular-nums', rateColor)}>{rate}%</span>
       </div>
+
+      {/* Stat grid — 3 cols × 2 rows */}
       <div className="mt-4 grid grid-cols-3 gap-2">
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-center">
-          <p className="text-lg font-black text-emerald-600">{stats.doneTasks}</p>
-          <p className="text-[9px] font-bold uppercase tracking-wide text-emerald-600">Done</p>
+        <StatCell value={stats.doneTasks}        label="Done"       bg="bg-emerald-50 dark:bg-emerald-900/20" text="text-emerald-700 dark:text-emerald-300" border="border-emerald-200 dark:border-emerald-800" />
+        <StatCell value={stats.inProgressTasks}  label="Active"     bg="bg-blue-50 dark:bg-blue-900/20"       text="text-blue-700 dark:text-blue-300"       border="border-blue-200 dark:border-blue-800"     />
+        <StatCell value={stats.pendingTasks}      label="Pending"    bg="bg-amber-50 dark:bg-amber-900/20"     text="text-amber-700 dark:text-amber-300"     border="border-amber-200 dark:border-amber-800"   />
+        <StatCell value={stats.blockedTasks}      label="Blocked"    bg={stats.blockedTasks > 0 ? 'bg-red-50 dark:bg-red-900/20' : 'bg-muted'}       text={stats.blockedTasks > 0 ? 'text-red-700 dark:text-red-300' : 'text-muted-foreground'}         border={stats.blockedTasks > 0 ? 'border-red-200 dark:border-red-800' : 'border-border'}      />
+        <StatCell value={stats.totalHandovers}    label="Handovers"  bg="bg-purple-50 dark:bg-purple-900/20"   text="text-purple-700 dark:text-purple-300"   border="border-purple-200 dark:border-purple-800" />
+        <StatCell value={stats.overdueTasks}      label="Overdue"    bg={stats.overdueTasks > 0 ? 'bg-red-50 dark:bg-red-900/20' : 'bg-muted'}        text={stats.overdueTasks > 0 ? 'text-red-700 dark:text-red-300' : 'text-muted-foreground'}          border={stats.overdueTasks > 0 ? 'border-red-200 dark:border-red-800' : 'border-border'}       />
+      </div>
+
+      {/* Progress bar */}
+      <div className="mt-4">
+        <div className="mb-1 flex items-center justify-between text-[10px] font-bold">
+          <span className="text-muted-foreground">Completion</span>
+          <span className={rateColor}>{rate}%</span>
         </div>
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-2 text-center">
-          <p className="text-lg font-black text-blue-600">{stats.inProgressTasks}</p>
-          <p className="text-[9px] font-bold uppercase tracking-wide text-blue-600">In Prog</p>
-        </div>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-2 text-center">
-          <p className="text-lg font-black text-red-600">{stats.blockedTasks}</p>
-          <p className="text-[9px] font-bold uppercase tracking-wide text-red-600">Blocked</p>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-border">
+          <div className={cn('h-full rounded-full transition-all duration-500', barColor)} style={{ width: `${rate}%` }} />
         </div>
       </div>
-      <div className="mt-3">
-        <div className="flex items-center justify-between text-[10px] font-bold">
-          <span className="text-muted-foreground">Progress</span>
-          <span className={stats.completionRate >= 80 ? 'text-emerald-600' : stats.completionRate >= 50 ? 'text-gc-orange' : 'text-muted-foreground'}>{stats.completionRate}%</span>
-        </div>
-        <div className="mt-1 h-1.5 w-full rounded-full bg-border overflow-hidden">
-          <div className={cn('h-full rounded-full transition-all', stats.completionRate === 100 ? 'bg-emerald-500' : stats.completionRate >= 50 ? 'bg-gc-orange' : 'bg-amber-500')} style={{ width: `${stats.completionRate}%` }} />
-        </div>
-      </div>
-      <div className="mt-3 flex items-center justify-between border-t border-border pt-2 text-[10px] text-muted-foreground">
-        <span>{stats.overdueTasks > 0 ? <span className="font-bold text-red-600">{stats.overdueTasks} overdue</span> : 'On track'}</span>
-        <span className="font-semibold text-gc-orange group-hover:underline">View →</span>
+
+      {/* Footer */}
+      <div className="mt-3 flex items-center justify-between border-t border-border pt-2.5 text-[11px]">
+        <span className={stats.overdueTasks > 0 ? 'font-extrabold text-red-600' : 'font-semibold text-muted-foreground'}>
+          {stats.overdueTasks > 0 ? `⚠ ${stats.overdueTasks} overdue` : stats.totalTasks === 0 ? 'No tasks yet' : 'On track'}
+        </span>
+        <span className="flex items-center gap-1 font-extrabold text-gc-orange group-hover:gap-2 transition-all">
+          View details <ArrowRight size={12} />
+        </span>
       </div>
     </button>
   );
 }
 
-function TaskForm({ draft, setDraft, campaigns, assignmentOptions }: { draft: TaskDraft; setDraft: (draft: TaskDraft) => void; campaigns: Campaign[]; assignmentOptions: string[] }) {
-  const PMO_LANES = ['PMO', 'Community', 'Coverage', 'QA', 'Reporting', 'Finance', 'Operations'];
+function StatCell({ value, label, bg, text, border }: { value: number; label: string; bg: string; text: string; border: string }) {
   return (
-    <div className="mt-4 grid gap-3 md:grid-cols-2">
-      <input className="settings-input md:col-span-2" placeholder="Task title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
-      <select className="settings-input" value={draft.ownerId} onChange={(event) => setDraft({ ...draft, ownerId: event.target.value })}>
-        <option value="">Assigned to...</option>
-        {[draft.ownerId, ...assignmentOptions].filter(Boolean).filter((item, index, array) => array.indexOf(item) === index).map((owner) => <option key={owner} value={owner}>{owner}</option>)}
-      </select>
-      <select className="settings-input" value={draft.campaignId} onChange={(event) => setDraft({ ...draft, campaignId: event.target.value })}>
-        <option value="">No campaign</option>
-        {campaigns.map((campaign) => <option key={campaign.id} value={campaign.name}>{campaign.name}</option>)}
-      </select>
-      <select className="settings-input" value={draft.department} onChange={(event) => setDraft({ ...draft, department: event.target.value })}>
-        {[draft.department, ...PMO_LANES].filter(Boolean).filter((item, index, array) => array.indexOf(item) === index).map((lane) => <option key={lane} value={lane}>{lane}</option>)}
-      </select>
-      <input className="settings-input" type="date" value={draft.dueDate} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value })} />
-      <select className="settings-input" value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value as Task['priority'] })}>
-        {['Low', 'Medium', 'High', 'Critical'].map((item) => <option key={item} value={item}>{item}</option>)}
-      </select>
-      <select className="settings-input" value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as NonNullable<Task['status']> })}>
-        {['Pending', 'In Progress', 'Blocked', 'Done'].map((item) => <option key={item} value={item}>{item}</option>)}
-      </select>
-      <textarea className="settings-input min-h-20 resize-none md:col-span-2" placeholder="Next step / result" value={draft.nextStep} onChange={(event) => setDraft({ ...draft, nextStep: event.target.value })} />
+    <div className={cn('flex flex-col items-center rounded-lg border p-2', bg, border)}>
+      <span className={cn('text-xl font-black tabular-nums leading-none', text)}>{value}</span>
+      <span className={cn('mt-1 text-[9px] font-extrabold uppercase tracking-wide', text)}>{label}</span>
     </div>
   );
 }
 
-function Metric({ title, value, icon: Icon, tone = 'orange' }: { title: string; value: number | string; icon: React.ElementType; tone?: 'orange' | 'green' | 'red' | 'purple' | 'blue' | 'amber' }) {
-  const tones: Record<string, string> = {
-    orange: 'bg-gc-orange/10 text-gc-orange border-gc-orange/20',
-    green: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-    red: 'bg-red-500/10 text-red-600 border-red-500/20',
-    purple: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
-    blue: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-    amber: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
-  };
+/* ─────────────────────────────────────────────
+   Task detail view (inside user drill-down)
+───────────────────────────────────────────── */
+function TaskDetailView({
+  tasks,
+  allTasks,
+  statusFilter,
+  setStatusFilter,
+  canEditTask,
+  updateStatus,
+  onEdit,
+  onAdd,
+}: {
+  tasks: Task[];
+  allTasks: Task[];
+  statusFilter: string;
+  setStatusFilter: (s: string) => void;
+  canEditTask: (t: Task) => boolean;
+  updateStatus: (id: string, status: NonNullable<Task['status']>) => void;
+  onEdit: (t: Task) => void;
+  onAdd: () => void;
+}) {
+  const countByStatus = useMemo(() => {
+    const m: Record<string, number> = { all: allTasks.length };
+    STATUS_ORDER.forEach(s => { m[s] = allTasks.filter(t => getOperationalTaskStatus(t) === s).length; });
+    return m;
+  }, [allTasks]);
+
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-[10px] font-bold uppercase tracking-[1.4px] text-muted-foreground">{title}</p>
-        <div className={cn('flex h-8 w-8 items-center justify-center rounded-lg border', tones[tone])}><Icon size={15} /></div>
+    <div className="space-y-4">
+      {/* Status filter pills + add button */}
+      <div className="flex flex-wrap items-center gap-2">
+        {(['all', ...STATUS_ORDER] as const).map(s => {
+          const meta = s !== 'all' ? STATUS_META[s] : null;
+          const active = statusFilter === s;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide transition-colors',
+                active
+                  ? s === 'all' ? 'border-gc-orange bg-gc-orange text-white' : `${meta!.border} ${meta!.bg} ${meta!.text}`
+                  : 'border-border bg-card text-muted-foreground hover:border-gc-orange/40 hover:text-foreground',
+              )}
+            >
+              {s === 'all' ? 'All' : s}
+              <span className={cn('rounded-full px-1.5 py-0.5 text-[9px] font-black', active && s !== 'all' ? `${meta!.bg} ${meta!.text}` : 'bg-muted text-muted-foreground')}>
+                {countByStatus[s] ?? 0}
+              </span>
+            </button>
+          );
+        })}
+        <button
+          onClick={onAdd}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-gc-orange px-3 py-1.5 text-xs font-extrabold text-white hover:bg-gc-orange/90"
+        >
+          <Plus size={13} /> New Task
+        </button>
       </div>
-      <p className="mt-2 text-2xl font-black text-foreground">{value}</p>
+
+      {/* Task cards */}
+      {tasks.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border bg-card py-14 text-center text-sm text-muted-foreground">
+          No tasks match this filter.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {tasks.map(task => {
+            const status = getOperationalTaskStatus(task);
+            const meta = STATUS_META[status];
+            const pMeta = PRIORITY_META[task.priority] || PRIORITY_META.Medium;
+            const isOverdue = !task.completed && task.dueDate && task.dueDate < Date.now();
+            const canEdit = canEditTask(task);
+            return (
+              <div
+                key={task.id}
+                className={cn(
+                  'group rounded-xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md',
+                  status === 'Blocked' ? 'border-red-200 dark:border-red-900/40' : 'border-border',
+                )}
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4">
+
+                  {/* Status dot + title block */}
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <span className={cn('mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full', meta.dot)} />
+                    <div className="min-w-0 flex-1">
+                      <p className={cn('font-extrabold text-foreground', task.completed && 'line-through text-muted-foreground')}>
+                        {task.title}
+                      </p>
+                      {(task.description || task.nextStep) && (
+                        <p className="mt-1 text-xs font-medium text-muted-foreground line-clamp-2">
+                          {task.nextStep || task.description}
+                        </p>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {task.campaignId && (
+                          <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                            {task.campaignId}
+                          </span>
+                        )}
+                        {task.department && (
+                          <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                            {task.department}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right-side controls */}
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 md:flex-col md:items-end">
+                    {/* Priority + status row */}
+                    <div className="flex items-center gap-2">
+                      <span className={cn('rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide', pMeta.bg, pMeta.text, pMeta.border)}>
+                        {task.priority}
+                      </span>
+                      <select
+                        className={cn('h-7 cursor-pointer rounded-full border px-2.5 text-[10px] font-extrabold uppercase tracking-wide outline-none transition-colors', meta.bg, meta.text, meta.border)}
+                        value={status}
+                        disabled={!canEdit}
+                        onChange={e => updateStatus(task.id, e.target.value as NonNullable<Task['status']>)}
+                      >
+                        {['Pending', 'In Progress', 'Blocked', 'Done'].map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Due date */}
+                    <div className={cn('flex items-center gap-1 text-[11px] font-semibold', isOverdue ? 'text-red-600' : 'text-muted-foreground')}>
+                      <Clock3 size={11} />
+                      {task.dueDate
+                        ? new Date(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : 'No due date'}
+                      {isOverdue && <span className="ml-0.5 font-extrabold text-red-600">· Overdue</span>}
+                    </div>
+
+                    {/* Edit button */}
+                    {canEdit && (
+                      <button
+                        onClick={() => onEdit(task)}
+                        className="flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-bold text-muted-foreground hover:border-gc-orange hover:text-gc-orange transition-colors"
+                      >
+                        <Edit3 size={11} /> Edit
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Handover detail view
+───────────────────────────────────────────── */
+function HandoverDetailView({ handovers, userName }: { handovers: Handover[]; userName: string | null }) {
+  if (handovers.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-card py-14 text-center text-sm text-muted-foreground">
+        No handovers involving {userName}.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {handovers.map(h => {
+        const isFrom = (h.assignFrom || []).some(n => n.toLowerCase() === userName?.toLowerCase()) || h.outgoingLead?.toLowerCase() === userName?.toLowerCase();
+        return (
+          <div key={h.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', isFrom ? 'bg-orange-50 text-orange-600' : 'bg-purple-50 text-purple-600')}>
+                  <Handshake size={16} />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-extrabold text-foreground">{h.team}</span>
+                    <span className={cn(
+                      'rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide',
+                      h.status === 'Reviewed' ? 'bg-emerald-50 text-emerald-700' :
+                      h.status === 'Acknowledged' ? 'bg-purple-50 text-purple-700' :
+                      'bg-amber-50 text-amber-700',
+                    )}>{h.status}</span>
+                    <span className={cn('rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide', isFrom ? 'bg-orange-50 text-orange-700' : 'bg-blue-50 text-blue-700')}>
+                      {isFrom ? 'Outgoing' : 'Incoming'}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {h.fromShift} → {h.toShift} · {h.region} · {h.handoffDate}
+                  </p>
+                  {(h.assignFrom?.length || h.assignTo?.length) && (
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                      {h.assignFrom?.length ? <span className="rounded-full bg-orange-50 px-2 py-0.5 font-bold text-orange-700">From: {h.assignFrom.join(', ')}</span> : null}
+                      {h.assignTo?.length ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700">To: {h.assignTo.join(', ')}</span> : null}
+                    </div>
+                  )}
+                  {h.notes && <p className="mt-2 text-xs text-muted-foreground">{h.notes}</p>}
+                </div>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {new Date(h.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Task form (modal)
+───────────────────────────────────────────── */
+function TaskForm({ draft, setDraft, campaigns, assignmentOptions }: {
+  draft: TaskDraft;
+  setDraft: (d: TaskDraft) => void;
+  campaigns: Campaign[];
+  assignmentOptions: string[];
+}) {
+  const PMO_LANES = ['PMO', 'Community', 'Coverage', 'QA', 'Reporting', 'Finance', 'Operations'];
+  return (
+    <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <input
+        className="settings-input md:col-span-2"
+        placeholder="Task title *"
+        value={draft.title}
+        onChange={e => setDraft({ ...draft, title: e.target.value })}
+      />
+      <select className="settings-input" value={draft.ownerId} onChange={e => setDraft({ ...draft, ownerId: e.target.value })}>
+        <option value="">Assigned to…</option>
+        {[draft.ownerId, ...assignmentOptions].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+      <select className="settings-input" value={draft.campaignId} onChange={e => setDraft({ ...draft, campaignId: e.target.value })}>
+        <option value="">No campaign</option>
+        {campaigns.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+      </select>
+      <select className="settings-input" value={draft.department} onChange={e => setDraft({ ...draft, department: e.target.value })}>
+        {[draft.department, ...PMO_LANES].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).map(l => <option key={l} value={l}>{l}</option>)}
+      </select>
+      <input className="settings-input" type="date" value={draft.dueDate} onChange={e => setDraft({ ...draft, dueDate: e.target.value })} />
+      <select className="settings-input" value={draft.priority} onChange={e => setDraft({ ...draft, priority: e.target.value as Task['priority'] })}>
+        {['Low', 'Medium', 'High', 'Critical'].map(p => <option key={p} value={p}>{p}</option>)}
+      </select>
+      <select className="settings-input" value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value as NonNullable<Task['status']> })}>
+        {['Pending', 'In Progress', 'Blocked', 'Done'].map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <textarea
+        className="settings-input min-h-[80px] resize-none md:col-span-2"
+        placeholder="Notes / next step"
+        value={draft.nextStep}
+        onChange={e => setDraft({ ...draft, nextStep: e.target.value })}
+      />
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   Summary tile (overview bar)
+───────────────────────────────────────────── */
+function SummaryTile({ label, value, color, icon: Icon }: { label: string; value: number; color: string; icon: React.ElementType }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+      <Icon className={cn('h-5 w-5 shrink-0', color)} />
+      <div>
+        <p className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</p>
+        <p className={cn('text-xl font-black tabular-nums', color)}>{value}</p>
+      </div>
     </div>
   );
 }
