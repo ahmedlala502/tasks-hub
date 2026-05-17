@@ -255,10 +255,23 @@ export default function Admin() {
     const targetUser = users.find(user => user.id === id);
     if (!targetUser) return;
 
+    const previousUsers = users;
     const nextName = patch.name ?? targetUser.name;
     const nextRole = patch.role ?? targetUser.role;
     const nextStatus = patch.status ?? targetUser.status;
     const nextOffice = patch.office ?? targetUser.office;
+    const nextAccess = patch.access ?? (nextRole === 'Master' ? 'Full' : targetUser.access);
+
+    setUsers(prev => prev.map(user => (
+      user.id === id
+        ? { ...user, ...patch, role: nextRole, office: nextOffice, status: nextStatus, access: nextAccess }
+        : user
+    )));
+
+    if (patch.access && Object.keys(patch).every(key => key === 'access')) {
+      setSavedAt('Access saved locally');
+      return;
+    }
 
     if (!isCloudBackedUser(targetUser)) {
       try {
@@ -281,6 +294,7 @@ export default function Admin() {
           metadata: { email: targetUser.email, role: nextRole },
         });
       } catch (error: any) {
+        setUsers(previousUsers);
         setSavedAt(error.message || 'Unable to activate user');
       }
       return;
@@ -305,6 +319,7 @@ export default function Admin() {
         metadata: { role: nextRole, status: nextStatus, office: nextOffice },
       });
     } catch (error: any) {
+      setUsers(previousUsers);
       setSavedAt(error.message || 'Unable to update user');
     }
   };
@@ -755,19 +770,16 @@ export default function Admin() {
                       value={user.role}
                       onChange={value => { void updateUser(user.id, { role: value as AdminRole }); }}
                       options={['Master', 'Operations', 'Community']}
-                      disabled={!cloudBacked}
                     />
                     <Select
                       value={user.office}
                       onChange={value => { void updateUser(user.id, { office: value as OpsOffice }); }}
                       options={[...OPS_OFFICES]}
-                      disabled={!cloudBacked}
                     />
                     <Select
                       value={user.access}
-                      onChange={() => {}}
+                      onChange={value => { void updateUser(user.id, { access: value as AccessLevel }); }}
                       options={['Full', 'Scoped', 'Read Only']}
-                      disabled={!cloudBacked}
                     />
                   </div>
 

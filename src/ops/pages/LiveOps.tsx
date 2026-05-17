@@ -130,7 +130,7 @@ export default function LiveOps() {
             {ownerRows.map((row) => (
               <Link key={row.owner} to="/tasks" className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
                 <div>
-                  <Link to="/profile" className="text-sm font-bold text-foreground hover:text-gc-orange transition-colors" onClick={(e) => e.stopPropagation()}>{row.owner}</Link>
+                  <p className="text-sm font-bold text-foreground">{row.owner}</p>
                   <p className="text-[11px] text-muted-foreground">{row.done} done - {row.blocked} blocked</p>
                 </div>
                 <span className="text-sm font-black text-gc-orange">{row.total}</span>

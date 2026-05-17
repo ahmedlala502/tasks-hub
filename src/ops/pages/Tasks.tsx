@@ -27,8 +27,8 @@ import {
 } from 'lucide-react';
 import { format, isPast, isValid } from 'date-fns';
 import { useAuth } from '../App';
-import { filterCampaignsByRole, filterOwnerOptionsByRole, filterTasksByRole } from '../lib/workspace';
-import { buildAssignmentOptions } from '../lib/assignmentOptions';
+import { filterCampaignsByRole, filterTasksByRole } from '../lib/workspace';
+import { getDefaultPlatformUserNames, loadPlatformUserNames, sortUniqueUserNames } from '../lib/platformUsers';
 import {
   TASK_BUCKET_LABELS,
   buildCampaignTaskGroups,
@@ -40,7 +40,7 @@ import {
   type TaskBucket,
 } from '../lib/taskInsights';
 import { cn } from '../utils';
-import { dataService, TEAM_MEMBERS } from '../services/dataService';
+import { dataService } from '../services/dataService';
 import { notify } from '../services/notificationService';
 import { Task } from '../types';
 import { BulkUploadButton } from '../components/BulkUploadDialog';
@@ -129,18 +129,16 @@ export default function TasksCenter() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | Task['priority']>('all');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [supabaseUsers, setSupabaseUsers] = useState<string[]>([]);
+  const [platformUsers, setPlatformUsers] = useState<string[]>(getDefaultPlatformUserNames());
   const [formError, setFormError] = useState('');
 
   const refreshTasks = () => setTasks(filterTasksByRole(role, dataService.getTasks()));
 
   useEffect(() => {
     let alive = true;
-    import('../services/adminApi').then(({ adminApi }) => {
-      adminApi.listUsers().then(users => {
-        if (alive) setSupabaseUsers(users.filter(u => u.status === 'active').map(u => u.displayName));
-      }).catch(() => {});
-    });
+    loadPlatformUserNames().then(users => {
+      if (alive) setPlatformUsers(users);
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -149,12 +147,10 @@ export default function TasksCenter() {
     ...campaigns.map(c => c.name).filter(Boolean),
     ...tasks.map(t => t.campaignId?.trim()).filter(Boolean) as string[],
   ])).sort((a, b) => a.localeCompare(b));
-  const owners = filterOwnerOptionsByRole(role, buildAssignmentOptions({
-    users: [...TEAM_MEMBERS, ...supabaseUsers, user?.displayName].filter(Boolean) as string[],
-    tasks,
-    campaigns,
-    handovers: dataService.getHandovers(),
-  }));
+  const owners = useMemo(
+    () => sortUniqueUserNames([...platformUsers, user?.displayName]),
+    [platformUsers, user?.displayName],
+  );
 
   const bucketTasks = useMemo(() => (
     selectedBucket ? filterTasksByBucket(tasks, selectedBucket, now) : tasks
@@ -213,7 +209,6 @@ export default function TasksCenter() {
       dueDate: toValidTimestamp(editDraft.dueDate),
       slaHrs: Number(editDraft.slaHrs) || undefined,
       completed: Boolean(editDraft.completed),
-      updatedAt: Date.now(),
     });
     refreshTasks();
     notify('Task Updated', `"${editDraft.title.trim()}" saved`, 'orange', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
@@ -526,12 +521,13 @@ function TaskTable({
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-      <div className="hidden grid-cols-[2rem_1fr_11rem_12rem_9rem_8rem_9rem_8rem] items-center gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground md:grid">
-        <span />
-        <span>Task</span>
-        <span>Assignee</span>
-        <span>Campaign *</span>
-        <span>Priority</span>
+        <div className="hidden grid-cols-[2rem_1fr_10rem_10rem_12rem_8rem_7rem_9rem_8rem] items-center gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground md:grid">
+          <span />
+          <span>Task</span>
+          <span>Assignee</span>
+          <span>Creator</span>
+          <span>Campaign *</span>
+          <span>Priority</span>
         <span>SLA</span>
         <span>Due Date & Time</span>
         <span>Status</span>
@@ -599,7 +595,7 @@ function TaskDisplayRow({
     <div
       onClick={() => onStartEdit(task)}
       className={cn(
-        'grid cursor-pointer grid-cols-1 items-center gap-x-4 gap-y-2 px-4 py-3.5 transition-colors md:grid-cols-[2rem_1fr_11rem_12rem_9rem_8rem_9rem_8rem]',
+        'grid cursor-pointer grid-cols-1 items-center gap-x-4 gap-y-2 px-4 py-3.5 transition-colors md:grid-cols-[2rem_1fr_10rem_10rem_12rem_8rem_7rem_9rem_8rem]',
         'hover:bg-muted/40',
         task.completed && 'opacity-60',
         overdue && !task.completed && 'bg-red-50/50 dark:bg-red-950/20',
@@ -625,6 +621,7 @@ function TaskDisplayRow({
       </div>
 
       <Cell label="Assignee">{task.ownerId || <span className="text-muted-foreground">Unassigned</span>}</Cell>
+      <Cell label="Creator">{task.createdBy || <span className="text-muted-foreground">Unknown</span>}</Cell>
       <Cell label="Campaign">{task.campaignId || <span className="font-bold text-red-600">Required</span>}</Cell>
 
       <div>

@@ -6,10 +6,10 @@ import {
   Clock, AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../App';
-import { filterHandoversByRole, filterOwnerOptionsByRole, filterTasksByRole, filterTeamOptionsByRole, getWorkspaceScope } from '../lib/workspace';
-import { buildAssignmentOptions } from '../lib/assignmentOptions';
+import { filterHandoversByRole, filterTasksByRole, filterTeamOptionsByRole, getWorkspaceScope } from '../lib/workspace';
+import { getDefaultPlatformUserNames, loadPlatformUserNames, sortUniqueUserNames } from '../lib/platformUsers';
 import { cn } from '../utils';
-import { dataService, TEAM_MEMBERS } from '../services/dataService';
+import { dataService } from '../services/dataService';
 import { notify } from '../services/notificationService';
 import { Handover, Task } from '../types';
 
@@ -139,31 +139,19 @@ export default function HandoverCenter() {
   const [statusFilter, setStatusFilter] = useState<'all' | Handover['status']>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [adminUsers, setAdminUsers] = useState<string[]>([]);
+  const [adminUsers, setAdminUsers] = useState<string[]>(getDefaultPlatformUserNames());
 
   useEffect(() => {
     let mounted = true;
-    import('../services/adminApi').then(({ adminApi }) => {
-      adminApi.listUsers().then(users => {
-        if (mounted) setAdminUsers(users.filter(u => u.status === 'active').map(u => u.displayName));
-      }).catch(console.error);
-    });
+    loadPlatformUserNames().then(users => {
+      if (mounted) setAdminUsers(users);
+    }).catch(console.error);
     return () => { mounted = false; };
   }, []);
 
   const owners = useMemo(() => {
-    const allUsers = buildAssignmentOptions({
-      users: [
-        ...TEAM_MEMBERS, ...adminUsers,
-      'Campaign Manager', 'Community Lead', 'Coordination Lead', 
-      'Coverage Lead', 'QA Lead', 'Finance Lead', 'Head of Operations',
-      'Master Admin', 'Ops Team', 'Regional Lead', 'Team Lead'
-      ],
-      tasks,
-      handovers,
-    });
-    return filterOwnerOptionsByRole(role, allUsers).sort();
-  }, [role, tasks, adminUsers, handovers]);
+    return sortUniqueUserNames([...adminUsers, user?.displayName]);
+  }, [adminUsers, user?.displayName]);
 
   const teamOptions = useMemo(() => filterTeamOptionsByRole(role, TEAM_OPTIONS), [role]);
   const defaultTeam = teamOptions[0] || (scope === 'community' ? 'Community' : 'Operations');

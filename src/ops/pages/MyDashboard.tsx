@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Activity, AlertCircle, CheckCircle2, Handshake, Plus, Target, UserCheck, UserPlus } from 'lucide-react';
+import { Activity, AlertCircle, Bot, CheckCircle2, Handshake, Plus, Target, UserCheck, UserPlus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../App';
 import { dataService } from '../services/dataService';
@@ -66,6 +66,19 @@ export default function MyDashboard() {
     );
   }).slice(0, 10), [activityLogs, displayName, userEmail, userId]);
 
+  const todayWork = useMemo(() => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startTime = startOfToday.getTime();
+    const items = [
+      ...myAssignedTasks.filter((task) => (task.updatedAt || task.createdAt || 0) >= startTime),
+      ...myCreatedTasks.filter((task) => (task.updatedAt || task.createdAt || 0) >= startTime),
+    ];
+    const byId = new Map<string, Task>();
+    items.forEach((task) => byId.set(task.id, task));
+    return [...byId.values()].sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt)).slice(0, 8);
+  }, [myAssignedTasks, myCreatedTasks]);
+
   const performanceMetrics = useMemo(() => {
     const total = myAssignedTasks.length;
     const done = myAssignedTasks.filter((t) => t.completed).length;
@@ -117,6 +130,35 @@ export default function MyDashboard() {
           <PerfTile label="In Progress" value={performanceMetrics.inProgress} tone="blue" />
           <PerfTile label="Overdue" value={performanceMetrics.overdue} tone="red" />
           <PerfTile label="Tasks I Created" value={performanceMetrics.created} tone="purple" />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-extrabold text-foreground">Today I Worked On</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Concrete tasks touched today, with creator and assignee context.</p>
+          </div>
+          <Link to="/analytics" className="inline-flex items-center gap-1.5 text-xs font-bold text-gc-orange hover:underline">
+            <Bot size={14} /> Go Deeper
+          </Link>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {todayWork.length ? todayWork.map((task) => (
+            <Link key={task.id} to="/tasks" className="block rounded-lg border border-border bg-background p-4 transition-colors hover:border-gc-orange/40 hover:bg-gc-orange/5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-foreground">{task.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Creator {task.createdBy || 'Unknown'} - Assigned to {task.ownerId || 'Unassigned'}
+                  </p>
+                </div>
+                <span className={cn('shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase', statusColor(getOperationalTaskStatus(task)))}>
+                  {getOperationalTaskStatus(task)}
+                </span>
+              </div>
+            </Link>
+          )) : <EmptyState label="No task changes captured for today yet." />}
         </div>
       </section>
 

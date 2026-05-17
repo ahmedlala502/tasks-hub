@@ -390,7 +390,11 @@ export const dataService = {
     return { tasks: [...TASKS_DATA], createdCount: result.createdCount };
   },
   updateTask: (id: string, updates: Partial<Task>) => {
-    TASKS_DATA = TASKS_DATA.map(t => t.id === id ? { ...t, ...updates } : t);
+    TASKS_DATA = TASKS_DATA.map(t => {
+      if (t.id !== id) return t;
+      const { createdBy: _createdBy, createdAt: _createdAt, ...safeUpdates } = updates;
+      return { ...t, ...safeUpdates, createdBy: t.createdBy, createdAt: t.createdAt, updatedAt: Date.now() };
+    });
     persistRecord('tasks', TASKS_DATA);
     const updatedTask = TASKS_DATA.find((task) => task.id === id);
     logActivity({ action: 'task.updated', entityType: 'task', entityId: id, summary: `Updated task "${updatedTask?.title || id}"`, metadata: { updates } });
@@ -405,7 +409,12 @@ export const dataService = {
   getHandovers: () => [...HANDOVERS_DATA],
   updateHandover: (id: string, updates: Partial<Handover>) => {
     HANDOVERS_DATA = HANDOVERS_DATA.map((handover) =>
-      handover.id === id ? { ...handover, ...updates, updatedAt: Date.now() } : handover
+      handover.id === id
+        ? (() => {
+          const { createdBy: _createdBy, createdAt: _createdAt, ...safeUpdates } = updates;
+          return { ...handover, ...safeUpdates, createdBy: handover.createdBy, createdAt: handover.createdAt, updatedAt: Date.now() };
+        })()
+        : handover
     );
     persistRecord('handovers', HANDOVERS_DATA);
     logActivity({ action: 'handover.updated', entityType: 'handover', entityId: id, summary: `Updated ${HANDOVERS_DATA.find((handover) => handover.id === id)?.team || 'handover'} relay`, metadata: { updates } });
