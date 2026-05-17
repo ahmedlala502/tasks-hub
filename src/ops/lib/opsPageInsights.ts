@@ -71,6 +71,7 @@ export type CampaignMatrixLane = {
 
 export type CampaignMatrixItem = {
   campaign: Campaign;
+  tasks: Task[];
   taskCount: number;
   doneCount: number;
   openCount: number;
@@ -215,6 +216,7 @@ export function buildMyCampaignMatrix(campaigns: Campaign[], tasks: Task[], now 
 
     return {
       campaign,
+      tasks: campaignTasks,
       taskCount: campaignTasks.length,
       doneCount,
       openCount: campaignTasks.length - doneCount,

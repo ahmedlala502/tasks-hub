@@ -1,9 +1,9 @@
 @echo off
-cd /d "%~dp0"
+cd /d "G:\adel\tasks-hub-main (1)\tasks-hub-main"
 
 echo === Step 1: Commit and push to GitHub ===
-git add src/ops/lib/platformUsers.ts src/ops/pages/CampaignList.tsx
-git commit -m "fix: user dropdowns show all users, creator name, read-only permissions"
+git add -A
+git commit -m "feat: per-user task dashboard with widgets, fix user management"
 git push
 
 echo === Step 2: Deploy to Cloudflare Pages ===

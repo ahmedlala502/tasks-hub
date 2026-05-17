@@ -383,16 +383,16 @@ export default function CampaignList() {
                 <div className="border-t border-border p-5">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <p className="text-[11px] font-black uppercase tracking-wide text-muted-foreground">Campaign tasks</p>
-                      <p className="mt-1 text-xs text-muted-foreground">Add work to the right lane, assign it, and update status without leaving the campaign bucket.</p>
+                      <p className="text-[11px] font-black uppercase tracking-wide text-muted-foreground">Campaign Tasks</p>
+                      <p className="mt-1 text-xs text-muted-foreground">All tasks for this campaign — view owner, details, status, and manage work.</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <BadgeStat label="Tasks" value={`${item.taskCount}`} />
-                      <BadgeStat label="Confirmations" value={`${item.confirmationTotal}/${item.targetTotal}`} />
-                      <BadgeStat label="Coverage" value={`${item.coverageTotal}/${item.campaign.targetPostingCoverage || item.targetTotal}`} />
+                      <BadgeStat label="Done" value={`${item.doneCount}`} tone={item.doneCount > 0 ? 'green' : 'orange'} />
                       <BadgeStat label="Blocked" value={`${item.blockedCount}`} tone={item.blockedCount ? 'red' : 'green'} />
-                    </div>
-                    <div className="flex gap-2">
+                      <button onClick={() => openTask(item.campaign)} className="inline-flex items-center gap-1.5 rounded-lg bg-gc-orange px-3 py-2 text-xs font-bold text-white hover:bg-gc-orange/90">
+                        <Plus size={14} /> New Task
+                      </button>
                       <button onClick={() => navigate(`/campaigns/${item.campaign.id}`)} className="rounded-lg border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">Details</button>
                       {isMaster && (
                         confirmDeleteCampaign === item.campaign.id ? (
@@ -407,40 +407,66 @@ export default function CampaignList() {
                     </div>
                   </div>
 
-                  <div className="grid gap-3 xl:grid-cols-3">
-                    {laneNames.map((laneName) => {
-                      const lane = item.teamLanes.find((entry) => entry.name === laneName);
-                      const laneTasks = lane?.tasks || [];
-                      return (
-                        <div key={laneName} className="rounded-lg border border-border bg-background p-3">
-                          <div className="flex items-center justify-between">
-                            <p className="text-[11px] font-black uppercase tracking-wide text-muted-foreground">{laneName}</p>
-                            <button onClick={() => openTask(item.campaign, undefined, laneName)} className="icon-btn" title="Add task"><Plus size={14} /></button>
-                          </div>
-                          <div className="mt-3 space-y-2">
-                            {laneTasks.length ? laneTasks.map((task) => (
-                              <div key={task.id} className="rounded-lg border border-border bg-card p-3">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <Link to="/tasks" className="truncate text-sm font-bold text-foreground hover:text-gc-orange transition-colors">{task.title}</Link>
-                                     <p className="mt-1 text-[11px] text-muted-foreground">{task.ownerId || 'Unassigned'} - {task.priority}</p>
-                                     <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-gc-orange"><Clock3 size={11} /> SLA {task.slaHrs ? `${task.slaHrs}h` : 'tracked by due date'}</p>
-                                  </div>
-                                  <div className="flex shrink-0 gap-1">
-                                    {canEditTask(task) && <button onClick={() => openTask(item.campaign, task, laneName)} className="icon-btn" title="Edit task"><Edit3 size={13} /></button>}
-                                    <button onClick={() => duplicateTask(task)} className="icon-btn" title="Duplicate task"><Copy size={13} /></button>
-                                    {isMaster && <button onClick={() => deleteTask(task)} className="icon-btn text-red-500" title="Delete task"><Trash2 size={13} /></button>}
-                                  </div>
-                                </div>
-                                <select className="settings-input mt-2 h-8 text-[11px]" value={getOperationalTaskStatus(task)} disabled={!canEditTask(task)} onChange={(event) => updateTaskStatus(task, event.target.value as NonNullable<Task['status']>)}>
-                                  {['Pending', 'In Progress', 'Blocked', 'Done'].map((status) => <option key={status} value={status}>{status}</option>)}
+                  <div className="overflow-hidden rounded-xl border border-border bg-card">
+                    <div className="hidden grid-cols-[1fr_9rem_1fr_7rem_7rem_9rem_5rem] items-center gap-x-3 border-b border-border bg-muted/40 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground md:grid">
+                      <span>Task</span>
+                      <span>Owner</span>
+                      <span>Details</span>
+                      <span>Priority</span>
+                      <span>Status</span>
+                      <span>Due</span>
+                      <span />
+                    </div>
+                    <div className="divide-y divide-border">
+                      {item.tasks.length === 0 ? (
+                        <div className="py-12 text-center text-sm text-muted-foreground">
+                          No tasks yet for this campaign.
+                          <button onClick={() => openTask(item.campaign)} className="ml-2 font-bold text-gc-orange hover:underline">Create one</button>
+                        </div>
+                      ) : (
+                        item.tasks.map((task: Task) => {
+                          const status = getOperationalTaskStatus(task);
+                          const canEdit = canEditTask(task);
+                          return (
+                            <div key={task.id} className="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-[1fr_9rem_1fr_7rem_7rem_9rem_5rem] items-center md:gap-3 hover:bg-muted/20 transition-colors">
+                              <div className="min-w-0">
+                                <p className={cn('truncate text-sm font-semibold text-foreground', task.completed && 'line-through text-muted-foreground')}>{task.title}</p>
+                              </div>
+                              <div className="text-xs text-muted-foreground">{task.ownerId || <span className="text-red-500">Unassigned</span>}</div>
+                              <div className="min-w-0">
+                                <p className="truncate text-xs text-muted-foreground">{task.description || task.nextStep || '-'}</p>
+                              </div>
+                              <div>
+                                <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold',
+                                  task.priority === 'Critical' ? 'border-red-200 bg-red-50 text-red-700' :
+                                  task.priority === 'High' ? 'border-orange-200 bg-orange-50 text-orange-700' :
+                                  task.priority === 'Medium' ? 'border-amber-200 bg-amber-50 text-amber-700' :
+                                  'border-green-200 bg-green-50 text-green-700')}>{task.priority}</span>
+                              </div>
+                              <div>
+                                <select className={cn('h-7 rounded border px-1.5 text-[10px] font-bold uppercase',
+                                  status === 'Done' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' :
+                                  status === 'Blocked' ? 'border-red-200 bg-red-50 text-red-700' :
+                                  status === 'In Progress' ? 'border-blue-200 bg-blue-50 text-blue-700' :
+                                  'border-amber-200 bg-amber-50 text-amber-700')}
+                                  value={status} disabled={!canEdit}
+                                  onChange={(e) => updateTaskStatus(task, e.target.value as NonNullable<Task['status']>)}>
+                                  {['Pending', 'In Progress', 'Blocked', 'Done'].map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                               </div>
-                            )) : <div className="rounded-lg border border-dashed border-border p-5 text-center text-xs text-muted-foreground">No tasks in this lane</div>}
-                          </div>
-                        </div>
-                      );
-                    })}
+                              <div className={cn('text-xs', !task.completed && task.dueDate && task.dueDate < Date.now() ? 'font-semibold text-red-600' : 'text-foreground')}>
+                                {task.dueDate ? new Date(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {canEdit && <button onClick={() => openTask(item.campaign, task)} className="icon-btn" title="Edit"><Edit3 size={13} /></button>}
+                                <button onClick={() => duplicateTask(task)} className="icon-btn" title="Duplicate"><Copy size={13} /></button>
+                                {isMaster && <button onClick={() => deleteTask(task)} className="icon-btn text-red-500" title="Delete"><Trash2 size={13} /></button>}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
