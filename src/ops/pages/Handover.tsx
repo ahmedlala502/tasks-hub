@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../App';
 import { canEditHandoverRecord, filterHandoversByRole, filterTasksByRole, filterTeamOptionsByRole, getWorkspaceScope } from '../lib/workspace';
 import { getDefaultPlatformUserNames, loadPlatformUserNames, sortUniqueUserNames } from '../lib/platformUsers';
+import { clearRecordParam } from '../lib/recordNavigation';
 import { cn } from '../utils';
 import { dataService } from '../services/dataService';
 import { notify } from '../services/notificationService';
@@ -217,6 +218,7 @@ export default function HandoverCenter() {
     setEditingId(null);
     setDraft(emptyDraft(owners, defaultTeam));
     setFocusedHandoverId(null);
+    if (directHandoverId) setSearchParams(clearRecordParam(searchParams, 'handover'), { replace: true });
   };
   const canEditHandover = (handover: Handover) => canEditHandoverRecord(role, user?.displayName, handover);
   const canDeleteHandover = role === 'master';

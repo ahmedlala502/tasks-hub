@@ -28,6 +28,7 @@ import {
 import { format, isPast, isValid } from 'date-fns';
 import { useAuth } from '../App';
 import { canEditTaskRecord, canManageAnyTaskRecord, filterCampaignsByRole, filterTasksByRole } from '../lib/workspace';
+import { clearRecordParam } from '../lib/recordNavigation';
 import { getDefaultPlatformUserNames, loadPlatformUserNames, sortUniqueUserNames } from '../lib/platformUsers';
 import {
   TASK_BUCKET_LABELS,
@@ -217,6 +218,7 @@ export default function TasksCenter() {
     setEditingId(null);
     setEditDraft(null);
     setFormError('');
+    if (directTaskId) setSearchParams(clearRecordParam(searchParams, 'task'), { replace: true });
   };
 
   const saveEdit = () => {
@@ -248,6 +250,7 @@ export default function TasksCenter() {
     setEditingId(null);
     setEditDraft(null);
     setFormError('');
+    if (directTaskId) setSearchParams(clearRecordParam(searchParams, 'task'), { replace: true });
   };
 
   const toggleComplete = (task: Task) => {
