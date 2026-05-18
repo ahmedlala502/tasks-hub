@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { format, isPast, isValid } from 'date-fns';
 import { useAuth } from '../App';
-import { canEditTaskRecord, filterCampaignsByRole, filterTasksByRole } from '../lib/workspace';
+import { canEditTaskRecord, canManageAnyTaskRecord, filterCampaignsByRole, filterTasksByRole } from '../lib/workspace';
 import { getDefaultPlatformUserNames, loadPlatformUserNames, sortUniqueUserNames } from '../lib/platformUsers';
 import {
   TASK_BUCKET_LABELS,
@@ -184,12 +184,12 @@ export default function TasksCenter() {
 
   const summaries = useMemo(() => buildTaskBucketSummaries(tasks, now), [tasks, now]);
   const campaignGroups = useMemo(() => buildCampaignTaskGroups(filtered, now), [filtered, now]);
-  const canEditTask = (task: Task) => canEditTaskRecord(role, user?.displayName, task);
-  const canDeleteTask = role === 'master';
+  const canEditTask = (task: Task) => canEditTaskRecord(role, user?.displayName, task, user?.email);
+  const canDeleteTask = canManageAnyTaskRecord(role, user?.displayName, user?.email);
 
   const startEdit = (task: Task) => {
     if (!canEditTask(task)) {
-      notify('View Only', 'Only the assigned user or Master can edit this task.', 'orange', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
+      notify('View Only', 'Only the assigned user or admin can edit this task.', 'orange', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
       return;
     }
     setEditingId(task.id);
@@ -202,8 +202,8 @@ export default function TasksCenter() {
     if (!directTaskId || editingId === directTaskId) return;
     const task = tasks.find((item) => item.id === directTaskId);
     if (!task) return;
-    if (!canEditTaskRecord(role, user?.displayName, task)) {
-      notify('View Only', 'Only the assigned user or Master can edit this task.', 'orange', `/tasks?task=${encodeURIComponent(task.id)}`);
+    if (!canEditTaskRecord(role, user?.displayName, task, user?.email)) {
+      notify('View Only', 'Only the assigned user or admin can edit this task.', 'orange', `/tasks?task=${encodeURIComponent(task.id)}`);
       return;
     }
     setEditingId(task.id);
@@ -211,7 +211,7 @@ export default function TasksCenter() {
     setConfirmDeleteId(null);
     setFormError('');
     setViewMode('list');
-  }, [directTaskId, editingId, role, tasks, user?.displayName]);
+  }, [directTaskId, editingId, role, tasks, user?.displayName, user?.email]);
 
   const cancelEdit = () => {
     setEditingId(null);
@@ -223,7 +223,7 @@ export default function TasksCenter() {
     if (!editingId || !editDraft?.title?.trim()) return;
     const existingTask = tasks.find(t => t.id === editingId);
     if (!existingTask || !canEditTask(existingTask)) {
-      notify('View Only', 'Only the assigned user or Master can edit this task.', 'orange', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
+      notify('View Only', 'Only the assigned user or admin can edit this task.', 'orange', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
       cancelEdit();
       return;
     }
@@ -252,7 +252,7 @@ export default function TasksCenter() {
 
   const toggleComplete = (task: Task) => {
     if (!canEditTask(task)) {
-      notify('View Only', 'Only the assigned user or Master can update this task.', 'orange', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
+      notify('View Only', 'Only the assigned user or admin can update this task.', 'orange', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
       return;
     }
     dataService.updateTask(task.id, { completed: !task.completed, completedAt: task.completed ? undefined : Date.now(), updatedAt: Date.now() });
@@ -267,7 +267,7 @@ export default function TasksCenter() {
 
   const deleteTask = (id: string) => {
     if (!canDeleteTask) {
-      notify('Master Only', 'Only Master can delete tasks.', 'red', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
+      notify('Admin Only', 'Only admin can delete tasks.', 'red', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
       return;
     }
     const task = tasks.find(t => t.id === id);

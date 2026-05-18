@@ -12,7 +12,7 @@ import type { Campaign, Task } from '../types';
 import { cn } from '../utils';
 import { buildAssignmentOptions } from '../lib/assignmentOptions';
 import { buildMyCampaignMatrix, getOperationalTaskStatus } from '../lib/opsPageInsights';
-import { canEditTaskRecord } from '../lib/workspace';
+import { canEditTaskRecord, canManageAnyTaskRecord } from '../lib/workspace';
 import { dataService, TEAM_MEMBERS } from '../services/dataService';
 import { notify } from '../services/notificationService';
 import { opsCampaignsService } from '../services/opsCampaignsService';
@@ -79,6 +79,7 @@ export default function CampaignList() {
   const navigate = useNavigate();
   const { role, user } = useAuth();
   const isMaster = role === 'master';
+  const isTaskAdmin = canManageAnyTaskRecord(role, user?.displayName, user?.email);
   const [campaigns, setCampaigns] = useState<Campaign[]>(dataService.getCampaigns());
   const [tasks, setTasks] = useState<Task[]>(dataService.getTasks());
   const [query, setQuery] = useState('');
@@ -141,12 +142,12 @@ export default function CampaignList() {
     });
   };
 
-  const canEditTask = (task: Task) => canEditTaskRecord(role, user?.displayName, task);
+  const canEditTask = (task: Task) => canEditTaskRecord(role, user?.displayName, task, user?.email);
 
   const openTask = (campaign: Campaign, task?: Task, department = 'PMO') => {
     if (task) {
       if (!canEditTask(task)) {
-        notify('View Only', 'Only the assigned user or Master can edit this task.', 'orange', '/campaigns');
+        notify('View Only', 'Only the assigned user or admin can edit this task.', 'orange', '/campaigns');
         return;
       }
       setTaskDraft({
@@ -181,8 +182,8 @@ export default function CampaignList() {
     if (!taskDraft?.title.trim()) return;
     if (taskDraft.id) {
       const existing = tasks.find((task) => task.id === taskDraft.id);
-      if (existing && !canEditTaskRecord(role, user?.displayName, existing)) {
-        notify('View Only', 'Only the assigned user or Master can edit this task.', 'orange', '/campaigns');
+      if (existing && !canEditTaskRecord(role, user?.displayName, existing, user?.email)) {
+        notify('View Only', 'Only the assigned user or admin can edit this task.', 'orange', '/campaigns');
         setTaskDraft(null);
         return;
       }
@@ -219,8 +220,8 @@ export default function CampaignList() {
   };
 
   const updateTaskStatus = (task: Task, status: NonNullable<Task['status']>) => {
-    if (!canEditTaskRecord(role, user?.displayName, task)) {
-      notify('View Only', 'Only the assigned user or Master can update this task.', 'orange', '/campaigns');
+    if (!canEditTaskRecord(role, user?.displayName, task, user?.email)) {
+      notify('View Only', 'Only the assigned user or admin can update this task.', 'orange', '/campaigns');
       return;
     }
     setTasks(dataService.updateTask(task.id, {
@@ -232,7 +233,7 @@ export default function CampaignList() {
   };
 
   const deleteTask = (task: Task) => {
-    if (!isMaster) return;
+    if (!isTaskAdmin) return;
     setTasks(dataService.deleteTask(task.id));
     notify('Campaign Task Deleted', `"${task.title}" removed`, 'red', '/campaigns');
   };
@@ -277,7 +278,7 @@ export default function CampaignList() {
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-gc-orange">Campaigns</p>
             <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Campaign Execution Buckets</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Expandable campaign buckets with PMO-style task lanes, assignment, status, edits, and master-only delete.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Expandable campaign buckets with PMO-style task lanes, assignment, status, edits, and admin-only task delete.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className={cn(
@@ -301,7 +302,7 @@ export default function CampaignList() {
         <Metric title="Campaigns" value={filteredCampaigns.length} />
         <Metric title="Open Tasks" value={openTasks} tone="purple" />
         <Metric title="Blocked Tasks" value={blockedTasks} tone="red" />
-        <Metric title="Master Delete" value={isMaster ? 'On' : 'Locked'} tone={isMaster ? 'green' : 'orange'} />
+        <Metric title="Task Admin" value={isTaskAdmin ? 'On' : 'Locked'} tone={isTaskAdmin ? 'green' : 'orange'} />
       </div>
 
       <section className="rounded-xl border border-border bg-card p-4">
@@ -460,7 +461,7 @@ export default function CampaignList() {
                               <div className="flex items-center gap-1">
                                 {canEdit && <button onClick={() => openTask(item.campaign, task)} className="icon-btn" title="Edit"><Edit3 size={13} /></button>}
                                 <button onClick={() => duplicateTask(task)} className="icon-btn" title="Duplicate"><Copy size={13} /></button>
-                                {isMaster && <button onClick={() => deleteTask(task)} className="icon-btn text-red-500" title="Delete"><Trash2 size={13} /></button>}
+                                {isTaskAdmin && <button onClick={() => deleteTask(task)} className="icon-btn text-red-500" title="Delete"><Trash2 size={13} /></button>}
                               </div>
                             </div>
                           );

@@ -200,7 +200,7 @@ export default function DailyRoutines() {
     [platformUsers, user?.displayName],
   );
 
-  const canEditTask = (task: Task) => canEditTaskRecord(role, user?.displayName, task);
+  const canEditTask = (task: Task) => canEditTaskRecord(role, user?.displayName, task, user?.email);
 
   const totals = useMemo(() => {
     let totalTasks = 0, totalDone = 0, totalInProgress = 0, totalPending = 0, totalBlocked = 0;
@@ -219,7 +219,7 @@ export default function DailyRoutines() {
     const now = Date.now();
     const existing = draft.id ? tasks.find(t => t.id === draft.id) : undefined;
     if (existing && !canEditTask(existing)) {
-      notify('View Only', 'Only the assigned user or Master can edit this task.', 'orange', '/daily-routines');
+      notify('View Only', 'Only the assigned user or admin can edit this task.', 'orange', '/daily-routines');
       setDraft(null);
       return;
     }
@@ -249,7 +249,7 @@ export default function DailyRoutines() {
   const updateStatus = (taskId: string, status: NonNullable<Task['status']>) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task || !canEditTask(task)) {
-      notify('View Only', 'Only the assigned user or Master can update this task.', 'orange', '/daily-routines');
+      notify('View Only', 'Only the assigned user or admin can update this task.', 'orange', '/daily-routines');
       return;
     }
     setTasks(dataService.updateTask(taskId, {

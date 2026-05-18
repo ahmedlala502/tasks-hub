@@ -101,8 +101,15 @@ function samePerson(a: string | undefined | null, b: string | undefined | null):
   return normalizeWorkspaceText(a) === normalizeWorkspaceText(b) && Boolean(normalizeWorkspaceText(a));
 }
 
-export function canEditTaskRecord(role: OpsRole | null, actorName: string | undefined | null, task: Pick<Task, 'ownerId'>): boolean {
-  if (role === 'master') return true;
+const GLOBAL_TASK_ADMIN_IDENTIFIERS = new Set(['admin', 'admin@trygc.com']);
+
+export function canManageAnyTaskRecord(role: OpsRole | null, actorName: string | undefined | null, actorEmail?: string | null): boolean {
+  if (role !== 'master') return false;
+  return [actorName, actorEmail].some((value) => GLOBAL_TASK_ADMIN_IDENTIFIERS.has(normalizeWorkspaceText(value)));
+}
+
+export function canEditTaskRecord(role: OpsRole | null, actorName: string | undefined | null, task: Pick<Task, 'ownerId'>, actorEmail?: string | null): boolean {
+  if (canManageAnyTaskRecord(role, actorName, actorEmail)) return true;
   return samePerson(actorName, task.ownerId);
 }
 

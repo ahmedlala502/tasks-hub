@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CampaignStage } from '../constants';
 import type { Campaign, Handover, Task } from '../types';
 import {
+  canManageAnyTaskRecord,
   canEditHandoverRecord,
   canEditTaskRecord,
   filterCampaignsByRole,
@@ -113,12 +114,21 @@ describe('workspace visibility and edit ownership', () => {
     }
   });
 
-  it('allows only master or the assigned task owner to edit a task', () => {
+  it('allows only the admin user or the assigned task owner to edit a task', () => {
     const record = task({ ownerId: 'Mona K.', createdBy: 'Ahmed Elmahdi' });
 
-    expect(canEditTaskRecord('master', 'Anyone', record)).toBe(true);
+    expect(canEditTaskRecord('master', 'admin', record)).toBe(true);
+    expect(canEditTaskRecord('master', 'admin@trygc.com', record)).toBe(true);
+    expect(canEditTaskRecord('master', 'Adel Hammad', record)).toBe(false);
     expect(canEditTaskRecord('operations', 'Mona K.', record)).toBe(true);
     expect(canEditTaskRecord('community', 'Ahmed Elmahdi', record)).toBe(false);
+  });
+
+  it('allows only the admin user to delete tasks or globally manage task status', () => {
+    expect(canManageAnyTaskRecord('master', 'admin')).toBe(true);
+    expect(canManageAnyTaskRecord('master', 'admin@trygc.com')).toBe(true);
+    expect(canManageAnyTaskRecord('master', 'Adel Hammad')).toBe(false);
+    expect(canManageAnyTaskRecord('operations', 'admin')).toBe(false);
   });
 
   it('allows only master or handover participants to edit a handover', () => {

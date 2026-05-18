@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Blocker, Campaign, Handover, Task } from '../types';
 import { buildOfficeInsights } from './officeInsights';
+import { isVisibleInReports, REPORT_HIDDEN_USER_NAMES } from './reportVisibility';
 
 const baseTask = (ownerId: string, completed = false): Task => ({
   id: `T-${ownerId}-${completed}`,
@@ -112,5 +113,30 @@ describe('officeInsights', () => {
       blockers: 1,
     });
     expect(insights.agentRows.map((row) => [row.office, row.name])).toContainEqual(['Egypt', 'Ops Egypt']);
+  });
+
+  it('keeps report-hidden access users out of report people rows', () => {
+    expect(REPORT_HIDDEN_USER_NAMES).toContain('Adel Hammad');
+    expect(isVisibleInReports('Adel Hammad')).toBe(false);
+
+    const insights = buildOfficeInsights({
+      users: [
+        { displayName: 'Adel Hammad', email: 'adel@grand-community.com', role: 'master', office: 'Egypt', department: 'Operations', title: 'Master Admin', status: 'active' },
+        { displayName: 'Visible Admin', email: 'visible@test.com', role: 'master', office: 'Egypt', department: 'Operations', title: 'Master Admin', status: 'active' },
+      ],
+      tasks: [baseTask('Adel Hammad', true), baseTask('Visible Admin', true)],
+      handovers: [handover('Adel Hammad', 'Visible Admin')],
+      blockers: [blocker('Adel Hammad')],
+      campaigns: [campaign('Adel Hammad'), campaign('Visible Admin')],
+    });
+
+    expect(insights.agentRows.map((row) => row.name)).toEqual(['Visible Admin']);
+    expect(insights.officeRows.find((row) => row.office === 'Egypt')).toMatchObject({
+      agents: 1,
+      tasks: 1,
+      done: 1,
+      blockers: 0,
+      campaigns: 1,
+    });
   });
 });

@@ -40,6 +40,7 @@ import { INITIAL_MEMBERS, OFFICES, TEAMS } from '../../constants';
 import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
 import { getOfficeFromProfile, OPS_OFFICES, type OpsOffice, type OpsRole, type OpsUser } from '../auth/types';
 import { buildOfficeInsights, type OfficeUser } from '../lib/officeInsights';
+import { isReportVisibleUser, isVisibleInReports } from '../lib/reportVisibility';
 import {
   Bar,
   BarChart,
@@ -232,8 +233,14 @@ export default function Reporting() {
     });
 
     const memberMap = new Map(directoryFromMembers.map((member) => [normalizeLower(member.name), member]));
+    const visibleDefaultAccessUsers = DEFAULT_ACCESS_USERS.filter(isReportVisibleUser);
+    const visibleAttachedUsers = ATTACHED_EXPORT_USERS.filter(isReportVisibleUser);
+    const visibleCloudUsers = cloudUsers.filter(isReportVisibleUser);
+    const visibleCurrentUser = user && isReportVisibleUser(user) ? [user] : [];
+    const visibleObservedNames = Array.from(observedNames).filter((name) => Boolean(name) && isVisibleInReports(name));
+
     const directoryUsers: OfficeUser[] = [
-      ...DEFAULT_ACCESS_USERS.map((item) => ({
+      ...visibleDefaultAccessUsers.map((item) => ({
         uid: `seed-${item.email}`,
         email: item.email,
         displayName: item.name,
@@ -244,10 +251,10 @@ export default function Reporting() {
         title: item.title,
         timezone: 'Africa/Cairo',
       })),
-      ...ATTACHED_EXPORT_USERS,
-      ...cloudUsers,
-      ...(user ? [user] : []),
-      ...Array.from(observedNames).filter(Boolean).map((name) => {
+      ...visibleAttachedUsers,
+      ...visibleCloudUsers,
+      ...visibleCurrentUser,
+      ...visibleObservedNames.map((name) => {
         const member = memberMap.get(normalizeLower(name));
         const inferredRole = roleFromObservedName(name);
         return {
@@ -375,7 +382,12 @@ export default function Reporting() {
       };
     }).filter((row) => Number(row.Tasks) > 0 || Number(row.HandoversOut) > 0 || Number(row.Campaigns) > 0);
 
-    const taskRows: DataRow[] = tasks.map((task) => ({
+    const reportVisibleTasks = tasks.filter((task) => isVisibleInReports(task.ownerId));
+    const reportVisibleHandovers = handovers.filter((handover) => isVisibleInReports(handover.outgoingLead) && isVisibleInReports(handover.incomingLead));
+    const reportVisibleBlockers = blockers.filter((blocker) => isVisibleInReports(blocker.ownerId));
+    const reportVisibleCampaigns = campaigns.filter((campaign) => isVisibleInReports(campaign.currentOwner));
+
+    const taskRows: DataRow[] = reportVisibleTasks.map((task) => ({
       Task: task.title,
       Owner: normalize(task.ownerId),
       Campaign: normalize(task.campaignId),
@@ -385,7 +397,7 @@ export default function Reporting() {
       AgeDays: Math.max(0, Math.floor((Date.now() - task.createdAt) / (1000 * 60 * 60 * 24))),
     }));
 
-    const handoverRows: DataRow[] = handovers.map((handover) => ({
+    const handoverRows: DataRow[] = reportVisibleHandovers.map((handover) => ({
       Date: handover.handoffDate,
       Team: handover.team,
       Region: handover.region,
@@ -396,7 +408,7 @@ export default function Reporting() {
       NotesSize: handover.notes.length,
     }));
 
-    const blockerRows: DataRow[] = blockers.map((blocker) => ({
+    const blockerRows: DataRow[] = reportVisibleBlockers.map((blocker) => ({
       Blocker: blocker.summary,
       Owner: normalize(blocker.ownerId),
       Severity: blocker.severity,
@@ -406,7 +418,7 @@ export default function Reporting() {
       Impact: blocker.impact,
     }));
 
-    const campaignRows: DataRow[] = campaigns.map((campaign) => ({
+    const campaignRows: DataRow[] = reportVisibleCampaigns.map((campaign) => ({
       Campaign: campaign.name,
       Owner: campaign.currentOwner,
       Market: `${campaign.country} / ${campaign.city}`,
@@ -437,10 +449,7 @@ export default function Reporting() {
       };
     }).filter((row) => Number(row.TotalTasks) > 0);
 
-    const doneTasks = tasks.filter((task) => task.completed).length;
-    const overdueTasks = tasks.filter((task) => isOverdue(task.dueDate, task.completed)).length;
-    const acknowledgedHandovers = handovers.filter((handover) => handover.status !== 'Pending').length;
-    const totalBudget = campaigns.reduce((sum, campaign) => sum + campaign.budget, 0);
+    const acknowledgedHandovers = reportVisibleHandovers.filter((handover) => handover.status !== 'Pending').length;
 
     const reportMap: Record<PillarKey, PillarReport> = {
       offices: {
@@ -478,15 +487,15 @@ export default function Reporting() {
         key: 'tasks',
         label: 'Tasks',
         description: 'Detailed task flow with owner, status, and due-date pressure.',
-        value: String(tasks.length),
-        insight: `${doneTasks} done / ${tasks.length - doneTasks} still open`,
+        value: String(reportVisibleTasks.length),
+        insight: `${reportVisibleTasks.filter((task) => task.completed).length} done / ${reportVisibleTasks.filter((task) => !task.completed).length} still open`,
         rows: taskRows,
       },
       handovers: {
         key: 'handovers',
         label: 'Handovers',
         description: 'Shift relay continuity, acknowledgement, and linked workload.',
-        value: String(handovers.length),
+        value: String(reportVisibleHandovers.length),
         insight: `${acknowledgedHandovers} acknowledged or reviewed relays`,
         rows: handoverRows,
       },
@@ -494,24 +503,24 @@ export default function Reporting() {
         key: 'sla',
         label: 'SLA',
         description: 'Compliance pressure by owner using due dates and backlog heat.',
-        value: percent(tasks.length ? ((tasks.length - overdueTasks) / tasks.length) * 100 : 100),
-        insight: `${overdueTasks} overdue tasks currently threatening SLA`,
+        value: percent(reportVisibleTasks.length ? ((reportVisibleTasks.length - reportVisibleTasks.filter((task) => isOverdue(task.dueDate, task.completed)).length) / reportVisibleTasks.length) * 100 : 100),
+        insight: `${reportVisibleTasks.filter((task) => isOverdue(task.dueDate, task.completed)).length} overdue tasks currently threatening SLA`,
         rows: slaOwnerRows,
       },
       blockers: {
         key: 'blockers',
         label: 'Blockers',
         description: 'Open risk inventory with severity, age, and ownership.',
-        value: String(blockers.length),
-        insight: `${blockers.filter((blocker) => blocker.severity === 'Critical').length} critical blockers require immediate attention`,
+        value: String(reportVisibleBlockers.length),
+        insight: `${reportVisibleBlockers.filter((blocker) => blocker.severity === 'Critical').length} critical blockers require immediate attention`,
         rows: blockerRows,
       },
       campaigns: {
         key: 'campaigns',
         label: 'Campaigns',
         description: 'Portfolio health, ownership mix, and budget exposure.',
-        value: String(campaigns.length),
-        insight: `${currency(totalBudget)} in tracked campaign budget`,
+        value: String(reportVisibleCampaigns.length),
+        insight: `${currency(reportVisibleCampaigns.reduce((sum, campaign) => sum + campaign.budget, 0))} in tracked campaign budget`,
         rows: campaignRows,
       },
     };

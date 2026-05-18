@@ -1,6 +1,7 @@
 import type { OpsOffice, OpsRole, OpsUserStatus } from '../auth/types';
 import { OPS_OFFICES } from '../auth/types';
 import type { Blocker, Campaign, Handover, Task } from '../types';
+import { isReportVisibleUser, isVisibleInReports } from './reportVisibility';
 import { normalizeWorkspaceText } from './workspace';
 
 export type OfficeUser = {
@@ -62,18 +63,23 @@ function sameName(a: string | undefined | null, b: string | undefined | null): b
 
 export function buildOfficeInsights(input: OfficeInsightsInput): OfficeInsights {
   const activeUsers = input.users.filter(
-    (user) => user && user.status !== 'suspended' && typeof user.displayName === 'string' && user.displayName.trim().length > 0,
+    (user) => user && user.status !== 'suspended' && typeof user.displayName === 'string' && user.displayName.trim().length > 0 && isReportVisibleUser(user),
   );
 
   const agentRows = activeUsers
     .map((user) => {
-      const tasks = input.tasks.filter((task) => sameName(task.ownerId, user.displayName));
+      const tasks = input.tasks.filter((task) => isVisibleInReports(task.ownerId) && sameName(task.ownerId, user.displayName));
       const done = tasks.filter((task) => task.completed).length;
-      const handovers = input.handovers.filter((handover) => sameName(handover.outgoingLead, user.displayName) || sameName(handover.incomingLead, user.displayName));
-      const blockers = input.blockers.filter((blocker) => sameName(blocker.ownerId, user.displayName) && blocker.status !== 'Resolved');
+      const handovers = input.handovers.filter((handover) =>
+        isVisibleInReports(handover.outgoingLead) &&
+        isVisibleInReports(handover.incomingLead) &&
+        (sameName(handover.outgoingLead, user.displayName) || sameName(handover.incomingLead, user.displayName))
+      );
+      const blockers = input.blockers.filter((blocker) => isVisibleInReports(blocker.ownerId) && sameName(blocker.ownerId, user.displayName) && blocker.status !== 'Resolved');
       const campaigns = input.campaigns.filter((campaign) =>
-        sameName(campaign.currentOwner, user.displayName) ||
-        campaign.internalOwners?.some((owner) => sameName(owner, user.displayName))
+        isVisibleInReports(campaign.currentOwner) &&
+        (sameName(campaign.currentOwner, user.displayName) ||
+          campaign.internalOwners?.some((owner) => isVisibleInReports(owner) && sameName(owner, user.displayName)))
       );
 
       return {
