@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Archive,
@@ -49,6 +49,7 @@ import { rowsToTasks } from '../services/spreadsheetService';
 const PRIORITIES: Task['priority'][] = ['Low', 'Medium', 'High', 'Critical'];
 const ONE_DAY = 86400000;
 const BUCKETS: TaskBucket[] = ['all', 'done', 'in-progress', 'pending', 'blocked', 'new'];
+type TaskBoardView = 'list' | 'campaign';
 
 const fallbackDueDate = () => Date.now() + ONE_DAY;
 
@@ -115,8 +116,10 @@ function isTaskBucket(value: string | undefined): value is TaskBucket {
 export default function TasksCenter() {
   const { role, user } = useAuth();
   const { bucket } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const selectedBucket = isTaskBucket(bucket) ? bucket : null;
+  const directTaskId = searchParams.get('task');
   const now = Date.now();
 
   const [tasks, setTasks] = useState<Task[]>(filterTasksByRole(role, dataService.getTasks()));
@@ -128,6 +131,8 @@ export default function TasksCenter() {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | Task['priority']>('all');
+  const [bucketFilter, setBucketFilter] = useState<TaskBucket>(selectedBucket || (isTaskBucket(searchParams.get('bucket') || undefined) ? searchParams.get('bucket') as TaskBucket : 'all'));
+  const [viewMode, setViewMode] = useState<TaskBoardView>(searchParams.get('view') === 'campaign' ? 'campaign' : 'list');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [platformUsers, setPlatformUsers] = useState<string[]>(getDefaultPlatformUserNames());
   const [formError, setFormError] = useState('');
@@ -152,9 +157,10 @@ export default function TasksCenter() {
     [platformUsers, user?.displayName],
   );
 
+  const activeBucket = selectedBucket || bucketFilter;
   const bucketTasks = useMemo(() => (
-    selectedBucket ? filterTasksByBucket(tasks, selectedBucket, now) : tasks
-  ), [tasks, selectedBucket, now]);
+    activeBucket && activeBucket !== 'all' ? filterTasksByBucket(tasks, activeBucket, now) : tasks
+  ), [tasks, activeBucket, now]);
 
   const filtered = useMemo(() => {
     const pw: Record<string, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 };
@@ -177,7 +183,7 @@ export default function TasksCenter() {
   }, [bucketTasks, query, ownerFilter, statusFilter, priorityFilter]);
 
   const summaries = useMemo(() => buildTaskBucketSummaries(tasks, now), [tasks, now]);
-  const campaignGroups = useMemo(() => buildCampaignTaskGroups(selectedBucket ? filtered : tasks, now), [filtered, tasks, selectedBucket, now]);
+  const campaignGroups = useMemo(() => buildCampaignTaskGroups(filtered, now), [filtered, now]);
   const canEditTask = (task: Task) => canEditTaskRecord(role, user?.displayName, task);
   const canDeleteTask = role === 'master';
 
@@ -191,6 +197,21 @@ export default function TasksCenter() {
     setConfirmDeleteId(null);
     setFormError('');
   };
+
+  useEffect(() => {
+    if (!directTaskId || editingId === directTaskId) return;
+    const task = tasks.find((item) => item.id === directTaskId);
+    if (!task) return;
+    if (!canEditTaskRecord(role, user?.displayName, task)) {
+      notify('View Only', 'Only the assigned user or Master can edit this task.', 'orange', `/tasks?task=${encodeURIComponent(task.id)}`);
+      return;
+    }
+    setEditingId(task.id);
+    setEditDraft({ ...task, dueDate: toValidTimestamp(task.dueDate) });
+    setConfirmDeleteId(null);
+    setFormError('');
+    setViewMode('list');
+  }, [directTaskId, editingId, role, tasks, user?.displayName]);
 
   const cancelEdit = () => {
     setEditingId(null);
@@ -223,7 +244,7 @@ export default function TasksCenter() {
       completed: Boolean(editDraft.completed),
     });
     refreshTasks();
-    notify('Task Updated', `"${editDraft.title.trim()}" saved`, 'orange', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
+    notify('Task Updated', `"${editDraft.title.trim()}" saved`, 'orange', `/tasks?task=${encodeURIComponent(editingId)}`);
     setEditingId(null);
     setEditDraft(null);
     setFormError('');
@@ -240,7 +261,7 @@ export default function TasksCenter() {
       task.completed ? 'Task Reopened' : 'Task Completed',
       `"${task.title}" ${task.completed ? 'returned to active' : 'marked complete'}`,
       task.completed ? 'orange' : 'green',
-      selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all',
+      `/tasks?task=${encodeURIComponent(task.id)}`,
     );
   };
 
@@ -252,7 +273,7 @@ export default function TasksCenter() {
     const task = tasks.find(t => t.id === id);
     dataService.deleteTask(id);
     refreshTasks();
-    if (task) notify('Task Deleted', `"${task.title}" removed`, 'red', selectedBucket ? `/tasks/${selectedBucket}` : '/tasks/all');
+    if (task) notify('Task Deleted', `"${task.title}" removed`, 'red', '/tasks');
     if (editingId === id) cancelEdit();
     setConfirmDeleteId(null);
   };
@@ -281,11 +302,29 @@ export default function TasksCenter() {
     };
     dataService.addTask(task);
     refreshTasks();
-    notify('Task Created', `"${task.title}" added to ${task.campaignId}`, 'green', '/tasks/new');
+    notify('Task Created', `"${task.title}" added to ${task.campaignId}`, 'green', `/tasks?task=${encodeURIComponent(task.id)}`);
     setShowCreate(false);
     setCreateDraft(emptyDraft());
     setFormError('');
-    navigate('/tasks/new');
+    navigate(`/tasks?task=${encodeURIComponent(task.id)}`);
+  };
+
+  const chooseViewMode = (mode: TaskBoardView) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('view', mode);
+    if (bucketFilter !== 'all') next.set('bucket', bucketFilter);
+    else next.delete('bucket');
+    setViewMode(mode);
+    setSearchParams(next);
+  };
+
+  const chooseBucketFilter = (value: TaskBucket) => {
+    const next = new URLSearchParams(searchParams);
+    if (value === 'all') next.delete('bucket');
+    else next.set('bucket', value);
+    next.set('view', viewMode);
+    setBucketFilter(value);
+    setSearchParams(next);
   };
 
   return (
@@ -294,13 +333,11 @@ export default function TasksCenter() {
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[1.5px] text-gc-orange">Core Operations</div>
           <h2 className="text-2xl font-extrabold tracking-tight text-foreground">
-            {selectedBucket ? TASK_BUCKET_LABELS[selectedBucket] : 'Old Tasks'}
+            Task Board
           </h2>
           <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
             <CheckSquare size={15} className="text-gc-orange" />
-            {selectedBucket
-              ? 'Work inside this dedicated lane, then review its campaign sequence below.'
-              : 'Choose a clickable widget to open a dedicated task lane.'}
+            List and campaign views with direct filters and record-level links.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -309,7 +346,7 @@ export default function TasksCenter() {
               to="/tasks"
               className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-xs font-extrabold uppercase tracking-widest text-muted-foreground hover:border-gc-orange hover:text-gc-orange"
             >
-              <ArrowLeft size={15} /> Widgets
+              <ArrowLeft size={15} /> Clear lane
             </Link>
           )}
           <button
@@ -352,41 +389,31 @@ export default function TasksCenter() {
         />
       )}
 
-      {!selectedBucket ? (
-        <>
-          <TaskWidgetGrid summaries={summaries} />
-          <CampaignSequenceSection groups={campaignGroups} />
-        </>
-      ) : (
-        <>
-          <div className="grid gap-4 md:grid-cols-3">
-            <MiniMetric label="Lane Tasks" value={filtered.length} />
+      <>
+          <TaskFilters
+            query={query}
+            ownerFilter={ownerFilter}
+            statusFilter={statusFilter}
+            priorityFilter={priorityFilter}
+            bucketFilter={activeBucket}
+            viewMode={viewMode}
+            owners={owners}
+            onQuery={setQuery}
+            onOwner={setOwnerFilter}
+            onStatus={(value) => setStatusFilter(value)}
+            onPriority={(value) => setPriorityFilter(value as any)}
+            onBucket={chooseBucketFilter}
+            onView={chooseViewMode}
+          />
+
+          <div className="grid gap-4 md:grid-cols-4">
+            <MiniMetric label="Visible Tasks" value={filtered.length} />
             <MiniMetric label="Campaigns" value={campaignGroups.length} />
-            <MiniMetric label="Blocked Here" value={filtered.filter(task => getTaskBucket(task, now) === 'blocked').length} tone="text-red-600" />
+            <MiniMetric label="Blocked" value={filtered.filter(task => getTaskBucket(task, now) === 'blocked').length} tone="text-red-600" />
+            <MiniMetric label="Completed" value={filtered.filter(task => task.completed).length} tone="text-emerald-600" />
           </div>
 
-          <div className="flex flex-wrap gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3">
-            <div className="relative min-w-48 flex-1">
-              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                className="settings-input w-full pl-9"
-                placeholder="Search tasks..."
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-              />
-            </div>
-            <select className="settings-input min-w-40" value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
-              <option value="all">All assignees</option>
-              {owners.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
-            <select className="settings-input min-w-36" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
-              <option value="all">All statuses</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-            </select>
-            <PrioritySelect value={priorityFilter} onChange={v => setPriorityFilter(v as any)} />
-          </div>
-
+          {viewMode === 'list' ? (
           <TaskTable
             tasks={filtered}
             allTaskCount={tasks.length}
@@ -407,10 +434,11 @@ export default function TasksCenter() {
             onConfirmDelete={deleteTask}
             onCancelDelete={() => setConfirmDeleteId(null)}
           />
-
+          ) : null}
+          {viewMode === 'campaign' ? (
           <CampaignSequenceSection groups={campaignGroups} />
+          ) : null}
         </>
-      )}
     </div>
   );
 }
@@ -505,6 +533,86 @@ function TaskWidgetGrid({ summaries }: { summaries: ReturnType<typeof buildTaskB
         </div>
       )}
     </div>
+  );
+}
+
+function TaskFilters({
+  query,
+  ownerFilter,
+  statusFilter,
+  priorityFilter,
+  bucketFilter,
+  viewMode,
+  owners,
+  onQuery,
+  onOwner,
+  onStatus,
+  onPriority,
+  onBucket,
+  onView,
+}: {
+  query: string;
+  ownerFilter: string;
+  statusFilter: 'all' | 'active' | 'completed';
+  priorityFilter: 'all' | Task['priority'];
+  bucketFilter: TaskBucket;
+  viewMode: TaskBoardView;
+  owners: string[];
+  onQuery: (value: string) => void;
+  onOwner: (value: string) => void;
+  onStatus: (value: 'all' | 'active' | 'completed') => void;
+  onPriority: (value: string) => void;
+  onBucket: (value: TaskBucket) => void;
+  onView: (value: TaskBoardView) => void;
+}) {
+  return (
+    <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h3 className="text-sm font-extrabold text-foreground">Task Filters</h3>
+          <p className="mt-1 text-xs text-muted-foreground">Filter the board directly, then switch between list and campaign sequence views.</p>
+        </div>
+        <div className="flex rounded-lg border border-border bg-background p-1">
+          {(['list', 'campaign'] as TaskBoardView[]).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => onView(mode)}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-colors',
+                viewMode === mode ? 'bg-gc-orange text-white' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {mode === 'list' ? 'List View' : 'Campaign View'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[1.4fr_0.9fr_0.8fr_0.8fr_0.8fr]">
+        <div className="relative">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            className="settings-input w-full pl-9"
+            placeholder="Search task, campaign, assignee..."
+            value={query}
+            onChange={e => onQuery(e.target.value)}
+          />
+        </div>
+        <select className="settings-input" value={ownerFilter} onChange={e => onOwner(e.target.value)}>
+          <option value="all">All assignees</option>
+          {owners.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <select className="settings-input" value={bucketFilter} onChange={e => onBucket(e.target.value as TaskBucket)}>
+          {BUCKETS.map((bucket) => <option key={bucket} value={bucket}>{TASK_BUCKET_LABELS[bucket]}</option>)}
+        </select>
+        <select className="settings-input" value={statusFilter} onChange={e => onStatus(e.target.value as 'all' | 'active' | 'completed')}>
+          <option value="all">Any completion</option>
+          <option value="active">Open only</option>
+          <option value="completed">Done only</option>
+        </select>
+        <PrioritySelect value={priorityFilter} onChange={onPriority} />
+      </div>
+    </section>
   );
 }
 
@@ -999,7 +1107,7 @@ function CampaignSequenceSection({ groups }: { groups: CampaignTaskGroup[] }) {
                     const bucketClass = item.bucket === 'done' ? 'bg-green-50 text-green-700' : item.bucket === 'blocked' ? 'bg-red-50 text-red-700' : item.bucket === 'pending' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700';
                     
                     return (
-                      <div key={item.task.id} className="group/item grid grid-cols-4 gap-2 items-center px-3 py-2.5 text-sm transition-colors hover:bg-muted/30">
+                      <Link key={item.task.id} to={`/tasks?task=${encodeURIComponent(item.task.id)}`} className="group/item grid grid-cols-4 gap-2 items-center px-3 py-2.5 text-sm transition-colors hover:bg-muted/30">
                         <div className="min-w-0">
                           <div className="truncate font-semibold text-foreground">{item.task.title}</div>
                           <div className="mt-0.5 flex items-center gap-1.5">
@@ -1020,7 +1128,7 @@ function CampaignSequenceSection({ groups }: { groups: CampaignTaskGroup[] }) {
                           <div className="text-xs font-semibold text-foreground">{fmt(item.task.dueDate, 'MMM d')}</div>
                           <div className="text-[10px] text-muted-foreground">{fmt(item.task.dueDate, 'h:mm a')}</div>
                         </div>
-                      </div>
+                      </Link>
                     );
                   })}
                   

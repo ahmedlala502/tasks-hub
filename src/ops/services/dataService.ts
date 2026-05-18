@@ -199,7 +199,7 @@ const logActivity = (draft: ActivityDraft) => {
 function notifyTaskAssignment(previous: Task | undefined, next: Task) {
   const recipientName = getTaskAssignmentRecipient(previous, next);
   if (!recipientName) return;
-  notify('New case assigned', `"${next.title}" was assigned to you.`, 'purple', '/my-dashboard?tab=assigned', {
+  notify('New case assigned', `"${next.title}" was assigned to you.`, 'purple', `/tasks?task=${encodeURIComponent(next.id)}`, {
     recipientName,
     sound: true,
   });
@@ -207,7 +207,7 @@ function notifyTaskAssignment(previous: Task | undefined, next: Task) {
 
 function notifyHandoverAssignments(previous: Handover | undefined, next: Handover) {
   getNewHandoverRecipients(previous, next).forEach((recipientName) => {
-    notify('New handover assigned', `${next.team} handover is waiting for your review.`, 'purple', '/my-dashboard?tab=handovers', {
+    notify('New handover assigned', `${next.team} handover is waiting for your review.`, 'purple', `/handover?handover=${encodeURIComponent(next.id)}`, {
       recipientName,
       sound: true,
     });

@@ -12,6 +12,7 @@ import { cn } from '../utils';
 import { dataService } from '../services/dataService';
 import { notify } from '../services/notificationService';
 import { Handover, Task } from '../types';
+import { Link, useSearchParams } from 'react-router-dom';
 
 const SHIFT_OPTIONS: Handover['fromShift'][] = ['Morning', 'Mid', 'Night'];
 const TEAM_OPTIONS = ['Operations', 'Coverage', 'Community', 'QA', 'Finance', 'Master Admin'];
@@ -129,6 +130,8 @@ function MultiSelectDropdown({
 
 export default function HandoverCenter() {
   const { role, user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const directHandoverId = searchParams.get('handover');
   const scope = getWorkspaceScope(role);
   
   const [handovers, setHandovers] = useState<Handover[]>(
@@ -138,6 +141,7 @@ export default function HandoverCenter() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | Handover['status']>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [focusedHandoverId, setFocusedHandoverId] = useState<string | null>(directHandoverId);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [adminUsers, setAdminUsers] = useState<string[]>(getDefaultPlatformUserNames());
 
@@ -212,6 +216,7 @@ export default function HandoverCenter() {
   const resetDraft = () => {
     setEditingId(null);
     setDraft(emptyDraft(owners, defaultTeam));
+    setFocusedHandoverId(null);
   };
   const canEditHandover = (handover: Handover) => canEditHandoverRecord(role, user?.displayName, handover);
   const canDeleteHandover = role === 'master';
@@ -229,7 +234,7 @@ export default function HandoverCenter() {
         return;
       }
       setHandovers(filterHandoversByRole(role, dataService.updateHandover(editingId, { ...draft, taskIds: draft.taskIds || [] })));
-      notify('Handover Updated', `${draft.team} relay updated for ${(draft.assignTo || []).length} users`, 'orange', '/handover');
+      notify('Handover Updated', `${draft.team} relay updated for ${(draft.assignTo || []).length} users`, 'orange', `/handover?handover=${encodeURIComponent(editingId)}`);
     } else {
       const next: Handover = {
         id: `HO-${Date.now()}`, handoffDate: draft.handoffDate || format(new Date(), 'yyyy-MM-dd'),
@@ -242,7 +247,7 @@ export default function HandoverCenter() {
         createdAt: Date.now(), updatedAt: Date.now(), createdBy: user?.displayName || 'Workspace User',
       };
       setHandovers(filterHandoversByRole(role, dataService.addHandover(next)));
-      notify('Handover Created', `${next.fromShift} → ${next.toShift} relay for ${(next.assignTo || []).length} users`, 'green', '/handover');
+      notify('Handover Created', `${next.fromShift} → ${next.toShift} relay for ${(next.assignTo || []).length} users`, 'green', `/handover?handover=${encodeURIComponent(next.id)}`);
     }
     resetDraft();
   };
@@ -253,8 +258,23 @@ export default function HandoverCenter() {
       return;
     }
     setEditingId(handover.id);
+    setFocusedHandoverId(handover.id);
+    const next = new URLSearchParams(searchParams);
+    next.set('handover', handover.id);
+    setSearchParams(next);
     setDraft({ ...handover });
   };
+
+  useEffect(() => {
+    if (!directHandoverId || editingId === directHandoverId) return;
+    const handover = handovers.find((item) => item.id === directHandoverId);
+    if (!handover) return;
+    setFocusedHandoverId(handover.id);
+    if (canEditHandoverRecord(role, user?.displayName, handover)) {
+      setEditingId(handover.id);
+      setDraft({ ...handover });
+    }
+  }, [directHandoverId, editingId, handovers, role, user?.displayName]);
 
   const toggleTask = (taskId: string) => {
     const selected = new Set(draft.taskIds || []);
@@ -273,7 +293,7 @@ export default function HandoverCenter() {
       acknowledgedAt: nextStatus === 'Acknowledged' ? Date.now() : handover.acknowledgedAt,
       reviewedAt: nextStatus === 'Reviewed' ? Date.now() : handover.reviewedAt,
     })));
-    notify('Handover Progressed', `${handover.team} handover marked ${nextStatus.toLowerCase()}`, 'green', '/handover');
+    notify('Handover Progressed', `${handover.team} handover marked ${nextStatus.toLowerCase()}`, 'green', `/handover?handover=${encodeURIComponent(handover.id)}`);
   };
 
   const removeHandover = (handover: Handover) => {
@@ -503,11 +523,23 @@ export default function HandoverCenter() {
                 const hasEditAccess = canEditHandover(handover);
                 
                 return (
-                  <div key={handover.id} className="border-b border-border p-5 last:border-b-0 hover:bg-muted/20 transition-colors">
+                  <div
+                    key={handover.id}
+                    className={cn(
+                      'border-b border-border p-5 transition-colors last:border-b-0 hover:bg-muted/20',
+                      focusedHandoverId === handover.id && 'bg-gc-orange/5 ring-2 ring-inset ring-gc-orange/40'
+                    )}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="text-sm font-bold text-foreground">{handover.team}</h4>
+                          <button
+                            type="button"
+                            onClick={() => startEdit(handover)}
+                            className="text-left text-sm font-bold text-foreground hover:text-gc-orange"
+                          >
+                            {handover.team}
+                          </button>
                           <span className={cn('rounded-full px-2 py-1 text-[10px] font-bold uppercase',
                             handover.status === 'Reviewed' ? 'bg-green-50 text-green-700' :
                             handover.status === 'Acknowledged' ? 'bg-purple-50 text-purple-700' :
@@ -579,9 +611,9 @@ export default function HandoverCenter() {
                       <div className="mt-3">
                         <div className="flex flex-wrap gap-2">
                           {relatedTasks.slice(0, 4).map((task) => (
-                            <span key={task.id} className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold text-foreground">
+                            <Link key={task.id} to={`/tasks?task=${encodeURIComponent(task.id)}`} className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold text-foreground hover:border-gc-orange hover:text-gc-orange">
                               {task.title}
-                            </span>
+                            </Link>
                           ))}
                           {relatedTasks.length > 4 && (
                             <span className="rounded-full bg-secondary px-3 py-1 text-[11px] font-semibold text-muted-foreground">

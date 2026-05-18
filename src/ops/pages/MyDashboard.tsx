@@ -18,6 +18,45 @@ const WORK_TABS: Array<{ id: WorkTab; label: string }> = [
 ];
 const TASK_STATUS_OPTIONS: Array<NonNullable<Task['status']>> = ['Pending', 'In Progress', 'Blocked', 'Done'];
 
+function taskPath(task: Pick<Task, 'id' | 'completed'>) {
+  return `/tasks?task=${encodeURIComponent(task.id)}`;
+}
+
+function handoverPath(handover: Pick<Handover, 'id'>) {
+  return `/handover?handover=${encodeURIComponent(handover.id)}`;
+}
+
+function isHandoverRecipient(handover: Handover, displayName: string) {
+  const user = displayName.trim().toLowerCase();
+  if (!user) return false;
+  return [...(handover.assignTo || []), handover.incomingLead || ''].some((name) => {
+    const normalized = name.trim().toLowerCase();
+    return normalized && (normalized === user || normalized.includes(user) || user.includes(normalized));
+  });
+}
+
+function activityPath(event: { entityType: string; entityId: string | null; metadata?: Record<string, unknown> }) {
+  const id = event.entityId || '';
+  const metadataId = typeof event.metadata?.id === 'string' ? event.metadata.id : '';
+  const campaignId = typeof event.metadata?.campaignId === 'string' ? event.metadata.campaignId : '';
+  switch (event.entityType) {
+    case 'task':
+      return `/tasks?task=${encodeURIComponent(id || metadataId)}`;
+    case 'handover':
+      return `/handover?handover=${encodeURIComponent(id || metadataId)}`;
+    case 'campaign':
+      return id || campaignId ? `/campaigns/${encodeURIComponent(id || campaignId)}` : '/campaigns';
+    case 'influencer':
+      return id ? `/influencers/${encodeURIComponent(id)}` : '/influencers';
+    case 'workspace':
+      return '/settings';
+    case 'page':
+      return id || '/';
+    default:
+      return '/my-dashboard';
+  }
+}
+
 export default function MyDashboard() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -87,7 +126,7 @@ export default function MyDashboard() {
       updatedAt: Date.now(),
     });
     setTasks(updated);
-    notify('Task Updated', `"${task.title}" moved to ${status}`, status === 'Done' ? 'green' : 'orange', `/my-dashboard?tab=${status === 'Done' ? 'done' : 'assigned'}`);
+    notify('Task Updated', `"${task.title}" moved to ${status}`, status === 'Done' ? 'green' : 'orange', taskPath(task));
   };
 
   const acknowledgeHandover = (handover: Handover) => {
@@ -98,7 +137,7 @@ export default function MyDashboard() {
       reviewedAt: nextStatus === 'Reviewed' ? Date.now() : handover.reviewedAt,
     });
     setHandovers(updated);
-    notify('Handover Updated', `${handover.team} handover marked ${nextStatus.toLowerCase()}`, 'green', '/my-dashboard?tab=handovers');
+    notify('Handover Updated', `${handover.team} handover marked ${nextStatus.toLowerCase()}`, 'green', handoverPath(handover));
   };
 
   return (
@@ -121,27 +160,20 @@ export default function MyDashboard() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <Metric title="My Tasks" value={insights.totalTasks} detail={`${performanceMetrics.inProgress} in progress · ${performanceMetrics.overdue} overdue`} icon={Target} />
-        <Metric title="Done" value={performanceMetrics.done} detail={`${insights.completionRate}% completion rate`} icon={CheckCircle2} tone="green" />
-        <Metric title="Blocked" value={performanceMetrics.blocked} detail={`${performanceMetrics.overdue} overdue tasks`} icon={AlertCircle} tone="red" />
-        <Metric title="Assigned by Me" value={performanceMetrics.created} detail="Tasks I created for others" icon={UserPlus} tone="purple" />
-      </div>
-
       <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-extrabold text-foreground">Performance Summary</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Your task metrics at a glance.</p>
+            <h3 className="text-sm font-extrabold text-foreground">My Work Summary</h3>
+            <p className="mt-1 text-xs text-muted-foreground">One clean view of your assigned, completed, blocked, and delegated work.</p>
           </div>
           <Link to="/tasks" className="text-xs font-bold text-gc-orange hover:underline">View All Tasks</Link>
         </div>
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
-          <PerfTile label="Total Assigned" value={performanceMetrics.total} />
-          <PerfTile label="Completed" value={performanceMetrics.done} tone="green" />
-          <PerfTile label="In Progress" value={performanceMetrics.inProgress} tone="blue" />
-          <PerfTile label="Overdue" value={performanceMetrics.overdue} tone="red" />
-          <PerfTile label="Tasks I Created" value={performanceMetrics.created} tone="purple" />
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+          <Metric title="Assigned" value={performanceMetrics.total} detail={`${performanceMetrics.inProgress} in progress`} icon={Target} />
+          <Metric title="Done" value={performanceMetrics.done} detail={`${insights.completionRate}% completion`} icon={CheckCircle2} tone="green" />
+          <Metric title="Blocked" value={performanceMetrics.blocked} detail={`${performanceMetrics.overdue} overdue`} icon={AlertCircle} tone="red" />
+          <Metric title="Assigned by Me" value={performanceMetrics.created} detail="Delegated tasks" icon={UserPlus} tone="purple" />
+          <Metric title="Handovers" value={myHandovers.length} detail="To or from you" icon={Handshake} tone="purple" />
         </div>
       </section>
 
@@ -198,6 +230,7 @@ export default function MyDashboard() {
             <PersonalHandoverList
               emptyLabel="No handovers assigned to or from you yet."
               handovers={myHandovers}
+              displayName={displayName}
               onProgress={acknowledgeHandover}
             />
           )}
@@ -216,7 +249,7 @@ export default function MyDashboard() {
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {todayWork.length ? todayWork.map((task) => (
-            <Link key={task.id} to="/tasks" className="block rounded-lg border border-border bg-background p-4 transition-colors hover:border-gc-orange/40 hover:bg-gc-orange/5">
+            <Link key={task.id} to={taskPath(task)} className="block rounded-lg border border-border bg-background p-4 transition-colors hover:border-gc-orange/40 hover:bg-gc-orange/5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold text-foreground">{task.title}</p>
@@ -245,7 +278,7 @@ export default function MyDashboard() {
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {myActivity.length ? myActivity.map((event) => (
-            <div key={event.id} className="rounded-lg border border-border bg-background p-4">
+            <Link key={event.id} to={activityPath(event)} className="block rounded-lg border border-border bg-background p-4 transition-colors hover:border-gc-orange/40 hover:bg-gc-orange/5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold text-foreground">{event.summary}</p>
@@ -253,7 +286,7 @@ export default function MyDashboard() {
                 </div>
                 <span className="shrink-0 text-[11px] font-bold text-muted-foreground">{formatActivityTime(event.createdAt)}</span>
               </div>
-            </div>
+            </Link>
           )) : <EmptyState label="No saved account activity yet." />}
         </div>
       </section>
@@ -295,22 +328,6 @@ function statusColor(status: string) {
   }
 }
 
-function PerfTile({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'green' | 'blue' | 'red' | 'purple' }) {
-  const colors: Record<string, string> = {
-    default: 'text-foreground',
-    green: 'text-emerald-600',
-    blue: 'text-blue-600',
-    red: 'text-red-600',
-    purple: 'text-gc-purple',
-  };
-  return (
-    <div className="rounded-lg border border-border bg-background p-4 text-center">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`mt-2 text-2xl font-black ${colors[tone]}`}>{value}</p>
-    </div>
-  );
-}
-
 function PersonalTaskList({
   tasks,
   mode,
@@ -338,7 +355,7 @@ function PersonalTaskList({
           const status = getOperationalTaskStatus(task) as NonNullable<Task['status']>;
           return (
             <div key={task.id} className="grid gap-3 bg-background px-4 py-4 lg:grid-cols-[1.3fr_0.8fr_0.75fr_0.7fr_0.95fr] lg:items-center">
-              <Link to="/tasks" className="min-w-0 hover:text-gc-orange">
+              <Link to={taskPath(task)} className="min-w-0 hover:text-gc-orange">
                 <p className="truncate text-sm font-extrabold text-foreground">{task.title}</p>
                 <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{task.description || task.nextStep || 'No description saved.'}</p>
               </Link>
@@ -368,10 +385,12 @@ function PersonalTaskList({
 function PersonalHandoverList({
   handovers,
   emptyLabel,
+  displayName,
   onProgress,
 }: {
   handovers: Handover[];
   emptyLabel: string;
+  displayName: string;
   onProgress: (handover: Handover) => void;
 }) {
   if (!handovers.length) return <EmptyState label={emptyLabel} />;
@@ -388,7 +407,7 @@ function PersonalHandoverList({
       <div className="divide-y divide-border">
         {handovers.map((handover) => (
           <div key={handover.id} className="grid gap-3 bg-background px-4 py-4 lg:grid-cols-[1fr_0.9fr_0.9fr_0.7fr_0.8fr] lg:items-center">
-            <Link to="/handover" className="min-w-0 hover:text-gc-orange">
+            <Link to={handoverPath(handover)} className="min-w-0 hover:text-gc-orange">
               <p className="truncate text-sm font-extrabold text-foreground">{handover.team}</p>
               <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{handover.notes || 'No handover notes saved.'}</p>
             </Link>
@@ -399,7 +418,7 @@ function PersonalHandoverList({
               <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase', handover.status === 'Reviewed' ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600' : 'border-gc-purple/20 bg-gc-purple/10 text-gc-purple')}>
                 {handover.status}
               </span>
-              {handover.status !== 'Reviewed' && (
+              {isHandoverRecipient(handover, displayName) && handover.status !== 'Reviewed' && (
                 <button onClick={() => onProgress(handover)} className="rounded-lg bg-gc-orange px-3 py-2 text-[11px] font-bold text-white hover:bg-gc-orange/90">
                   {handover.status === 'Pending' ? 'Acknowledge' : 'Review'}
                 </button>
