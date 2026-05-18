@@ -186,6 +186,7 @@ export default function UserProfile() {
   if (!user) return null;
 
   const isPerformancePage = location.pathname === '/performance';
+  const isProfilePage = location.pathname === '/profile';
 
   const personal = insights.currentUser?.summary || {
     tasks: 0,
@@ -271,7 +272,7 @@ export default function UserProfile() {
             </div>
             <div>
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">
-                {targetUserName ? 'Team Member Profile' : 'Performance Profile'}
+                {targetUserName ? 'Team Member Performance' : isPerformancePage ? 'Performance Matrix' : 'Account Profile'}
               </p>
               <h2 className="text-2xl font-extrabold text-foreground">
                 {targetUserName ? viewedName : isPerformancePage ? "TRYGC KPI's Performance Matrix" : user.displayName}
@@ -279,7 +280,9 @@ export default function UserProfile() {
               <p className="text-xs font-semibold text-muted-foreground">
                 {targetUserName
                   ? `${targetRosterUser?.role || targetAgentRow?.role || 'Team Member'} · ${targetRosterUser?.office || targetAgentRow?.team || 'Workspace'}`
-                  : `${user.email} - credentials handled by Supabase Auth`}
+                  : isPerformancePage
+                    ? 'Team, agent, office, and SLA performance from live workspace records'
+                    : `${user.email} - credentials handled by Supabase Auth`}
               </p>
             </div>
           </div>
@@ -355,7 +358,7 @@ export default function UserProfile() {
         <PerformanceCard label="All Tasks" value={viewedSummary.tasks} tone="text-foreground" icon={BarChart3} />
       </section>
 
-      {role === 'master' && (
+      {role === 'master' && !isProfilePage && (
         <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -384,7 +387,7 @@ export default function UserProfile() {
         </section>
       )}
 
-      <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+      {!isProfilePage && <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">Tool Access</p>
@@ -399,9 +402,9 @@ export default function UserProfile() {
             </Link>
           ))}
         </div>
-      </section>
+      </section>}
 
-      {role === 'master' && (
+      {role === 'master' && !isProfilePage && (
         <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -450,7 +453,7 @@ export default function UserProfile() {
         </section>
       )}
 
-      {!targetUserName && <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+      {!targetUserName && !isPerformancePage && <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
         <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
           <div className="mb-5 flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-gc-orange" />

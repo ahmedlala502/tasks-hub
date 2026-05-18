@@ -10,6 +10,8 @@ export type OpsUpdate = {
   id: string;
   title: string;
   detail: string;
+  campaignId: string | null;
+  campaignName: string | null;
   tone: OpsUpdateTone;
   surfaceNotification: boolean;
   surfaceTicker: boolean;
@@ -26,6 +28,8 @@ export type OpsUpdate = {
 export type OpsUpdateDraft = {
   title: string;
   detail: string;
+  campaignId?: string;
+  campaignName?: string;
   tone: OpsUpdateTone;
   surfaceNotification: boolean;
   surfaceTicker: boolean;
@@ -50,6 +54,8 @@ function mapRow(row: {
   id: string;
   title: string;
   detail: string;
+  campaign_id?: string | null;
+  campaign_name?: string | null;
   tone: string;
   surface_notification: boolean;
   surface_ticker: boolean;
@@ -66,6 +72,8 @@ function mapRow(row: {
     id: row.id,
     title: row.title,
     detail: row.detail,
+    campaignId: row.campaign_id ?? null,
+    campaignName: row.campaign_name ?? null,
     tone: asTone(row.tone),
     surfaceNotification: row.surface_notification,
     surfaceTicker: row.surface_ticker,
@@ -84,6 +92,8 @@ function toPayload(draft: OpsUpdateDraft, createdBy?: string | null) {
   return {
     title: draft.title.trim(),
     detail: draft.detail.trim(),
+    campaign_id: draft.campaignId?.trim() || null,
+    campaign_name: draft.campaignName?.trim() || null,
     tone: draft.tone,
     surface_notification: draft.surfaceNotification,
     surface_ticker: draft.surfaceTicker,
@@ -103,6 +113,8 @@ export function toFeedItem(update: OpsUpdate): UpdateFeedItem {
     kind: 'blocker',
     title: update.pinned ? `Pinned: ${update.title}` : update.title,
     detail: update.detail,
+    campaignId: update.campaignId,
+    campaignName: update.campaignName,
     owner: update.owner,
     at: new Date(update.updatedAt || update.createdAt).getTime(),
     tone: update.tone,
@@ -155,6 +167,8 @@ export const opsUpdatesService = {
 
     if (draft.title !== undefined) payload.title = draft.title.trim();
     if (draft.detail !== undefined) payload.detail = draft.detail.trim();
+    if (draft.campaignId !== undefined) payload.campaign_id = draft.campaignId.trim() || null;
+    if (draft.campaignName !== undefined) payload.campaign_name = draft.campaignName.trim() || null;
     if (draft.tone !== undefined) payload.tone = draft.tone;
     if (draft.surfaceNotification !== undefined) payload.surface_notification = draft.surfaceNotification;
     if (draft.surfaceTicker !== undefined) payload.surface_ticker = draft.surfaceTicker;

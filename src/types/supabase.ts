@@ -101,6 +101,8 @@ export type Database = {
       ops_updates: {
         Row: {
           active: boolean
+          campaign_id: string | null
+          campaign_name: string | null
           created_at: string
           created_by: string | null
           detail: string
@@ -117,6 +119,8 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          campaign_id?: string | null
+          campaign_name?: string | null
           created_at?: string
           created_by?: string | null
           detail: string
@@ -133,6 +137,8 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          campaign_id?: string | null
+          campaign_name?: string | null
           created_at?: string
           created_by?: string | null
           detail?: string

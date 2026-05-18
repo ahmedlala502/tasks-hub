@@ -1,59 +1,43 @@
-import React, { useMemo } from 'react';
-import { Activity, AlertCircle, Bot, CheckCircle2, Handshake, Plus, Target, UserCheck, UserPlus } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { Activity, AlertCircle, Bot, CheckCircle2, Handshake, Plus, Target, UserPlus } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../App';
 import { dataService } from '../services/dataService';
 import { buildMyCampaignMatrix, buildMyDashboardInsights, getOperationalTaskStatus } from '../lib/opsPageInsights';
+import { getPersonalWork } from '../lib/personalWork';
 import { cn } from '../lib/utils';
+import { notify } from '../services/notificationService';
 import type { Handover, Task } from '../types';
 
-function isAssignedToUser(task: Task, displayName: string) {
-  const owner = task.ownerId?.toLowerCase() || '';
-  const user = displayName.toLowerCase();
-  return owner.includes(user) || user.includes(owner);
-}
-
-function isCreatedByUser(task: Task, displayName: string) {
-  const creator = task.createdBy?.toLowerCase() || '';
-  const user = displayName.toLowerCase();
-  return creator.includes(user) || user.includes(creator);
-}
-
-function isHandoverForUser(handover: Handover, displayName: string) {
-  const user = displayName.toLowerCase();
-  return [...(handover.assignFrom || []), ...(handover.assignTo || []), handover.outgoingLead || '', handover.incomingLead || '']
-    .some((name) => name && (name.toLowerCase().includes(user) || user.includes(name.toLowerCase())));
-}
+type WorkTab = 'assigned' | 'done' | 'created' | 'handovers';
+const WORK_TABS: Array<{ id: WorkTab; label: string }> = [
+  { id: 'assigned', label: 'Assigned to me' },
+  { id: 'done', label: 'Completed by me' },
+  { id: 'created', label: 'Assigned by me' },
+  { id: 'handovers', label: 'My handovers' },
+];
+const TASK_STATUS_OPTIONS: Array<NonNullable<Task['status']>> = ['Pending', 'In Progress', 'Blocked', 'Done'];
 
 export default function MyDashboard() {
   const { user } = useAuth();
-  const tasks = dataService.getTasks();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tasks, setTasks] = useState<Task[]>(() => dataService.getTasks());
+  const [handovers, setHandovers] = useState<Handover[]>(() => dataService.getHandovers());
   const campaigns = dataService.getCampaigns();
-  const handovers = dataService.getHandovers();
   const activityLogs = dataService.getActivityLogs();
   const displayName = user?.displayName || 'Workspace User';
   const userEmail = user?.email?.toLowerCase() || '';
   const userId = user?.uid || '';
   const insights = useMemo(() => buildMyDashboardInsights(tasks, campaigns, displayName), [campaigns, displayName, tasks]);
+  const personalWork = useMemo(() => getPersonalWork(displayName, tasks, handovers), [displayName, handovers, tasks]);
+  const requestedTab = searchParams.get('tab') as WorkTab | null;
+  const activeTab = WORK_TABS.some((tab) => tab.id === requestedTab) ? requestedTab! : 'assigned';
 
-  const myAssignedTasks = useMemo(() => {
-    const byId = new Map<string, Task>();
-    tasks.filter((task) => isAssignedToUser(task, displayName)).forEach((task) => byId.set(task.id, task));
-    return Array.from(byId.values()).sort((a, b) => {
-      const statusA = getOperationalTaskStatus(a);
-      const statusB = getOperationalTaskStatus(b);
-      if (statusA !== statusB) return statusA === 'Done' ? 1 : statusB === 'Done' ? -1 : 0;
-      return (a.dueDate || 0) - (b.dueDate || 0);
-    });
-  }, [displayName, tasks]);
+  const myAssignedTasks = personalWork.assignedTasks;
+  const myDoneTasks = personalWork.completedTasks;
+  const myCreatedTasks = personalWork.createdTasks;
+  const myHandovers = personalWork.handovers;
 
-  const myCreatedTasks = useMemo(() => {
-    const byId = new Map<string, Task>();
-    tasks.filter((task) => isCreatedByUser(task, displayName) && !isAssignedToUser(task, displayName)).forEach((task) => byId.set(task.id, task));
-    return Array.from(byId.values()).sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
-  }, [displayName, tasks]);
-
-  const myHandovers = useMemo(() => handovers.filter((handover) => isHandoverForUser(handover, displayName)).slice(0, 6), [displayName, handovers]);
   const campaignMatrix = useMemo(() => buildMyCampaignMatrix(campaigns, tasks).filter((item) => insights.campaignNames.includes(item.campaign.name)).slice(0, 5), [campaigns, insights.campaignNames, tasks]);
   const myActivity = useMemo(() => activityLogs.filter((event) => {
     const eventEmail = event.userEmail?.toLowerCase() || '';
@@ -80,23 +64,51 @@ export default function MyDashboard() {
   }, [myAssignedTasks, myCreatedTasks]);
 
   const performanceMetrics = useMemo(() => {
-    const total = myAssignedTasks.length;
-    const done = myAssignedTasks.filter((t) => t.completed).length;
+    const total = myAssignedTasks.length + myDoneTasks.length;
+    const done = myDoneTasks.length;
     const blocked = myAssignedTasks.filter((t) => getOperationalTaskStatus(t) === 'Blocked').length;
     const inProgress = myAssignedTasks.filter((t) => getOperationalTaskStatus(t) === 'In Progress').length;
     const overdue = myAssignedTasks.filter((t) => !t.completed && t.dueDate && t.dueDate < Date.now()).length;
     const created = myCreatedTasks.length;
     return { total, done, blocked, inProgress, overdue, created };
-  }, [myAssignedTasks, myCreatedTasks]);
+  }, [myAssignedTasks, myCreatedTasks, myDoneTasks.length]);
+
+  const chooseTab = (tab: WorkTab) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tab);
+    setSearchParams(next);
+  };
+
+  const updateTaskStatus = (task: Task, status: NonNullable<Task['status']>) => {
+    const updated = dataService.updateTask(task.id, {
+      status,
+      completed: status === 'Done',
+      completedAt: status === 'Done' ? Date.now() : undefined,
+      updatedAt: Date.now(),
+    });
+    setTasks(updated);
+    notify('Task Updated', `"${task.title}" moved to ${status}`, status === 'Done' ? 'green' : 'orange', `/my-dashboard?tab=${status === 'Done' ? 'done' : 'assigned'}`);
+  };
+
+  const acknowledgeHandover = (handover: Handover) => {
+    const nextStatus = handover.status === 'Pending' ? 'Acknowledged' : 'Reviewed';
+    const updated = dataService.updateHandover(handover.id, {
+      status: nextStatus,
+      acknowledgedAt: nextStatus === 'Acknowledged' ? Date.now() : handover.acknowledgedAt,
+      reviewedAt: nextStatus === 'Reviewed' ? Date.now() : handover.reviewedAt,
+    });
+    setHandovers(updated);
+    notify('Handover Updated', `${handover.team} handover marked ${nextStatus.toLowerCase()}`, 'green', '/my-dashboard?tab=handovers');
+  };
 
   return (
     <div className="mx-auto max-w-[1240px] space-y-6 pb-12">
       <section className="rounded-xl border border-border bg-card p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-gc-orange">My Dashboard</p>
+            <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-gc-orange">My Work</p>
             <h2 className="text-2xl font-extrabold tracking-tight text-foreground">{displayName}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Personal workspace — tasks assigned to and by you, performance summary, and campaign progress.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Personal workspace for assigned tasks, completed work, delegated tasks, and handovers.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/tasks" className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-gc-orange/90">
@@ -130,6 +142,65 @@ export default function MyDashboard() {
           <PerfTile label="In Progress" value={performanceMetrics.inProgress} tone="blue" />
           <PerfTile label="Overdue" value={performanceMetrics.overdue} tone="red" />
           <PerfTile label="Tasks I Created" value={performanceMetrics.created} tone="purple" />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <h3 className="text-sm font-extrabold text-foreground">My Work Queue</h3>
+            <p className="mt-1 text-xs text-muted-foreground">Open your own workload directly and update progress without leaving this page.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {WORK_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => chooseTab(tab.id)}
+                className={cn(
+                  'rounded-lg border px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition-colors',
+                  activeTab === tab.id
+                    ? 'border-gc-orange bg-gc-orange/10 text-gc-orange'
+                    : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4">
+          {activeTab === 'assigned' && (
+            <PersonalTaskList
+              emptyLabel="No active tasks assigned to you yet."
+              tasks={myAssignedTasks}
+              mode="assigned"
+              onStatusChange={updateTaskStatus}
+            />
+          )}
+          {activeTab === 'done' && (
+            <PersonalTaskList
+              emptyLabel="No completed tasks captured for you yet."
+              tasks={myDoneTasks}
+              mode="done"
+              onStatusChange={updateTaskStatus}
+            />
+          )}
+          {activeTab === 'created' && (
+            <PersonalTaskList
+              emptyLabel="You have not assigned any tasks yet."
+              tasks={myCreatedTasks}
+              mode="created"
+              onStatusChange={updateTaskStatus}
+            />
+          )}
+          {activeTab === 'handovers' && (
+            <PersonalHandoverList
+              emptyLabel="No handovers assigned to or from you yet."
+              handovers={myHandovers}
+              onProgress={acknowledgeHandover}
+            />
+          )}
         </div>
       </section>
 
@@ -187,77 +258,7 @@ export default function MyDashboard() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <section className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-extrabold text-foreground">Assigned to Me</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Tasks others assigned to you.</p>
-            </div>
-            <Link to="/tasks" className="text-xs font-bold text-gc-orange hover:underline">Open Tasks</Link>
-          </div>
-          <div className="mt-4 space-y-3">
-            {myAssignedTasks.length ? myAssignedTasks.slice(0, 8).map((task) => (
-              <Link key={task.id} to="/tasks" className="block rounded-lg border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-foreground">{task.title}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{task.campaignId || 'No campaign'} - Created by {task.createdBy || 'Unknown'}</p>
-                  </div>
-                  <span className={cn('shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase', statusColor(getOperationalTaskStatus(task)))}>
-                    {getOperationalTaskStatus(task)}
-                  </span>
-                </div>
-              </Link>
-            )) : <EmptyState label="No tasks assigned to you yet." />}
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-extrabold text-foreground">Tasks I Assigned</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Tasks you created and assigned to others.</p>
-            </div>
-            <Link to="/tasks" className="text-xs font-bold text-gc-orange hover:underline">Open Tasks</Link>
-          </div>
-          <div className="mt-4 space-y-3">
-            {myCreatedTasks.length ? myCreatedTasks.slice(0, 8).map((task) => (
-              <Link key={task.id} to="/tasks" className="block rounded-lg border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-foreground">{task.title}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{task.campaignId || 'No campaign'} - Assigned to {task.ownerId || 'Unassigned'}</p>
-                  </div>
-                  <span className={cn('shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase', statusColor(getOperationalTaskStatus(task)))}>
-                    {getOperationalTaskStatus(task)}
-                  </span>
-                </div>
-              </Link>
-            )) : <EmptyState label="You haven't assigned any tasks yet." />}
-          </div>
-        </section>
-      </div>
-
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-extrabold text-foreground">Assigned Handovers</h3>
-              <p className="mt-1 text-xs text-muted-foreground">Relay items involving you.</p>
-            </div>
-            <Link to="/handover" className="text-xs font-bold text-gc-orange hover:underline">Open Handover</Link>
-          </div>
-          <div className="mt-4 space-y-3">
-            {myHandovers.length ? myHandovers.map((handover) => (
-              <Link key={handover.id} to="/handover" className="block rounded-lg border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
-                <p className="text-sm font-bold text-foreground">{handover.team} - {handover.status}</p>
-                <p className="mt-1 text-xs text-muted-foreground">To {(handover.assignTo || []).join(', ') || handover.incomingLead || 'Unassigned'} - {handover.handoffDate}</p>
-              </Link>
-            )) : <EmptyState label="No handovers assigned to or from you yet." />}
-          </div>
-        </section>
-
+      <div className="grid grid-cols-1 gap-5">
         <section className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <div>
@@ -306,6 +307,107 @@ function PerfTile({ label, value, tone = 'default' }: { label: string; value: nu
     <div className="rounded-lg border border-border bg-background p-4 text-center">
       <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className={`mt-2 text-2xl font-black ${colors[tone]}`}>{value}</p>
+    </div>
+  );
+}
+
+function PersonalTaskList({
+  tasks,
+  mode,
+  emptyLabel,
+  onStatusChange,
+}: {
+  tasks: Task[];
+  mode: 'assigned' | 'done' | 'created';
+  emptyLabel: string;
+  onStatusChange: (task: Task, status: NonNullable<Task['status']>) => void;
+}) {
+  if (!tasks.length) return <EmptyState label={emptyLabel} />;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border">
+      <div className="hidden grid-cols-[1.3fr_0.8fr_0.75fr_0.7fr_0.95fr] border-b border-border bg-muted/30 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground lg:grid">
+        <span>Task</span>
+        <span>{mode === 'created' ? 'Assigned to' : 'Created by'}</span>
+        <span>Campaign</span>
+        <span>Due</span>
+        <span>Status</span>
+      </div>
+      <div className="divide-y divide-border">
+        {tasks.map((task) => {
+          const status = getOperationalTaskStatus(task) as NonNullable<Task['status']>;
+          return (
+            <div key={task.id} className="grid gap-3 bg-background px-4 py-4 lg:grid-cols-[1.3fr_0.8fr_0.75fr_0.7fr_0.95fr] lg:items-center">
+              <Link to="/tasks" className="min-w-0 hover:text-gc-orange">
+                <p className="truncate text-sm font-extrabold text-foreground">{task.title}</p>
+                <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{task.description || task.nextStep || 'No description saved.'}</p>
+              </Link>
+              <p className="text-xs font-bold text-muted-foreground">{mode === 'created' ? task.ownerId || 'Unassigned' : task.createdBy || 'Unknown'}</p>
+              <p className="truncate text-xs font-bold text-muted-foreground">{task.campaignId || 'No campaign'}</p>
+              <p className="text-xs font-bold text-muted-foreground">{task.dueDate ? new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'No date'}</p>
+              <div className="flex items-center gap-2">
+                <select
+                  className="settings-input h-9 min-w-36 text-xs font-bold"
+                  value={status}
+                  onChange={(event) => onStatusChange(task, event.target.value as NonNullable<Task['status']>)}
+                >
+                  {TASK_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+                <span className={cn('hidden shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase xl:inline-flex', statusColor(status))}>
+                  {status}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PersonalHandoverList({
+  handovers,
+  emptyLabel,
+  onProgress,
+}: {
+  handovers: Handover[];
+  emptyLabel: string;
+  onProgress: (handover: Handover) => void;
+}) {
+  if (!handovers.length) return <EmptyState label={emptyLabel} />;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-border">
+      <div className="hidden grid-cols-[1fr_0.9fr_0.9fr_0.7fr_0.8fr] border-b border-border bg-muted/30 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground lg:grid">
+        <span>Handover</span>
+        <span>From</span>
+        <span>To</span>
+        <span>Date</span>
+        <span>Action</span>
+      </div>
+      <div className="divide-y divide-border">
+        {handovers.map((handover) => (
+          <div key={handover.id} className="grid gap-3 bg-background px-4 py-4 lg:grid-cols-[1fr_0.9fr_0.9fr_0.7fr_0.8fr] lg:items-center">
+            <Link to="/handover" className="min-w-0 hover:text-gc-orange">
+              <p className="truncate text-sm font-extrabold text-foreground">{handover.team}</p>
+              <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{handover.notes || 'No handover notes saved.'}</p>
+            </Link>
+            <p className="text-xs font-bold text-muted-foreground">{(handover.assignFrom || []).join(', ') || handover.outgoingLead || 'Unknown'}</p>
+            <p className="text-xs font-bold text-muted-foreground">{(handover.assignTo || []).join(', ') || handover.incomingLead || 'Unassigned'}</p>
+            <p className="text-xs font-bold text-muted-foreground">{handover.handoffDate}</p>
+            <div className="flex items-center gap-2">
+              <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase', handover.status === 'Reviewed' ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600' : 'border-gc-purple/20 bg-gc-purple/10 text-gc-purple')}>
+                {handover.status}
+              </span>
+              {handover.status !== 'Reviewed' && (
+                <button onClick={() => onProgress(handover)} className="rounded-lg bg-gc-orange px-3 py-2 text-[11px] font-bold text-white hover:bg-gc-orange/90">
+                  {handover.status === 'Pending' ? 'Acknowledge' : 'Review'}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

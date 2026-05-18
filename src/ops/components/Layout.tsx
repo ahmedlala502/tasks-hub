@@ -27,21 +27,21 @@ type NavItem = {
 // ── Nav items ─────────────────────────────────────────────
 const OPS_NAV: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard',      path: '/' },
-  { icon: UserRound,       label: 'My Dashboard',   path: '/my-dashboard' },
+  { icon: UserRound,       label: 'My Work',        path: '/my-dashboard' },
   { icon: Activity,        label: 'Live Ops',       path: '/live-ops' },
   { icon: FolderKanban,    label: 'Campaigns',      path: '/campaigns' },
   { icon: ClipboardList,   label: 'Daily Routine',  path: '/tasks-daily-routines' },
   { icon: RefreshCw,       label: 'Handover',       path: '/handover' },
-  { icon: CheckSquare,     label: 'Tasks',          path: '/tasks' },
+  { icon: CheckSquare,     label: 'Task Board',     path: '/tasks' },
   { icon: Trophy,          label: 'Updates',        path: '/updates' },
-  { icon: BarChart3,       label: 'Reporting',      path: '/reporting' },
+  { icon: BarChart3,       label: 'Reports & Exports', path: '/reporting' },
   { icon: BarChart3,       label: 'System live report',  path: '/system-live-report' },
   { icon: Database,        label: 'Dropbox live report', path: '/dropbox-live-report' },
 ];
 
 const SYSTEM_NAV: NavItem[] = [
-  { icon: UserRound,     label: 'Profile',     path: '/profile' },
-  { icon: BarChart3,     label: 'Performance', path: '/performance' },
+  { icon: UserRound,     label: 'My Profile',         path: '/profile' },
+  { icon: BarChart3,     label: 'Performance Matrix', path: '/performance' },
   { icon: MessageSquare, label: 'Templates',  path: '/templates' },
   { icon: Settings,      label: 'Settings',   path: '/settings' },
   { icon: Shield,        label: 'Admin',      path: '/admin' },
@@ -83,6 +83,33 @@ function getPageLabel(pathname: string): string {
   if (pathname === '/influencers') return 'Influencers';
   if (pathname.startsWith('/influencers/')) return 'Influencer Profile';
   return 'Dashboard';
+}
+
+function isNotificationVisibleToUser(notification: AppNotification, displayName?: string | null): boolean {
+  const recipient = notification.recipientName?.trim().toLowerCase();
+  const userName = displayName?.trim().toLowerCase() || '';
+  return !recipient || !userName || recipient === userName || recipient.includes(userName) || userName.includes(recipient);
+}
+
+function playAssignmentSound() {
+  try {
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextCtor) return;
+    const ctx = new AudioContextCtor();
+    const gain = ctx.createGain();
+    const oscillator = ctx.createOscillator();
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(740, ctx.currentTime);
+    oscillator.frequency.setValueAtTime(980, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.24);
+    window.setTimeout(() => void ctx.close().catch(() => {}), 360);
+  } catch {}
 }
 
 // ── NavLink ───────────────────────────────────────────────
@@ -135,13 +162,13 @@ export default function Layout() {
   const [density, setDensity] = useState(() => localStorage.getItem('trygc-density') || 'comfortable');
   const [accent, setAccent] = useState(() => localStorage.getItem('trygc-accent') || '#f97316');
   const [compactSidebar, setCompactSidebar] = useState(() => localStorage.getItem('trygc-compact-sidebar') === 'true');
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => notificationService.getAll());
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => notificationService.getForUser(user?.displayName));
   const [onlineNotifications, setOnlineNotifications] = useState<AppNotification[]>([]);
   const [readOnlineNotificationIds, setReadOnlineNotificationIds] = useState<Set<string>>(() => new Set());
 
   const refreshNotifications = useCallback(() => {
-    setNotifications(notificationService.getAll());
-  }, []);
+    setNotifications(notificationService.getForUser(user?.displayName));
+  }, [user?.displayName]);
 
   const refreshOnlineNotifications = useCallback(async () => {
     try {
@@ -163,10 +190,16 @@ export default function Layout() {
   }, [readOnlineNotificationIds]);
 
   useEffect(() => {
-    const handler = () => refreshNotifications();
+    const handler = (event: Event) => {
+      const notification = (event as CustomEvent<AppNotification>).detail;
+      if (notification?.sound && isNotificationVisibleToUser(notification, user?.displayName)) {
+        playAssignmentSound();
+      }
+      refreshNotifications();
+    };
     window.addEventListener('gc-notification', handler);
     return () => window.removeEventListener('gc-notification', handler);
-  }, [refreshNotifications]);
+  }, [refreshNotifications, user?.displayName]);
 
   useEffect(() => {
     void refreshOnlineNotifications();

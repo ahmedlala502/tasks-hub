@@ -13,6 +13,8 @@ export interface AppNotification {
   path: string;
   createdAt: number;
   read: boolean;
+  recipientName?: string;
+  sound?: boolean;
 }
 
 const KEY = 'GC_NOTIFICATIONS';
@@ -35,6 +37,14 @@ const save = (items: AppNotification[]) => {
 
 export const notificationService = {
   getAll: (): AppNotification[] => load(),
+
+  getForUser: (displayName?: string | null): AppNotification[] => {
+    const normalizedUser = (displayName || '').trim().toLowerCase();
+    return load().filter((item) => {
+      const recipient = item.recipientName?.trim().toLowerCase();
+      return !recipient || !normalizedUser || recipient === normalizedUser || recipient.includes(normalizedUser) || normalizedUser.includes(recipient);
+    });
+  },
 
   add: (n: Omit<AppNotification, 'id' | 'createdAt' | 'read'>): AppNotification => {
     const items = load();
@@ -62,7 +72,8 @@ export const notify = (
   title: string,
   detail: string,
   tone: NotificationTone,
-  path: string
+  path: string,
+  options?: Pick<AppNotification, 'recipientName' | 'sound'>
 ): void => {
-  notificationService.add({ title, detail, tone, path });
+  notificationService.add({ title, detail, tone, path, ...options });
 };

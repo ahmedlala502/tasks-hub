@@ -12,7 +12,9 @@ import attachedWorkspaceExport from '../data/attached-workspace-export.json';
 import { CAMPAIGNS_20260515 } from '../data/campaigns-20260515';
 import { buildImportedCompletedTasks, deriveUsersFromCompletedTasks, extractUsersFromWorkspaceExport, parseCompletedTasksCsv } from '../lib/importedWorkspaceData';
 import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
+import { getNewHandoverRecipients, getTaskAssignmentRecipient } from '../lib/personalWork';
 import { cloudWorkspaceService, type ActivityDraft, type UserActivityLog, type WorkspaceRecordType } from './cloudWorkspaceService';
+import { notify } from './notificationService';
 
 const buildCampaignId = (seed: number) => `C-${Date.now()}-${seed}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -193,6 +195,24 @@ const logActivity = (draft: ActivityDraft) => {
       console.error('Failed to log user activity to Supabase', error);
     });
 };
+
+function notifyTaskAssignment(previous: Task | undefined, next: Task) {
+  const recipientName = getTaskAssignmentRecipient(previous, next);
+  if (!recipientName) return;
+  notify('New case assigned', `"${next.title}" was assigned to you.`, 'purple', '/my-dashboard?tab=assigned', {
+    recipientName,
+    sound: true,
+  });
+}
+
+function notifyHandoverAssignments(previous: Handover | undefined, next: Handover) {
+  getNewHandoverRecipients(previous, next).forEach((recipientName) => {
+    notify('New handover assigned', `${next.team} handover is waiting for your review.`, 'purple', '/my-dashboard?tab=handovers', {
+      recipientName,
+      sound: true,
+    });
+  });
+}
 
 const replaceWorkspaceFromCloud = (workspace: Partial<{
   campaigns: Campaign[];
@@ -390,6 +410,7 @@ export const dataService = {
     return { tasks: [...TASKS_DATA], createdCount: result.createdCount };
   },
   updateTask: (id: string, updates: Partial<Task>) => {
+    const previousTask = TASKS_DATA.find((task) => task.id === id);
     TASKS_DATA = TASKS_DATA.map(t => {
       if (t.id !== id) return t;
       const { createdBy: _createdBy, createdAt: _createdAt, ...safeUpdates } = updates;
@@ -398,16 +419,19 @@ export const dataService = {
     persistRecord('tasks', TASKS_DATA);
     const updatedTask = TASKS_DATA.find((task) => task.id === id);
     logActivity({ action: 'task.updated', entityType: 'task', entityId: id, summary: `Updated task "${updatedTask?.title || id}"`, metadata: { updates } });
+    if (updatedTask) notifyTaskAssignment(previousTask, updatedTask);
     return [...TASKS_DATA];
   },
   addTask: (task: Task) => {
     TASKS_DATA = [task, ...TASKS_DATA];
     persistRecord('tasks', TASKS_DATA);
     logActivity({ action: 'task.created', entityType: 'task', entityId: task.id, summary: `Created task "${task.title || task.id}"`, metadata: { campaignId: task.campaignId, ownerId: task.ownerId } });
+    notifyTaskAssignment(undefined, task);
     return [...TASKS_DATA];
   },
   getHandovers: () => [...HANDOVERS_DATA],
   updateHandover: (id: string, updates: Partial<Handover>) => {
+    const previousHandover = HANDOVERS_DATA.find((handover) => handover.id === id);
     HANDOVERS_DATA = HANDOVERS_DATA.map((handover) =>
       handover.id === id
         ? (() => {
@@ -417,13 +441,16 @@ export const dataService = {
         : handover
     );
     persistRecord('handovers', HANDOVERS_DATA);
-    logActivity({ action: 'handover.updated', entityType: 'handover', entityId: id, summary: `Updated ${HANDOVERS_DATA.find((handover) => handover.id === id)?.team || 'handover'} relay`, metadata: { updates } });
+    const updatedHandover = HANDOVERS_DATA.find((handover) => handover.id === id);
+    logActivity({ action: 'handover.updated', entityType: 'handover', entityId: id, summary: `Updated ${updatedHandover?.team || 'handover'} relay`, metadata: { updates } });
+    if (updatedHandover) notifyHandoverAssignments(previousHandover, updatedHandover);
     return [...HANDOVERS_DATA];
   },
   addHandover: (handover: Handover) => {
     HANDOVERS_DATA = [handover, ...HANDOVERS_DATA];
     persistRecord('handovers', HANDOVERS_DATA);
     logActivity({ action: 'handover.created', entityType: 'handover', entityId: handover.id, summary: `Created ${handover.team} handover`, metadata: { assignTo: handover.assignTo, assignFrom: handover.assignFrom } });
+    notifyHandoverAssignments(undefined, handover);
     return [...HANDOVERS_DATA];
   },
   deleteHandover: (id: string) => {

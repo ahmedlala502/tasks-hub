@@ -30,6 +30,8 @@ type DraftState = OpsUpdateDraft;
 const blankDraft = (owner = 'Workspace'): DraftState => ({
   title: '',
   detail: '',
+  campaignId: '',
+  campaignName: '',
   tone: 'orange',
   surfaceNotification: true,
   surfaceTicker: true,
@@ -56,6 +58,7 @@ export default function Updates() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const campaigns = useMemo(() => dataService.getCampaigns(), []);
 
   const generatedFeed = useMemo(() => buildUpdatesFeed(
     dataService.getCampaigns(),
@@ -82,7 +85,7 @@ export default function Updates() {
 
   const onlineFeed = updates.filter((item) => item.active).map(toFeedItem);
   const feed = [...onlineFeed, ...generatedFeed]
-    .filter((item) => `${item.title} ${item.detail} ${item.owner}`.toLowerCase().includes(query.toLowerCase()))
+    .filter((item) => `${item.title} ${item.detail} ${item.owner} ${item.campaignName || ''} ${item.campaignId || ''}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => b.at - a.at);
 
   const sliderCount = updates.filter((item) => item.active && item.surfaceTicker).length;
@@ -121,10 +124,12 @@ export default function Updates() {
 
   const editUpdate = (item: OpsUpdate) => {
     setEditingId(item.id);
-    setDraft({
-      title: item.title,
-      detail: item.detail,
-      tone: item.tone,
+      setDraft({
+        title: item.title,
+        detail: item.detail,
+        campaignId: item.campaignId || '',
+        campaignName: item.campaignName || '',
+        tone: item.tone,
       surfaceNotification: item.surfaceNotification,
       surfaceTicker: item.surfaceTicker,
       active: item.active,
@@ -191,6 +196,27 @@ export default function Updates() {
           <div className="space-y-3">
             <input className="settings-input font-bold" placeholder="Update title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
             <textarea className="settings-input min-h-24 resize-none" placeholder="What should everyone know?" value={draft.detail} onChange={(event) => setDraft({ ...draft, detail: event.target.value })} />
+
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Linked Campaign</span>
+              <select
+                className="settings-input"
+                value={draft.campaignId || ''}
+                onChange={(event) => {
+                  const selected = campaigns.find((campaign) => campaign.id === event.target.value);
+                  setDraft({
+                    ...draft,
+                    campaignId: selected?.id || '',
+                    campaignName: selected?.name || '',
+                  });
+                }}
+              >
+                <option value="">General workspace update</option>
+                {campaigns.map((campaign) => (
+                  <option key={campaign.id} value={campaign.id}>{campaign.name}</option>
+                ))}
+              </select>
+            </label>
 
             <div className="grid gap-3 md:grid-cols-2">
               <label className="block">
@@ -273,7 +299,7 @@ export default function Updates() {
               <div className="rounded-lg border border-border bg-background p-4 text-sm font-bold text-muted-foreground">No online updates yet.</div>
             ) : (
               updates
-                .filter((item) => `${item.title} ${item.detail} ${item.owner}`.toLowerCase().includes(query.toLowerCase()))
+                .filter((item) => `${item.title} ${item.detail} ${item.owner} ${item.campaignName || ''} ${item.campaignId || ''}`.toLowerCase().includes(query.toLowerCase()))
                 .map((item) => (
                   <div key={item.id} className={cn('rounded-lg border border-border bg-background p-3', !item.active && 'opacity-60')}>
                     <div className="flex items-start gap-3">
@@ -286,6 +312,7 @@ export default function Updates() {
                           {item.pinned && <Badge label="Pinned" />}
                           {item.surfaceNotification && <Badge label="Notification" />}
                           {item.surfaceTicker && <Badge label="Slider" />}
+                          {item.campaignName && <Badge label={item.campaignName} />}
                           {!item.active && <Badge label="Paused" />}
                         </div>
                         <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{item.detail}</p>

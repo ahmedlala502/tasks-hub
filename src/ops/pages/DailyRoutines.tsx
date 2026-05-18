@@ -8,6 +8,8 @@ import {
   Clock3,
   Edit3,
   Handshake,
+  LayoutGrid,
+  List,
   Loader2,
   Plus,
   Save,
@@ -21,6 +23,12 @@ import { dataService } from '../services/dataService';
 import { canEditTaskRecord } from '../lib/workspace';
 import { getDefaultPlatformUserNames, loadPlatformUserNames, sortUniqueUserNames } from '../lib/platformUsers';
 import { getOperationalTaskStatus } from '../lib/opsPageInsights';
+import {
+  filterDailyRoutineStats,
+  type DailyRoutineOverviewFilter,
+  type DailyRoutineOverviewView,
+  type DailyRoutineUserStats,
+} from '../lib/dailyRoutines';
 import { cn } from '../lib/utils';
 import { notify } from '../services/notificationService';
 import type { Campaign, Handover, Task } from '../types';
@@ -46,20 +54,6 @@ const EMPTY_DRAFT: TaskDraft = {
   status: 'In Progress',
   dueDate: new Date().toISOString().slice(0, 10),
   nextStep: '',
-};
-
-type UserStats = {
-  name: string;
-  totalTasks: number;
-  doneTasks: number;
-  inProgressTasks: number;
-  pendingTasks: number;
-  blockedTasks: number;
-  overdueTasks: number;
-  handoversAsTo: number;
-  handoversAsFrom: number;
-  totalHandovers: number;
-  completionRate: number;
 };
 
 function draftFromTask(task: Task): TaskDraft {
@@ -89,7 +83,7 @@ function collectUserNames(tasks: Task[], handovers: Handover[], platformUsers: s
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
-function getUserStats(name: string, tasks: Task[], handovers: Handover[]): UserStats {
+function getUserStats(name: string, tasks: Task[], handovers: Handover[]): DailyRoutineUserStats {
   const userTasks = tasks.filter(t => t.ownerId?.toLowerCase() === name.toLowerCase());
   const done = userTasks.filter(t => getOperationalTaskStatus(t) === 'Done').length;
   const inProgress = userTasks.filter(t => getOperationalTaskStatus(t) === 'In Progress').length;
@@ -141,6 +135,8 @@ export default function DailyRoutines() {
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [detailTab, setDetailTab] = useState<'tasks' | 'handovers'>('tasks');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [overviewView, setOverviewView] = useState<DailyRoutineOverviewView>('widgets');
+  const [overviewFilter, setOverviewFilter] = useState<DailyRoutineOverviewFilter>('all');
 
   useEffect(() => {
     let alive = true;
@@ -152,23 +148,22 @@ export default function DailyRoutines() {
 
   const allUserNames = useMemo(() => collectUserNames(tasks, handovers, platformUsers), [tasks, handovers, platformUsers]);
 
-  const filteredUserNames = useMemo(() => {
-    if (!query.trim()) return allUserNames;
-    const q = query.toLowerCase();
-    return allUserNames.filter(n => n.toLowerCase().includes(q));
-  }, [allUserNames, query]);
-
   const allStats = useMemo(() => {
-    const stats = new Map<string, UserStats>();
+    const stats = new Map<string, DailyRoutineUserStats>();
     allUserNames.forEach(name => stats.set(name.toLowerCase(), getUserStats(name, tasks, handovers)));
     return stats;
   }, [allUserNames, tasks, handovers]);
 
-  const filteredStats = useMemo(() =>
-    filteredUserNames
+  const overviewStats = useMemo(() =>
+    allUserNames
       .map(n => allStats.get(n.toLowerCase())!)
       .sort((a, b) => b.totalTasks - a.totalTasks),
-    [filteredUserNames, allStats],
+    [allUserNames, allStats],
+  );
+
+  const filteredStats = useMemo(() =>
+    filterDailyRoutineStats(overviewStats, query, overviewFilter),
+    [overviewStats, query, overviewFilter],
   );
 
   const selectedStats = selectedUser ? allStats.get(selectedUser.toLowerCase()) : null;
@@ -209,15 +204,15 @@ export default function DailyRoutines() {
 
   const totals = useMemo(() => {
     let totalTasks = 0, totalDone = 0, totalInProgress = 0, totalPending = 0, totalBlocked = 0;
-    filteredStats.forEach(s => {
+    overviewStats.forEach(s => {
       totalTasks += s.totalTasks;
       totalDone += s.doneTasks;
       totalInProgress += s.inProgressTasks;
       totalPending += s.pendingTasks;
       totalBlocked += s.blockedTasks;
     });
-    return { totalUsers: filteredStats.length, totalTasks, totalDone, totalInProgress, totalPending, totalBlocked };
-  }, [filteredStats]);
+    return { totalUsers: overviewStats.length, totalTasks, totalDone, totalInProgress, totalPending, totalBlocked };
+  }, [overviewStats]);
 
   const saveTask = () => {
     if (!draft?.title.trim()) return;
@@ -310,23 +305,59 @@ export default function DailyRoutines() {
         <>
           {/* Summary bar */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <SummaryTile label="Members" value={totals.totalUsers} color="text-gc-orange" icon={Users} />
-            <SummaryTile label="All Tasks" value={totals.totalTasks} color="text-foreground" icon={ClipboardList} />
-            <SummaryTile label="Done" value={totals.totalDone} color="text-emerald-600" icon={CheckCircle2} />
-            <SummaryTile label="In Progress" value={totals.totalInProgress} color="text-blue-600" icon={Loader2} />
-            <SummaryTile label="Pending" value={totals.totalPending} color="text-amber-600" icon={Clock3} />
-            <SummaryTile label="Blocked" value={totals.totalBlocked} color="text-red-600" icon={AlertCircle} />
+            <SummaryTile label="Members" value={totals.totalUsers} color="text-gc-orange" icon={Users} active={overviewFilter === 'all'} onClick={() => setOverviewFilter('all')} />
+            <SummaryTile label="All Tasks" value={totals.totalTasks} color="text-foreground" icon={ClipboardList} active={overviewFilter === 'with-tasks'} onClick={() => setOverviewFilter('with-tasks')} />
+            <SummaryTile label="Done" value={totals.totalDone} color="text-emerald-600" icon={CheckCircle2} active={overviewFilter === 'done'} onClick={() => setOverviewFilter('done')} />
+            <SummaryTile label="In Progress" value={totals.totalInProgress} color="text-blue-600" icon={Loader2} active={overviewFilter === 'in-progress'} onClick={() => setOverviewFilter('in-progress')} />
+            <SummaryTile label="Pending" value={totals.totalPending} color="text-amber-600" icon={Clock3} active={overviewFilter === 'pending'} onClick={() => setOverviewFilter('pending')} />
+            <SummaryTile label="Blocked" value={totals.totalBlocked} color="text-red-600" icon={AlertCircle} active={overviewFilter === 'blocked'} onClick={() => setOverviewFilter('blocked')} />
           </div>
 
-          {/* Search */}
-          <div className="relative">
-            <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              className="settings-input w-full pl-10"
-              placeholder="Search team members..."
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-            />
+          {/* Search + view controls */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative min-w-0 flex-1">
+              <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                className="settings-input w-full pl-10"
+                placeholder="Search team members..."
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setOverviewFilter('overdue')}
+                className={cn(
+                  'inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-extrabold uppercase tracking-wider transition-colors',
+                  overviewFilter === 'overdue' ? 'border-red-300 bg-red-50 text-red-700' : 'border-border bg-card text-muted-foreground hover:border-red-300 hover:text-red-600',
+                )}
+              >
+                <Zap size={14} /> Overdue
+              </button>
+              <button
+                onClick={() => setOverviewFilter('handovers')}
+                className={cn(
+                  'inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-extrabold uppercase tracking-wider transition-colors',
+                  overviewFilter === 'handovers' ? 'border-purple-300 bg-purple-50 text-purple-700' : 'border-border bg-card text-muted-foreground hover:border-purple-300 hover:text-purple-600',
+                )}
+              >
+                <Handshake size={14} /> Handovers
+              </button>
+              <div className="flex items-center rounded-xl border border-border bg-card p-1">
+                <button
+                  onClick={() => setOverviewView('widgets')}
+                  className={cn('inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-extrabold transition-colors', overviewView === 'widgets' ? 'bg-gc-orange text-white' : 'text-muted-foreground hover:text-foreground')}
+                >
+                  <LayoutGrid size={14} /> Widgets
+                </button>
+                <button
+                  onClick={() => setOverviewView('list')}
+                  className={cn('inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-extrabold transition-colors', overviewView === 'list' ? 'bg-gc-orange text-white' : 'text-muted-foreground hover:text-foreground')}
+                >
+                  <List size={14} /> List
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* User widget grid */}
@@ -334,12 +365,14 @@ export default function DailyRoutines() {
             <div className="rounded-xl border border-dashed border-border bg-card p-14 text-center text-sm text-muted-foreground">
               No team members found.
             </div>
-          ) : (
+          ) : overviewView === 'widgets' ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredStats.map(stats => (
                 <UserWidget key={stats.name} stats={stats} onClick={() => setSelectedUser(stats.name)} />
               ))}
             </div>
+          ) : (
+            <UserListView stats={filteredStats} onSelect={(name) => setSelectedUser(name)} />
           )}
         </>
       ) : (
@@ -421,7 +454,7 @@ export default function DailyRoutines() {
 /* ─────────────────────────────────────────────
    UserWidget — the main overview card
 ───────────────────────────────────────────── */
-function UserWidget({ stats, onClick }: { stats: UserStats; onClick: () => void }) {
+function UserWidget({ stats, onClick }: { stats: DailyRoutineUserStats; onClick: () => void }) {
   const initials = stats.name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
   const rate = stats.completionRate;
   const rateColor = rate === 100 ? 'text-emerald-600' : rate >= 70 ? 'text-gc-orange' : rate >= 40 ? 'text-amber-600' : 'text-red-600';
@@ -492,6 +525,60 @@ function StatCell({ value, label, bg, text, border }: { value: number; label: st
       <span className={cn('mt-1 text-[9px] font-extrabold uppercase tracking-wide', text)}>{label}</span>
     </div>
   );
+}
+
+function UserListView({ stats, onSelect }: { stats: DailyRoutineUserStats[]; onSelect: (name: string) => void }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="grid grid-cols-[1.5fr_0.65fr_0.65fr_0.75fr_0.75fr_0.75fr_0.8fr_0.8fr_0.75fr] gap-3 border-b border-border bg-muted/40 px-4 py-3 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground max-lg:hidden">
+        <span>Member</span>
+        <span className="text-center">Tasks</span>
+        <span className="text-center">Done</span>
+        <span className="text-center">Active</span>
+        <span className="text-center">Pending</span>
+        <span className="text-center">Blocked</span>
+        <span className="text-center">Overdue</span>
+        <span className="text-center">Handovers</span>
+        <span className="text-right">Rate</span>
+      </div>
+      <div className="divide-y divide-border">
+        {stats.map((row) => {
+          const initials = row.name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase();
+          return (
+            <button
+              key={row.name}
+              onClick={() => onSelect(row.name)}
+              className="grid w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/35 lg:grid-cols-[1.5fr_0.65fr_0.65fr_0.75fr_0.75fr_0.75fr_0.8fr_0.8fr_0.75fr] lg:items-center"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gc-orange/10 text-xs font-black text-gc-orange ring-1 ring-gc-orange/20">
+                  {initials}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-extrabold text-foreground">{row.name}</p>
+                  <p className="text-[11px] font-semibold text-muted-foreground lg:hidden">
+                    {row.totalTasks} tasks · {row.totalHandovers} handovers · {row.completionRate}% done
+                  </p>
+                </div>
+              </div>
+              <ListMetric value={row.totalTasks} />
+              <ListMetric value={row.doneTasks} tone="text-emerald-600" />
+              <ListMetric value={row.inProgressTasks} tone="text-blue-600" />
+              <ListMetric value={row.pendingTasks} tone="text-amber-600" />
+              <ListMetric value={row.blockedTasks} tone={row.blockedTasks > 0 ? 'text-red-600' : 'text-muted-foreground'} />
+              <ListMetric value={row.overdueTasks} tone={row.overdueTasks > 0 ? 'text-red-600' : 'text-muted-foreground'} />
+              <ListMetric value={row.totalHandovers} tone="text-purple-600" />
+              <span className="hidden text-right text-sm font-black tabular-nums text-foreground lg:block">{row.completionRate}%</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ListMetric({ value, tone = 'text-foreground' }: { value: number; tone?: string }) {
+  return <span className={cn('hidden text-center text-sm font-black tabular-nums lg:block', tone)}>{value}</span>;
 }
 
 /* ─────────────────────────────────────────────
@@ -760,14 +847,37 @@ function TaskForm({ draft, setDraft, campaigns, assignmentOptions }: {
 /* ─────────────────────────────────────────────
    Summary tile (overview bar)
 ───────────────────────────────────────────── */
-function SummaryTile({ label, value, color, icon: Icon }: { label: string; value: number; color: string; icon: React.ElementType }) {
+function SummaryTile({
+  label,
+  value,
+  color,
+  icon: Icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  color: string;
+  icon: React.ElementType;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const Comp = onClick ? 'button' : 'div';
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
+    <Comp
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-3 rounded-xl border bg-card px-4 py-3 text-left transition-colors',
+        active ? 'border-gc-orange bg-gc-orange/5 ring-1 ring-gc-orange/15' : 'border-border',
+        onClick && 'hover:border-gc-orange/60 hover:bg-gc-orange/5',
+      )}
+    >
       <Icon className={cn('h-5 w-5 shrink-0', color)} />
       <div>
         <p className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</p>
         <p className={cn('text-xl font-black tabular-nums', color)}>{value}</p>
       </div>
-    </div>
+    </Comp>
   );
 }

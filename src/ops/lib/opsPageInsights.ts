@@ -54,6 +54,8 @@ export type UpdateFeedItem = {
   kind: 'campaign' | 'task' | 'blocker' | 'handover';
   title: string;
   detail: string;
+  campaignId?: string | null;
+  campaignName?: string | null;
   owner: string;
   at: number;
   tone: 'green' | 'orange' | 'red' | 'purple';

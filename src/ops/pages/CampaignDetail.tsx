@@ -17,7 +17,8 @@ import {
   Pencil,
   Save,
   Trash2,
-  Upload
+  Upload,
+  Megaphone
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from '../utils';
@@ -25,6 +26,8 @@ import { dataService } from '../services/dataService';
 import { STAGE_NAMES } from '../constants';
 import { Campaign, Task } from '../types';
 import { exportCampaigns, readSpreadsheet } from '../services/spreadsheetService';
+import { filterCampaignUpdates } from '../lib/campaignUpdates';
+import { opsUpdatesService, type OpsUpdate } from '../services/opsUpdatesService';
 
 const MILESTONES = [
   { stage: 'TRYGC Intake', status: 'completed', date: 'Brief' },
@@ -74,6 +77,8 @@ export default function CampaignDetail() {
   const [draftCampaign, setDraftCampaign] = React.useState<Campaign | null>(null);
   const [ownerDraft, setOwnerDraft] = React.useState('');
   const [newEntry, setNewEntry] = React.useState({ influencer: '@', time: 'Nov 10, 14:00', location: 'Riyadh', notes: '' });
+  const [onlineUpdates, setOnlineUpdates] = React.useState<OpsUpdate[]>([]);
+  const [updatesLoading, setUpdatesLoading] = React.useState(false);
   
   const campaign = React.useMemo(() => {
     return dataService.getCampaigns().find(c => c.id === id);
@@ -94,16 +99,14 @@ export default function CampaignDetail() {
       .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
   }, [campaign, id, refreshToken]);
 
-  const campaignUpdates = React.useMemo(() => {
+  const campaignOnlineUpdates = React.useMemo(() => {
     if (!campaign) return [];
-    const tokens = [campaign.id, campaign.name, id].filter(Boolean).map((value) => String(value).toLowerCase());
-    return dataService.getActivityLogs()
-      .filter((event) => {
-        const haystack = `${event.summary || ''} ${event.entityId || ''} ${JSON.stringify(event.metadata || {})}`.toLowerCase();
-        return tokens.some((token) => haystack.includes(token));
-      })
-      .slice(0, 12);
-  }, [campaign, id, refreshToken]);
+    return filterCampaignUpdates(onlineUpdates, campaign, id)
+      .sort((a, b) => {
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+  }, [campaign, id, onlineUpdates]);
 
   const campaignWorkItems = React.useMemo(() => {
     const taskItems = campaignTasks.map((task) => ({
@@ -117,19 +120,26 @@ export default function CampaignDetail() {
       sla: task.slaHrs ? `${task.slaHrs}h` : 'Tracked by due date',
       updatedAt: task.updatedAt || task.createdAt,
     }));
-    const updateItems = campaignUpdates.map((event) => ({
-      id: `update-${event.id}`,
-      type: 'Update',
-      title: event.summary || event.action,
-      owner: event.userName || event.userEmail || 'Workspace',
-      status: event.action,
-      due: new Date(event.createdAt).getTime(),
-      details: JSON.stringify(event.metadata || {}, null, 2),
-      sla: 'Activity log',
-      updatedAt: new Date(event.createdAt).getTime(),
-    }));
     return [...taskItems].sort((a, b) => b.updatedAt - a.updatedAt);
   }, [campaignTasks]);
+
+  React.useEffect(() => {
+    let mounted = true;
+    setUpdatesLoading(true);
+    opsUpdatesService.list()
+      .then((items) => {
+        if (mounted) setOnlineUpdates(items);
+      })
+      .catch(() => {
+        if (mounted) setOnlineUpdates([]);
+      })
+      .finally(() => {
+        if (mounted) setUpdatesLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [refreshToken]);
 
   React.useEffect(() => {
     if (campaign) setDraftCampaign(campaign as Campaign);
@@ -515,10 +525,55 @@ export default function CampaignDetail() {
                  }) : (
                    <div className="px-8 py-12 text-center">
                      <CheckCircle2 size={36} className="mx-auto mb-3 text-muted-foreground/40" />
-                     <p className="text-sm font-bold text-muted-foreground">No task, routine, or update activity has been captured for this campaign yet.</p>
+                     <p className="text-sm font-bold text-muted-foreground">No task or routine activity has been captured for this campaign yet.</p>
                    </div>
                  )}
                </div>
+            </div>
+            )}
+
+            {activeTab === 'overview' && (
+            <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+              <div className="flex flex-col gap-4 border-b border-border bg-[var(--bg)]/50 p-8 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gc-orange/10 text-gc-orange">
+                    <Megaphone size={24} />
+                  </div>
+                  <div>
+                    <h3 className="font-condensed text-[14px] font-extrabold tracking-tight text-foreground">Campaign Updates & Flags</h3>
+                    <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-[var(--ink-500)]">Updates published against this specific campaign</p>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-border bg-background px-4 py-2 text-right">
+                  <p className="text-2xl font-black text-foreground">{campaignOnlineUpdates.length}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Updates</p>
+                </div>
+              </div>
+              <div className="divide-y divide-border">
+                {updatesLoading ? (
+                  <div className="px-8 py-10 text-sm font-bold text-muted-foreground">Loading campaign updates...</div>
+                ) : campaignOnlineUpdates.length ? campaignOnlineUpdates.map((update) => (
+                  <div key={update.id} className="grid gap-3 bg-background px-6 py-4 md:grid-cols-[7rem_1fr_8rem_9rem] md:items-center">
+                    <span className={cn('w-fit rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest', updateToneClass(update.tone))}>
+                      {update.tone === 'red' ? 'Urgent' : update.tone === 'green' ? 'Done' : update.tone === 'purple' ? 'Event' : 'Review'}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-black text-foreground">{update.title}</p>
+                        {update.pinned && <span className="rounded-full border border-gc-orange/20 bg-gc-orange/10 px-2 py-0.5 text-[9px] font-black uppercase text-gc-orange">Pinned</span>}
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-xs font-semibold leading-relaxed text-muted-foreground">{update.detail}</p>
+                    </div>
+                    <p className="text-xs font-bold text-muted-foreground">{update.owner || 'Workspace'}</p>
+                    <p className="text-xs font-bold text-muted-foreground">{new Date(update.updatedAt || update.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</p>
+                  </div>
+                )) : (
+                  <div className="px-8 py-12 text-center">
+                    <Megaphone size={36} className="mx-auto mb-3 text-muted-foreground/40" />
+                    <p className="text-sm font-bold text-muted-foreground">No published updates are linked to this campaign yet.</p>
+                  </div>
+                )}
+              </div>
             </div>
             )}
 
@@ -952,4 +1007,17 @@ function buildTrygcAudit(
   const summary = `TRYGC audit checks confirmations, visit execution, coverage, QA rejects, and end-date pressure. Current read: confirmations ${confirmationRate}%, visits ${visitRate}%, coverage ${coverageRate}%.`;
 
   return { score, tone, label, summary, findings };
+}
+
+function updateToneClass(tone: 'green' | 'orange' | 'red' | 'purple') {
+  switch (tone) {
+    case 'red':
+      return 'border-red-500/20 bg-red-500/10 text-red-600';
+    case 'green':
+      return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600';
+    case 'purple':
+      return 'border-gc-purple/20 bg-gc-purple/10 text-gc-purple';
+    default:
+      return 'border-gc-orange/20 bg-gc-orange/10 text-gc-orange';
+  }
 }
