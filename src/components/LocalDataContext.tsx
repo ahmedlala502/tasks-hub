@@ -2,7 +2,7 @@ import React, { createContext, useContext, useMemo, useState, useCallback, useEf
 import { AuthState, Handover, Member, Office, PendingSignupRequest, Shift, Task, User, WorkspaceUser } from '../types';
 import { WorkspaceSettings } from '../lib/localStore';
 import { MASTER_ADMIN_EMAIL } from '../constants';
-import { AuditEvent, clearAuthState, createId, getAuthState, importWorkspace, loadWorkspace, LocalWorkspace, normalizeTask, resetWorkspace, saveAuthState } from '../lib/localStore';
+import { AuditEvent, clearAuthState, createId, getAuthState, importWorkspace, loadWorkspace, LocalWorkspace, normalizeTask, resetWorkspace, saveAuthState, saveWorkspace } from '../lib/localStore';
 import { cloudStore } from '../lib/cloudStore';
 import { migrateLocalStorageToCloud } from '../lib/migration';
 import { AppPage, FeatureKey, filterHandoversByTeam, filterMembersByTeam, filterOfficesByTeam, filterTasksByTeam, getCurrentTeam, resolvePermissionProfile, WidgetKey } from '../lib/accessControl';
@@ -100,6 +100,10 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
   const rosterSeededRef = React.useRef(false);
 
   useEffect(() => {
+    saveWorkspace(workspace);
+  }, [workspace]);
+
+  useEffect(() => {
     const initCloudSync = async () => {
       try {
         setLoading(true);
@@ -169,6 +173,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
         cloudStore.subscribeToTasks((payload) => {
           setWorkspace(current => {
             if (payload.eventType === 'INSERT') {
+              if (current.tasks.some(task => task.id === payload.new.id)) return current;
               return { ...current, tasks: [payload.new as Task, ...current.tasks] };
             } else if (payload.eventType === 'UPDATE') {
               return { ...current, tasks: current.tasks.map(t => t.id === payload.new.id ? payload.new as Task : t) };
@@ -182,6 +187,7 @@ export function LocalDataProvider({ children }: { children: React.ReactNode }) {
         cloudStore.subscribeToHandovers((payload) => {
           setWorkspace(current => {
             if (payload.eventType === 'INSERT') {
+              if (current.handovers.some(handover => handover.id === payload.new.id)) return current;
               return { ...current, handovers: [payload.new as Handover, ...current.handovers] };
             } else if (payload.eventType === 'UPDATE') {
               return { ...current, handovers: current.handovers.map(h => h.id === payload.new.id ? payload.new as Handover : h) };

@@ -10,13 +10,13 @@ import type { OpsDepartment, OpsOffice, OpsRole, OpsUser } from './auth/types';
 import Updates from './pages/Updates';
 import Login from './pages/Login';
 import Layout from './components/Layout';
+import Tasks from './pages/Tasks';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const MyDashboard = lazy(() => import('./pages/MyDashboard'));
 const LiveOps = lazy(() => import('./pages/LiveOps'));
 const Admin = lazy(() => import('./pages/Admin'));
 const Reporting = lazy(() => import('./pages/Reporting'));
-const Tasks = lazy(() => import('./pages/Tasks'));
 const DailyRoutines = lazy(() => import('./pages/DailyRoutines'));
 const UserProfile = lazy(() => import('./pages/UserProfile'));
 const OnlineUsers = lazy(() => import('./pages/OnlineUsers'));

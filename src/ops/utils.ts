@@ -20,6 +20,7 @@ export const validateCampaign = (campaign: Partial<Campaign>) => {
   const missingFields = VALIDATION_REQUIRED_FIELDS.filter(field => {
     const value = (campaign as any)[field];
     if (Array.isArray(value)) return value.length === 0;
+    if (typeof value === 'number') return Number.isNaN(value);
     return value === undefined || value === null || value === "";
   });
 

@@ -1,4 +1,5 @@
 import type { Campaign, Handover, Task } from '../types';
+import { isDisplayablePersonName } from './platformUsers';
 
 type AssignmentInput = {
   users?: string[];
@@ -7,25 +8,11 @@ type AssignmentInput = {
   handovers?: Handover[];
 };
 
-const NON_PERSON_LABELS = new Set([
-  'campaign manager',
-  'community lead',
-  'coordination lead',
-  'coverage lead',
-  'qa lead',
-  'finance lead',
-  'head of operations',
-  'master admin',
-  'ops team',
-  'regional lead',
-  'team lead',
-]);
-
 function addName(names: Map<string, string>, value: string | undefined | null) {
   const clean = value?.trim();
   if (!clean) return;
-  const key = clean.toLowerCase();
-  if (NON_PERSON_LABELS.has(key)) return;
+  if (!isDisplayablePersonName(clean)) return;
+  const key = clean.toLowerCase().replace(/\s+/g, ' ');
   if (!names.has(key)) names.set(key, clean);
 }
 

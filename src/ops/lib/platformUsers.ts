@@ -15,11 +15,28 @@ const NON_PERSON_LABELS = new Set([
   'team lead',
 ]);
 
+const HIDDEN_TEST_ACCOUNT_KEYS = new Set([
+  'abdelfatah',
+  'abdelfattah',
+]);
+
+const normalizeNameKey = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+const compactNameKey = (value: string) => normalizeNameKey(value).replace(/[^a-z0-9]+/g, '');
+
+export function isDisplayablePersonName(value: string | undefined | null) {
+  const clean = value?.trim();
+  if (!clean) return false;
+  const key = normalizeNameKey(clean);
+  if (NON_PERSON_LABELS.has(key)) return false;
+  if (HIDDEN_TEST_ACCOUNT_KEYS.has(compactNameKey(clean))) return false;
+  return true;
+}
+
 function addUserName(names: Map<string, string>, value: string | undefined | null) {
   const clean = value?.trim();
   if (!clean) return;
-  const key = clean.toLowerCase();
-  if (NON_PERSON_LABELS.has(key)) return;
+  if (!isDisplayablePersonName(clean)) return;
+  const key = normalizeNameKey(clean);
   if (!names.has(key)) names.set(key, clean);
 }
 

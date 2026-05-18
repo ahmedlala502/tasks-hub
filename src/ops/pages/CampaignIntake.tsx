@@ -34,6 +34,7 @@ export default function CampaignIntake() {
     platforms: [],
     internalOwners: [],
     clientOwners: [],
+    approvalFlow: 'Request for Approval',
   });
 
   useEffect(() => {
@@ -53,18 +54,11 @@ export default function CampaignIntake() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
+    const nextValue = type === 'number' ? parseFloat(value) : value;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'number' ? parseFloat(value) : value,
-    }));
-  };
-
-  const handleTogglePlatform = (platform: string) => {
-    setFormData(prev => ({
-      ...prev,
-      platforms: prev.platforms?.includes(platform)
-        ? prev.platforms.filter(p => p !== platform)
-        : [...(prev.platforms || []), platform],
+      [name]: nextValue,
+      ...(name === 'clientId' ? { brandId: value } : {}),
     }));
   };
 
@@ -79,6 +73,13 @@ export default function CampaignIntake() {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       createdBy: creatorName,
+      brandId: formData.brandId || formData.clientId || '',
+      budget: 0,
+      budgetType: '',
+      objective: formData.approvalFlow || '',
+      targetPostingCoverage: formData.totalList || formData.targetInfluencers || 0,
+      startDate: formData.startDate || '',
+      endDate: formData.endDate || '',
       internalOwners: Array.from(new Set([creatorName, ...ownerNames])),
       recordHealth: 'Healthy',
       currentOwner: ownerNames[0] || creatorName,
@@ -141,11 +142,7 @@ export default function CampaignIntake() {
               </div>
               <div>
                 <label className={labelClass}>Client / Brand *</label>
-                <select name="clientId" onChange={handleInputChange} className={inputClass}>
-                  <option value="">Select client...</option>
-                  <option value="c1">Red Bull (KSA Operations)</option>
-                  <option value="c2">Almarai (Regional Hub)</option>
-                </select>
+                <input name="clientId" onChange={handleInputChange} className={inputClass} placeholder="Type client or brand name" />
               </div>
               <div>
                 <label className={labelClass}>Primary Market *</label>
@@ -159,71 +156,33 @@ export default function CampaignIntake() {
                 <label className={labelClass}>Campaign Type *</label>
                 <select name="type" onChange={handleInputChange} className={inputClass}>
                   <option value="">Select type...</option>
-                  <option value="Influencer Marketing">Influencer Marketing</option>
-                  <option value="Performance">Performance</option>
-                  <option value="Brand Awareness">Brand Awareness</option>
+                  <option value="Visit">Visit</option>
+                  <option value="Delivery">Delivery</option>
+                  <option value="Repost">Repost</option>
+                  <option value="Reshare">Reshare</option>
                 </select>
               </div>
             </div>
           </section>
 
-          {/* Section 02: Objectives & Financials */}
+          {/* Section 02: Objectives & Approval */}
           <section className="bg-card border border-border rounded-xl p-6 space-y-6">
-            <SectionHeader num="02" title="Objectives & Financials" />
+            <SectionHeader num="02" title="Objectives & Approval" />
             <div className="grid grid-cols-2 gap-5">
               <div>
-                <label className={labelClass}>Target Influencers *</label>
+                <label className={labelClass}>Target *</label>
                 <input type="number" name="targetInfluencers" onChange={handleInputChange} className={inputClass} placeholder="50" />
               </div>
               <div>
-                <label className={labelClass}>Target Posting Vol. *</label>
-                <input type="number" name="targetPostingCoverage" onChange={handleInputChange} className={inputClass} placeholder="100" />
-              </div>
-              <div>
-                <label className={labelClass}>Budget *</label>
-                <input type="number" name="budget" onChange={handleInputChange} className={inputClass} placeholder="50000" />
-              </div>
-              <div>
-                <label className={labelClass}>Currency *</label>
-                <select name="budgetType" onChange={handleInputChange} className={inputClass}>
-                  <option value="USD">USD</option>
-                  <option value="SAR">SAR</option>
-                  <option value="AED">AED</option>
-                </select>
-              </div>
-              <div>
-                <label className={labelClass}>Start Date *</label>
-                <input type="date" name="startDate" onChange={handleInputChange} className={inputClass} />
-              </div>
-              <div>
-                <label className={labelClass}>End Date *</label>
-                <input type="date" name="endDate" onChange={handleInputChange} className={inputClass} />
+                <label className={labelClass}>Influencers List Count *</label>
+                <input type="number" name="totalList" onChange={handleInputChange} className={inputClass} placeholder="100" />
               </div>
               <div className="col-span-2">
-                <label className={labelClass}>Campaign Objective *</label>
-                <input name="objective" onChange={handleInputChange} className={inputClass} placeholder="e.g. Brand Awareness, User Acquisition" />
-              </div>
-            </div>
-
-            {/* Platforms */}
-            <div>
-              <label className={labelClass}>Delivery Platforms *</label>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {['Instagram', 'TikTok', 'Snapchat', 'YouTube'].map(p => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => handleTogglePlatform(p)}
-                    className={cn(
-                      'px-4 py-2 text-[11px] font-condensed font-bold uppercase tracking-widest rounded-lg border-2 transition-all',
-                      formData.platforms?.includes(p)
-                        ? 'bg-foreground border-foreground text-background'
-                        : 'bg-card border-border text-muted-foreground hover:border-gc-orange hover:text-foreground'
-                    )}
-                  >
-                    {p}
-                  </button>
-                ))}
+                <label className={labelClass}>The Campaign Is *</label>
+                <select name="approvalFlow" value={formData.approvalFlow} onChange={handleInputChange} className={inputClass}>
+                  <option value="Request for Approval">Request for Approval</option>
+                  <option value="Already Approved">Already Approved</option>
+                </select>
               </div>
             </div>
           </section>

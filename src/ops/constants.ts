@@ -64,9 +64,7 @@ export enum ClosureOutcome {
 }
 
 export const VALIDATION_REQUIRED_FIELDS = [
-  "clientId", "brandId", "name", "country", "city", 
-  "objective", "platforms", "type", "budget", "budgetType",
-  "targetInfluencers", "targetPostingCoverage", "startDate", "endDate",
-  "deliverables", "briefUrl", "mandatoryTags", "productDetails",
-  "internalOwners", "clientOwners", "influencerCriteria"
+  "clientId", "name", "country", "city", "type",
+  "targetInfluencers", "totalList", "approvalFlow",
+  "deliverables", "tags", "productDetails", "influencerCriteria"
 ];

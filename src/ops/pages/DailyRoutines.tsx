@@ -71,16 +71,14 @@ function draftFromTask(task: Task): TaskDraft {
 }
 
 function collectUserNames(tasks: Task[], handovers: Handover[], platformUsers: string[]): string[] {
-  const names = new Set<string>();
-  platformUsers.forEach(n => names.add(n));
-  tasks.forEach(t => { if (t.ownerId?.trim()) names.add(t.ownerId.trim()); });
+  const names: Array<string | undefined | null> = [...platformUsers];
+  tasks.forEach(t => names.push(t.ownerId));
   handovers.forEach(h => {
-    h.assignFrom?.forEach(n => names.add(n));
-    h.assignTo?.forEach(n => names.add(n));
-    if (h.outgoingLead?.trim()) names.add(h.outgoingLead.trim());
-    if (h.incomingLead?.trim()) names.add(h.incomingLead.trim());
+    h.assignFrom?.forEach(n => names.push(n));
+    h.assignTo?.forEach(n => names.push(n));
+    names.push(h.outgoingLead, h.incomingLead);
   });
-  return [...names].sort((a, b) => a.localeCompare(b));
+  return sortUniqueUserNames(names);
 }
 
 function getUserStats(name: string, tasks: Task[], handovers: Handover[]): DailyRoutineUserStats {

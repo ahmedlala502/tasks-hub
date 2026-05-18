@@ -42,8 +42,6 @@ const normalizeCampaignIds = (campaigns: Campaign[]) => {
 
 export const TEAM_MEMBERS: string[] = [
   'Ahmed E.', 'Sarah A.', 'Mona K.', 'Omar S.', 'Nurhan M.', 'Khalid J.',
-  'Campaign Manager', 'Community Lead', 'Coordination Lead', 'Coverage Lead',
-  'QA Lead', 'Finance Lead', 'Head of Operations',
   ...DEFAULT_ACCESS_USERS.map((user) => user.name),
 ];
 
@@ -142,6 +140,7 @@ export let HANDOVERS_DATA: Handover[] = loadFromStorage(STORAGE_KEYS.handovers, 
 let ACTIVITY_LOGS: UserActivityLog[] = [];
 let cloudInitialized = false;
 let cloudAvailable = true;
+const pendingRecordSaves = new Map<WorkspaceRecordType, Promise<void>>();
 
 const realHandovers = HANDOVERS_DATA.filter((handover) => !DEMO_HANDOVER_IDS.has(handover.id) && handover.createdBy !== 'system');
 if (realHandovers.length !== HANDOVERS_DATA.length) {
@@ -167,15 +166,31 @@ mergeImportedCompletedTasks();
 
 const persistRecord = (recordType: WorkspaceRecordType, data: unknown[]) => {
   saveToStorage(STORAGE_KEYS[recordType], data);
-  if (!cloudInitialized) return;
-  cloudWorkspaceService.saveRecord(recordType, data)
+  if (!cloudInitialized) return Promise.resolve();
+
+  const snapshot = [...data];
+  const previousSave = pendingRecordSaves.get(recordType) || Promise.resolve();
+  const save = previousSave
+    .catch(() => undefined)
+    .then(() => cloudWorkspaceService.saveRecord(recordType, snapshot))
     .then(() => {
       cloudAvailable = true;
     })
     .catch((error) => {
       cloudAvailable = false;
       console.error('Failed to sync workspace data to Supabase', error);
+    })
+    .finally(() => {
+      if (pendingRecordSaves.get(recordType) === save) {
+        pendingRecordSaves.delete(recordType);
+      }
     });
+  pendingRecordSaves.set(recordType, save);
+  return save;
+};
+
+const flushPendingRecordSaves = async () => {
+  await Promise.all([...pendingRecordSaves.values()]);
 };
 
 const rememberActivity = (event: UserActivityLog | null) => {
@@ -221,23 +236,23 @@ const replaceWorkspaceFromCloud = (workspace: Partial<{
   tasks: Task[];
   handovers: Handover[];
 }>) => {
-  if (workspace.campaigns?.length) {
+  if (Array.isArray(workspace.campaigns)) {
     CAMPAIGNS_DATA = normalizeCampaignIds(workspace.campaigns).normalized;
     saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
   }
-  if (workspace.influencers?.length) {
+  if (Array.isArray(workspace.influencers)) {
     INFLUENCERS_DATA = workspace.influencers;
     saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
   }
-  if (workspace.blockers?.length) {
+  if (Array.isArray(workspace.blockers)) {
     BLOCKERS_DATA = workspace.blockers;
     saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
   }
-  if (workspace.tasks?.length) {
+  if (Array.isArray(workspace.tasks)) {
     TASKS_DATA = workspace.tasks;
     saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
   }
-  if (workspace.handovers?.length) {
+  if (Array.isArray(workspace.handovers)) {
     HANDOVERS_DATA = workspace.handovers.filter((handover) => !DEMO_HANDOVER_IDS.has(handover.id) && handover.createdBy !== 'system');
     saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
   }
@@ -252,7 +267,7 @@ export const dataService = {
         cloudWorkspaceService.loadWorkspace(),
         cloudWorkspaceService.listActivity(),
       ]);
-      const hasCloudData = Object.values(cloudWorkspace).some((value) => Array.isArray(value) && value.length > 0);
+      const hasCloudData = Object.values(cloudWorkspace).some((value) => Array.isArray(value));
 
       if (hasCloudData) {
         replaceWorkspaceFromCloud(cloudWorkspace);
@@ -287,6 +302,7 @@ export const dataService = {
     return { cloud: cloudAvailable, activityCount: ACTIVITY_LOGS.length };
   },
   isCloudReady: () => cloudInitialized && cloudAvailable,
+  flushPendingSaves: flushPendingRecordSaves,
   getActivityLogs: () => [...ACTIVITY_LOGS],
   async refreshActivityLogs(limit = 200) {
     if (!cloudInitialized) return [...ACTIVITY_LOGS];
