@@ -221,23 +221,23 @@ const replaceWorkspaceFromCloud = (workspace: Partial<{
   tasks: Task[];
   handovers: Handover[];
 }>) => {
-  if (workspace.campaigns) {
+  if (workspace.campaigns?.length) {
     CAMPAIGNS_DATA = normalizeCampaignIds(workspace.campaigns).normalized;
     saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
   }
-  if (workspace.influencers) {
+  if (workspace.influencers?.length) {
     INFLUENCERS_DATA = workspace.influencers;
     saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
   }
-  if (workspace.blockers) {
+  if (workspace.blockers?.length) {
     BLOCKERS_DATA = workspace.blockers;
     saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
   }
-  if (workspace.tasks) {
+  if (workspace.tasks?.length) {
     TASKS_DATA = workspace.tasks;
     saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
   }
-  if (workspace.handovers) {
+  if (workspace.handovers?.length) {
     HANDOVERS_DATA = workspace.handovers.filter((handover) => !DEMO_HANDOVER_IDS.has(handover.id) && handover.createdBy !== 'system');
     saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
   }
@@ -252,7 +252,7 @@ export const dataService = {
         cloudWorkspaceService.loadWorkspace(),
         cloudWorkspaceService.listActivity(),
       ]);
-      const hasCloudData = Object.values(cloudWorkspace).some((value) => Array.isArray(value));
+      const hasCloudData = Object.values(cloudWorkspace).some((value) => Array.isArray(value) && value.length > 0);
 
       if (hasCloudData) {
         replaceWorkspaceFromCloud(cloudWorkspace);
