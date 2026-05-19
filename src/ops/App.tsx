@@ -69,7 +69,10 @@ export default function App() {
 
     supabaseAuth.getSessionUser().then(async (sessionUser) => {
       if (!mounted) return;
-      if (sessionUser) await dataService.initializeCloudWorkspace();
+      if (sessionUser) {
+        await dataService.initializeCloudWorkspace();
+        dataService.startRealtimeSync();
+      }
       if (!mounted) return;
       setUser(sessionUser);
       setRole(sessionUser?.role || null);
@@ -82,9 +85,11 @@ export default function App() {
     const subscription = supabaseAuth.onAuthStateChange((sessionUser, event) => {
       if (!mounted) return;
       if (event === 'SIGNED_OUT') {
+        dataService.stopRealtimeSync();
         setUser(null);
         setRole(null);
       } else if (sessionUser) {
+        dataService.startRealtimeSync();
         setUser(sessionUser);
         setRole(sessionUser.role);
       }
@@ -133,6 +138,7 @@ export default function App() {
       });
     }
     await supabaseAuth.signOut();
+    dataService.stopRealtimeSync();
     setUser(null);
     setRole(null);
   };

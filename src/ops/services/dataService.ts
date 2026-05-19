@@ -14,7 +14,7 @@ import { buildImportedCompletedTasks, deriveUsersFromCompletedTasks, extractUser
 import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
 import { getNewHandoverRecipients, getTaskAssignmentRecipient } from '../lib/personalWork';
 import { getTaskRecordPath } from '../lib/taskRoutes';
-import { cloudWorkspaceService, type ActivityDraft, type UserActivityLog, type WorkspaceRecordType } from './cloudWorkspaceService';
+import { cloudWorkspaceService, type ActivityDraft, type UserActivityLog, type WorkspaceRecordChange, type WorkspaceRecordType } from './cloudWorkspaceService';
 import { notify } from './notificationService';
 
 const buildCampaignId = (seed: number) => `C-${Date.now()}-${seed}-${Math.random().toString(36).slice(2, 7)}`;
@@ -141,7 +141,15 @@ export let HANDOVERS_DATA: Handover[] = loadFromStorage(STORAGE_KEYS.handovers, 
 let ACTIVITY_LOGS: UserActivityLog[] = [];
 let cloudInitialized = false;
 let cloudAvailable = true;
+let realtimeSubscription: { unsubscribe: () => void } | null = null;
 const pendingRecordSaves = new Map<WorkspaceRecordType, Promise<void>>();
+const WORKSPACE_DATA_CHANGED_EVENT = 'gc-workspace-data-changed';
+
+export type WorkspaceDataChangedDetail = {
+  recordTypes: WorkspaceRecordType[];
+  source: 'local' | 'cloud' | 'init';
+  updatedAt: string;
+};
 
 const realHandovers = HANDOVERS_DATA.filter((handover) => !DEMO_HANDOVER_IDS.has(handover.id) && handover.createdBy !== 'system');
 if (realHandovers.length !== HANDOVERS_DATA.length) {
@@ -165,17 +173,54 @@ const mergeImportedCompletedTasks = () => {
 
 mergeImportedCompletedTasks();
 
-const persistRecord = (recordType: WorkspaceRecordType, data: unknown[]) => {
+function emitWorkspaceDataChanged(recordTypes: WorkspaceRecordType[], source: WorkspaceDataChangedDetail['source']) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<WorkspaceDataChangedDetail>(WORKSPACE_DATA_CHANGED_EVENT, {
+    detail: {
+      recordTypes,
+      source,
+      updatedAt: new Date().toISOString(),
+    },
+  }));
+}
+
+function applyWorkspaceRecord(recordType: WorkspaceRecordType, payload: unknown[]) {
+  if (recordType === 'campaigns') {
+    CAMPAIGNS_DATA = normalizeCampaignIds(payload as Campaign[]).normalized;
+    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+  }
+  if (recordType === 'influencers') {
+    INFLUENCERS_DATA = payload as CampaignInfluencer[];
+    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+  }
+  if (recordType === 'blockers') {
+    BLOCKERS_DATA = payload as Blocker[];
+    saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
+  }
+  if (recordType === 'tasks') {
+    TASKS_DATA = payload as Task[];
+    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+  }
+  if (recordType === 'handovers') {
+    HANDOVERS_DATA = (payload as Handover[]).filter((handover) => !DEMO_HANDOVER_IDS.has(handover.id) && handover.createdBy !== 'system');
+    saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
+  }
+}
+
+const persistRecord = (recordType: WorkspaceRecordType, data: unknown[], options?: { mergeById?: boolean }) => {
   saveToStorage(STORAGE_KEYS[recordType], data);
+  emitWorkspaceDataChanged([recordType], 'local');
   if (!cloudInitialized) return Promise.resolve();
 
   const snapshot = [...data];
   const previousSave = pendingRecordSaves.get(recordType) || Promise.resolve();
   const save = previousSave
     .catch(() => undefined)
-    .then(() => cloudWorkspaceService.saveRecord(recordType, snapshot))
-    .then(() => {
+    .then(() => cloudWorkspaceService.saveRecord(recordType, snapshot, options))
+    .then((savedPayload) => {
       cloudAvailable = true;
+      applyWorkspaceRecord(recordType, savedPayload);
+      emitWorkspaceDataChanged([recordType], 'cloud');
     })
     .catch((error) => {
       cloudAvailable = false;
@@ -237,26 +282,37 @@ const replaceWorkspaceFromCloud = (workspace: Partial<{
   tasks: Task[];
   handovers: Handover[];
 }>) => {
+  const changedRecordTypes: WorkspaceRecordType[] = [];
   if (Array.isArray(workspace.campaigns)) {
-    CAMPAIGNS_DATA = normalizeCampaignIds(workspace.campaigns).normalized;
-    saveToStorage(STORAGE_KEYS.campaigns, CAMPAIGNS_DATA);
+    applyWorkspaceRecord('campaigns', workspace.campaigns);
+    changedRecordTypes.push('campaigns');
   }
   if (Array.isArray(workspace.influencers)) {
-    INFLUENCERS_DATA = workspace.influencers;
-    saveToStorage(STORAGE_KEYS.influencers, INFLUENCERS_DATA);
+    applyWorkspaceRecord('influencers', workspace.influencers);
+    changedRecordTypes.push('influencers');
   }
   if (Array.isArray(workspace.blockers)) {
-    BLOCKERS_DATA = workspace.blockers;
-    saveToStorage(STORAGE_KEYS.blockers, BLOCKERS_DATA);
+    applyWorkspaceRecord('blockers', workspace.blockers);
+    changedRecordTypes.push('blockers');
   }
   if (Array.isArray(workspace.tasks)) {
-    TASKS_DATA = workspace.tasks;
-    saveToStorage(STORAGE_KEYS.tasks, TASKS_DATA);
+    applyWorkspaceRecord('tasks', workspace.tasks);
+    changedRecordTypes.push('tasks');
   }
   if (Array.isArray(workspace.handovers)) {
-    HANDOVERS_DATA = workspace.handovers.filter((handover) => !DEMO_HANDOVER_IDS.has(handover.id) && handover.createdBy !== 'system');
-    saveToStorage(STORAGE_KEYS.handovers, HANDOVERS_DATA);
+    applyWorkspaceRecord('handovers', workspace.handovers);
+    changedRecordTypes.push('handovers');
   }
+  if (changedRecordTypes.length > 0) emitWorkspaceDataChanged(changedRecordTypes, 'init');
+};
+
+const handleWorkspaceRecordChange = (change: WorkspaceRecordChange) => {
+  if (change.eventType === 'DELETE') {
+    applyWorkspaceRecord(change.recordType, []);
+  } else {
+    applyWorkspaceRecord(change.recordType, change.payload);
+  }
+  emitWorkspaceDataChanged([change.recordType], 'cloud');
 };
 
 // Service Methods
@@ -303,6 +359,26 @@ export const dataService = {
     return { cloud: cloudAvailable, activityCount: ACTIVITY_LOGS.length };
   },
   isCloudReady: () => cloudInitialized && cloudAvailable,
+  startRealtimeSync: () => {
+    if (realtimeSubscription) return realtimeSubscription;
+    realtimeSubscription = cloudWorkspaceService.subscribeToWorkspaceRecords(handleWorkspaceRecordChange) as { unsubscribe: () => void };
+    return realtimeSubscription;
+  },
+  stopRealtimeSync: () => {
+    realtimeSubscription?.unsubscribe();
+    realtimeSubscription = null;
+  },
+  subscribeToWorkspaceChanges: (callback: (detail: WorkspaceDataChangedDetail) => void, recordTypes?: WorkspaceRecordType[]) => {
+    if (typeof window === 'undefined') return () => {};
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<WorkspaceDataChangedDetail>).detail;
+      if (!detail) return;
+      if (recordTypes?.length && !detail.recordTypes.some((recordType) => recordTypes.includes(recordType))) return;
+      callback(detail);
+    };
+    window.addEventListener(WORKSPACE_DATA_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(WORKSPACE_DATA_CHANGED_EVENT, handler);
+  },
   flushPendingSaves: flushPendingRecordSaves,
   getActivityLogs: () => [...ACTIVITY_LOGS],
   async refreshActivityLogs(limit = 200) {
@@ -394,7 +470,7 @@ export const dataService = {
       }
     });
     TASKS_DATA = Array.from(byId.values());
-    persistRecord('tasks', TASKS_DATA);
+    persistRecord('tasks', TASKS_DATA, { mergeById: true });
     logActivity({ action: 'tasks.imported', entityType: 'task', summary: `Imported tasks: ${inserted} added, ${updated} updated`, metadata: { inserted, updated } });
     return { tasks: [...TASKS_DATA], inserted, updated };
   },
@@ -433,7 +509,7 @@ export const dataService = {
       const { createdBy: _createdBy, createdAt: _createdAt, ...safeUpdates } = updates;
       return { ...t, ...safeUpdates, createdBy: t.createdBy, createdAt: t.createdAt, updatedAt: Date.now() };
     });
-    persistRecord('tasks', TASKS_DATA);
+    persistRecord('tasks', TASKS_DATA, { mergeById: true });
     const updatedTask = TASKS_DATA.find((task) => task.id === id);
     logActivity({ action: 'task.updated', entityType: 'task', entityId: id, summary: `Updated task "${updatedTask?.title || id}"`, metadata: { updates } });
     if (updatedTask) notifyTaskAssignment(previousTask, updatedTask);
@@ -441,7 +517,7 @@ export const dataService = {
   },
   addTask: (task: Task) => {
     TASKS_DATA = [task, ...TASKS_DATA];
-    persistRecord('tasks', TASKS_DATA);
+    persistRecord('tasks', TASKS_DATA, { mergeById: true });
     logActivity({ action: 'task.created', entityType: 'task', entityId: task.id, summary: `Created task "${task.title || task.id}"`, metadata: { campaignId: task.campaignId, ownerId: task.ownerId } });
     notifyTaskAssignment(undefined, task);
     return [...TASKS_DATA];

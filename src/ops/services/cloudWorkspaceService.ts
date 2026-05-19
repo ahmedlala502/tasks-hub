@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { mergeWorkspaceRecordsById, parseWorkspaceRecordPayload } from '../lib/workspaceRecordMerge';
 import type { Blocker, Campaign, CampaignInfluencer, Handover, Task } from '../types';
 
 export type WorkspaceRecordType = 'campaigns' | 'influencers' | 'blockers' | 'tasks' | 'handovers';
@@ -32,6 +33,13 @@ export type ActivityDraft = {
   metadata?: Record<string, unknown>;
 };
 
+export type WorkspaceRecordChange = {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  recordType: WorkspaceRecordType;
+  payload: unknown[];
+  updatedAt: string | null;
+};
+
 const RECORD_KEY_PREFIX = 'default:';
 const RECORD_TYPES: WorkspaceRecordType[] = ['campaigns', 'influencers', 'blockers', 'tasks', 'handovers'];
 
@@ -39,13 +47,25 @@ function getRecordKey(recordType: WorkspaceRecordType) {
   return `${RECORD_KEY_PREFIX}${recordType}`;
 }
 
-function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
-}
-
 function getProfileText(metadata: Record<string, unknown> | undefined, key: string) {
   const value = metadata?.[key];
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function isWorkspaceRecordType(value: unknown): value is WorkspaceRecordType {
+  return typeof value === 'string' && RECORD_TYPES.includes(value as WorkspaceRecordType);
+}
+
+function mapWorkspaceRecordChange(payload: any): WorkspaceRecordChange | null {
+  const row = payload.eventType === 'DELETE' ? payload.old : payload.new;
+  if (!row || !isWorkspaceRecordType(row.record_type)) return null;
+
+  return {
+    eventType: payload.eventType,
+    recordType: row.record_type,
+    payload: parseWorkspaceRecordPayload(row.payload),
+    updatedAt: row.updated_at || null,
+  };
 }
 
 function mapActivityRow(row: any): UserActivityLog {
@@ -73,26 +93,41 @@ export const cloudWorkspaceService = {
 
     return (data || []).reduce<Partial<WorkspaceData>>((acc, row: any) => {
       if (RECORD_TYPES.includes(row.record_type)) {
-        (acc as any)[row.record_type] = asArray(row.payload);
+        (acc as any)[row.record_type] = parseWorkspaceRecordPayload(row.payload);
       }
       return acc;
     }, {});
   },
 
-  async saveRecord(recordType: WorkspaceRecordType, payload: unknown[]): Promise<void> {
+  async loadRecord(recordType: WorkspaceRecordType): Promise<unknown[]> {
+    const { data, error } = await supabase
+      .from('ops_workspace_records' as any)
+      .select('payload')
+      .eq('record_key', getRecordKey(recordType))
+      .maybeSingle();
+
+    if (error) throw error;
+    return parseWorkspaceRecordPayload((data as any)?.payload);
+  },
+
+  async saveRecord(recordType: WorkspaceRecordType, payload: unknown[], options?: { mergeById?: boolean }): Promise<unknown[]> {
     const { data: sessionData } = await supabase.auth.getSession();
     const updatedBy = sessionData.session?.user?.id ?? null;
+    const finalPayload = options?.mergeById
+      ? mergeWorkspaceRecordsById(await this.loadRecord(recordType), payload)
+      : payload;
     const { error } = await supabase
       .from('ops_workspace_records' as any)
       .upsert({
         record_key: getRecordKey(recordType),
         record_type: recordType,
-        payload,
+        payload: finalPayload,
         updated_by: updatedBy,
         updated_at: new Date().toISOString(),
       });
 
     if (error) throw error;
+    return finalPayload;
   },
 
   async saveWorkspace(data: WorkspaceData): Promise<void> {
@@ -138,5 +173,27 @@ export const cloudWorkspaceService = {
 
     if (error) throw error;
     return (data || []).map(mapActivityRow);
+  },
+
+  subscribeToWorkspaceRecords(callback: (change: WorkspaceRecordChange) => void) {
+    const channel = supabase
+      .channel('ops-workspace-records')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ops_workspace_records' },
+        (payload) => {
+          const change = mapWorkspaceRecordChange(payload);
+          if (change) callback(change);
+        },
+      )
+      .subscribe((status, error) => {
+        if (error) {
+          console.error('Supabase workspace realtime subscription failed', error);
+        } else if (status === 'SUBSCRIBED') {
+          console.info('Supabase workspace realtime subscription active');
+        }
+      });
+
+    return channel;
   },
 };

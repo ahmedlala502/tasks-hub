@@ -225,6 +225,8 @@ export default function Dashboard() {
   const { role } = useAuth();
 
   const [onlineUpdates, setOnlineUpdates] = React.useState<OpsUpdate[]>([]);
+  const [workspaceVersion, setWorkspaceVersion] = React.useState(0);
+  void workspaceVersion;
   React.useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -245,6 +247,12 @@ export default function Dashboard() {
       window.clearInterval(interval);
       window.removeEventListener('gc-online-updates-refresh', refresh);
     };
+  }, []);
+
+  React.useEffect(() => {
+    return dataService.subscribeToWorkspaceChanges(() => {
+      setWorkspaceVersion((version) => version + 1);
+    }, ['campaigns', 'tasks', 'blockers', 'handovers', 'influencers']);
   }, []);
 
   const campaigns = filterCampaignsByRole(role, dataService.getCampaigns());

@@ -101,6 +101,7 @@ export default function UserProfile() {
   const [workspaceFilter, setWorkspaceFilter] = useState<'all' | 'operations' | 'community'>('all');
   const [teamFilter, setTeamFilter] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
+  const [workspaceVersion, setWorkspaceVersion] = useState(0);
 
   useEffect(() => {
     const targetUser = searchParams.get('user');
@@ -117,6 +118,12 @@ export default function UserProfile() {
     });
     return () => { alive = false; };
   }, [role]);
+
+  useEffect(() => {
+    return dataService.subscribeToWorkspaceChanges(() => {
+      setWorkspaceVersion((version) => version + 1);
+    }, ['tasks', 'handovers', 'blockers', 'campaigns', 'influencers']);
+  }, []);
 
   const roster = useMemo(() => uniqueUsers([
     ...DEFAULT_ACCESS_USERS.map((item) => ({
@@ -145,7 +152,7 @@ export default function UserProfile() {
       influencers: role === 'master' ? allInfluencers : filterInfluencersByRole(role, allInfluencers),
       handovers: role === 'master' ? allHandovers : filterHandoversByRole(role, allHandovers),
     };
-  }, [role]);
+  }, [role, workspaceVersion]);
 
   const insights = useMemo(() => buildPerformanceInsights({
     users: roster,

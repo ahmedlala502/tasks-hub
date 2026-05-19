@@ -156,6 +156,13 @@ export default function HandoverCenter() {
     return () => { mounted = false; };
   }, []);
 
+  useEffect(() => {
+    return dataService.subscribeToWorkspaceChanges(() => {
+      setHandovers(filterHandoversByRole(role, dataService.getHandovers()));
+      setTasks(filterTasksByRole(role, dataService.getTasks()));
+    }, ['handovers', 'tasks']);
+  }, [role]);
+
   const owners = useMemo(() => {
     return sortUniqueUserNames([...adminUsers, user?.displayName]);
   }, [adminUsers, user?.displayName]);

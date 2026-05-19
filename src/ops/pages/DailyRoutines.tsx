@@ -155,8 +155,8 @@ export default function DailyRoutines() {
   const { bucket } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>(dataService.getTasks());
-  const [handovers] = useState<Handover[]>(dataService.getHandovers());
-  const [campaigns] = useState<Campaign[]>(dataService.getCampaigns());
+  const [handovers, setHandovers] = useState<Handover[]>(dataService.getHandovers());
+  const [campaigns, setCampaigns] = useState<Campaign[]>(dataService.getCampaigns());
   const [platformUsers, setPlatformUsers] = useState<string[]>(getDefaultPlatformUserNames());
   const [query, setQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
@@ -172,6 +172,14 @@ export default function DailyRoutines() {
       if (alive) setPlatformUsers(users);
     }).catch(() => {});
     return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    return dataService.subscribeToWorkspaceChanges(() => {
+      setTasks(dataService.getTasks());
+      setHandovers(dataService.getHandovers());
+      setCampaigns(dataService.getCampaigns());
+    }, ['tasks', 'handovers', 'campaigns']);
   }, []);
 
   const allUserNames = useMemo(() => collectUserNames(tasks, handovers, platformUsers), [tasks, handovers, platformUsers]);
