@@ -4,7 +4,7 @@ import { useAuth } from '../App';
 import {
   LayoutDashboard, LogOut, Bell,
   Settings, ShieldCheck, AlertTriangle,
-  Shield, BarChart3, MessageSquare, CheckSquare,
+  Shield, BarChart3, MessageSquare,
   Sun, Moon, RefreshCw, Download,
   ChevronRight, FolderKanban,
   Search, X, SlidersHorizontal, Check, Clock, CircleAlert, CheckCircle2, UserRound,
@@ -17,6 +17,7 @@ import { canAccessPath, getRoleLabel } from '../lib/access';
 import { getWorkspaceLabel } from '../lib/workspace';
 import { opsUpdatesService } from '../services/opsUpdatesService';
 import ErrorBoundary from '../../components/ErrorBoundary';
+import { TASK_MANAGER_LABEL, TASK_MANAGER_PATH } from '../lib/taskRoutes';
 
 type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
@@ -27,12 +28,10 @@ type NavItem = {
 // ── Nav items ─────────────────────────────────────────────
 const OPS_NAV: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard',      path: '/' },
-  { icon: UserRound,       label: 'My Work',        path: '/my-dashboard' },
   { icon: Activity,        label: 'Live Ops',       path: '/live-ops' },
   { icon: FolderKanban,    label: 'Campaigns',      path: '/campaigns' },
-  { icon: ClipboardList,   label: 'Daily Routine',  path: '/tasks-daily-routines' },
+  { icon: ClipboardList,   label: TASK_MANAGER_LABEL, path: TASK_MANAGER_PATH },
   { icon: RefreshCw,       label: 'Handover',       path: '/handover' },
-  { icon: CheckSquare,     label: 'Task Board',     path: '/tasks' },
   { icon: Trophy,          label: 'Updates',        path: '/updates' },
   { icon: BarChart3,       label: 'Reports & Exports', path: '/reporting' },
   { icon: BarChart3,       label: 'System live report',  path: '/system-live-report' },
@@ -69,8 +68,8 @@ function timeAgo(ts: number): string {
 function getPageLabel(pathname: string): string {
   const exact = ALL_NAV.find(i => i.path === pathname);
   if (exact) return exact.label;
-  if (pathname.startsWith('/tasks/')) return 'Tasks';
-  if (pathname === '/tasks-daily-routines') return 'Daily Routine';
+  if (pathname === TASK_MANAGER_PATH || pathname.startsWith(`${TASK_MANAGER_PATH}/`)) return TASK_MANAGER_LABEL;
+  if (pathname === '/tasks-daily-routines' || pathname === '/daily-routines' || pathname === '/my-dashboard') return TASK_MANAGER_LABEL;
   if (pathname === '/online-users') return 'Online Users';
   if (pathname === '/campaigns/new') return 'New Campaign';
   if (pathname.startsWith('/campaigns/') && pathname.endsWith('/setup')) return 'Campaign Setup';
@@ -720,7 +719,7 @@ function NotificationPanel({
           <button onClick={() => onNavigate('/blockers')} className="rounded-lg bg-gc-orange px-3 py-2 text-xs font-bold text-white hover:bg-gc-orange/90">
             View Blockers
           </button>
-          <button onClick={() => onNavigate('/tasks')} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-card dark:text-gray-300 dark:hover:bg-gray-800">
+          <button onClick={() => onNavigate(TASK_MANAGER_PATH)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:border-gray-800 dark:bg-card dark:text-gray-300 dark:hover:bg-gray-800">
             Open Tasks
           </button>
         </div>

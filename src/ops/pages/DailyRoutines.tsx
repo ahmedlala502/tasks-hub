@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -29,6 +30,7 @@ import {
   type DailyRoutineOverviewView,
   type DailyRoutineUserStats,
 } from '../lib/dailyRoutines';
+import { TASK_MANAGER_LABEL, getTaskManagerPath } from '../lib/taskRoutes';
 import { cn } from '../lib/utils';
 import { notify } from '../services/notificationService';
 import type { Campaign, Handover, Task } from '../types';
@@ -54,6 +56,23 @@ const EMPTY_DRAFT: TaskDraft = {
   status: 'In Progress',
   dueDate: new Date().toISOString().slice(0, 10),
   nextStep: '',
+};
+
+const BUCKET_FILTERS: Record<string, DailyRoutineOverviewFilter> = {
+  all: 'with-tasks',
+  new: 'with-tasks',
+  done: 'done',
+  pending: 'pending',
+  blocked: 'blocked',
+  overdue: 'overdue',
+  'in-progress': 'in-progress',
+};
+
+const BUCKET_STATUS_FILTERS: Record<string, string> = {
+  done: 'Done',
+  pending: 'Pending',
+  blocked: 'Blocked',
+  'in-progress': 'In Progress',
 };
 
 function draftFromTask(task: Task): TaskDraft {
@@ -124,6 +143,8 @@ const PRIORITY_META: Record<string, { label: string; bg: string; text: string; b
 
 export default function DailyRoutines() {
   const { role, user } = useAuth();
+  const { bucket } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>(dataService.getTasks());
   const [handovers] = useState<Handover[]>(dataService.getHandovers());
   const [campaigns] = useState<Campaign[]>(dataService.getCampaigns());
@@ -200,6 +221,53 @@ export default function DailyRoutines() {
 
   const canEditTask = (task: Task) => canEditTaskRecord(role, user?.displayName, task, user?.email);
 
+  useEffect(() => {
+    const normalizedBucket = bucket?.toLowerCase();
+    if (normalizedBucket && BUCKET_FILTERS[normalizedBucket]) {
+      setOverviewFilter(BUCKET_FILTERS[normalizedBucket]);
+      setStatusFilter(BUCKET_STATUS_FILTERS[normalizedBucket] || 'all');
+    }
+
+    const taskId = searchParams.get('task');
+    const requestedUser = searchParams.get('user');
+    if (taskId) {
+      const task = tasks.find((item) => item.id === taskId);
+      if (task?.ownerId) {
+        setSelectedUser(task.ownerId);
+        setDetailTab('tasks');
+        setStatusFilter(getOperationalTaskStatus(task));
+      }
+      return;
+    }
+
+    if (requestedUser) {
+      setSelectedUser(requestedUser);
+      setDetailTab('tasks');
+      return;
+    }
+
+    setSelectedUser(null);
+  }, [bucket, searchParams, tasks]);
+
+  const openUser = (name: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('user', name);
+    next.delete('task');
+    setSearchParams(next);
+    setSelectedUser(name);
+    setDetailTab('tasks');
+  };
+
+  const closeUser = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('user');
+    next.delete('task');
+    setSearchParams(next);
+    setSelectedUser(null);
+    setDetailTab('tasks');
+    setStatusFilter(BUCKET_STATUS_FILTERS[bucket?.toLowerCase() || ''] || 'all');
+  };
+
   const totals = useMemo(() => {
     let totalTasks = 0, totalDone = 0, totalInProgress = 0, totalPending = 0, totalBlocked = 0;
     overviewStats.forEach(s => {
@@ -217,7 +285,7 @@ export default function DailyRoutines() {
     const now = Date.now();
     const existing = draft.id ? tasks.find(t => t.id === draft.id) : undefined;
     if (existing && !canEditTask(existing)) {
-      notify('View Only', 'Only the assigned user or admin can edit this task.', 'orange', '/daily-routines');
+      notify('View Only', 'Only the assigned user or admin can edit this task.', 'orange', getTaskManagerPath());
       setDraft(null);
       return;
     }
@@ -247,7 +315,7 @@ export default function DailyRoutines() {
   const updateStatus = (taskId: string, status: NonNullable<Task['status']>) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task || !canEditTask(task)) {
-      notify('View Only', 'Only the assigned user or admin can update this task.', 'orange', '/daily-routines');
+      notify('View Only', 'Only the assigned user or admin can update this task.', 'orange', getTaskManagerPath());
       return;
     }
     setTasks(dataService.updateTask(taskId, {
@@ -267,7 +335,7 @@ export default function DailyRoutines() {
           <div className="flex items-center gap-4">
             {selectedUser && (
               <button
-                onClick={() => { setSelectedUser(null); setDetailTab('tasks'); setStatusFilter('all'); }}
+                onClick={closeUser}
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
               >
                 <ArrowLeft size={16} />
@@ -275,15 +343,15 @@ export default function DailyRoutines() {
             )}
             <div>
               <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">
-                {selectedUser ? 'User Drill-Down' : 'Team Workspace'}
+                {selectedUser ? 'User Drill-Down' : TASK_MANAGER_LABEL}
               </p>
               <h1 className="font-condensed text-[28px] font-extrabold uppercase tracking-tight text-foreground">
-                {selectedUser ? selectedUser : 'People & Tasks'}
+                {selectedUser ? selectedUser : TASK_MANAGER_LABEL}
               </h1>
               <p className="mt-0.5 text-sm font-medium text-muted-foreground">
                 {selectedUser
                   ? `All tasks and handovers assigned to ${selectedUser}`
-                  : 'Per-user task widgets — click any card to drill into their work.'}
+                  : 'Per-user task widgets, task status filters, and handovers in one organized workspace.'}
               </p>
             </div>
           </div>
@@ -366,11 +434,11 @@ export default function DailyRoutines() {
           ) : overviewView === 'widgets' ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {filteredStats.map(stats => (
-                <UserWidget key={stats.name} stats={stats} onClick={() => setSelectedUser(stats.name)} />
+                <UserWidget key={stats.name} stats={stats} onClick={() => openUser(stats.name)} />
               ))}
             </div>
           ) : (
-            <UserListView stats={filteredStats} onSelect={(name) => setSelectedUser(name)} />
+            <UserListView stats={filteredStats} onSelect={openUser} />
           )}
         </>
       ) : (

@@ -7,6 +7,7 @@ import { ATTACHED_EXPORT_USERS } from '../services/dataService';
 import { dataService } from '../services/dataService';
 import { buildOnlineUserRoster } from '../lib/onlineUsers';
 import { buildLiveOpsInsights, getOperationalTaskStatus } from '../lib/opsPageInsights';
+import { getTaskManagerPath, getUserTaskManagerPath } from '../lib/taskRoutes';
 import { cn } from '../lib/utils';
 import type { Task } from '../types';
 
@@ -91,9 +92,9 @@ export default function LiveOps() {
 
       <section className="grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-4">
         <QuickAction to="/campaigns" icon={BarChart3} title="Campaigns" detail="Open execution matrix" />
-        <QuickAction to="/tasks-daily-routines" icon={CheckCircle2} title="Daily routine" detail="Clear focus queue" />
+        <QuickAction to={getTaskManagerPath()} icon={CheckCircle2} title="Tasks Manager" detail="Clear focus queue" />
         <QuickAction to="/updates" icon={RadioTower} title="Updates" detail="Review latest movement" />
-        <QuickAction to="/tasks" icon={UsersRound} title="All tasks" detail="Manage task board" />
+        <QuickAction to={getTaskManagerPath()} icon={UsersRound} title="All tasks" detail="Manage tasks" />
       </section>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.95fr_1.05fr]">
@@ -128,7 +129,7 @@ export default function LiveOps() {
           <h3 className="mt-6 text-sm font-extrabold text-foreground">Team Activity</h3>
           <div className="mt-3 space-y-2">
             {ownerRows.map((row) => (
-              <Link key={row.owner} to="/tasks" className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
+              <Link key={row.owner} to={getUserTaskManagerPath(row.owner)} className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
                 <div>
                   <p className="text-sm font-bold text-foreground">{row.owner}</p>
                   <p className="text-[11px] text-muted-foreground">{row.done} done - {row.blocked} blocked</p>
@@ -166,7 +167,7 @@ export default function LiveOps() {
           <h3 className="text-sm font-extrabold text-foreground">Recent Tasks</h3>
           <div className="mt-4 space-y-3">
             {recentTasks.length ? recentTasks.map((task) => (
-              <Link key={task.id} to="/tasks" className="block rounded-lg border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
+              <Link key={task.id} to={getUserTaskManagerPath(task.ownerId || 'Unassigned')} className="block rounded-lg border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-bold text-foreground">{task.title}</p>
@@ -185,7 +186,7 @@ export default function LiveOps() {
           <h3 className="text-sm font-extrabold text-foreground">Blocker Board</h3>
           <div className="mt-4 space-y-3">
             {blockers.filter((blocker) => blocker.status !== 'Resolved').slice(0, 8).map((blocker) => (
-              <Link key={blocker.id} to="/tasks" className="block rounded-lg border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
+              <Link key={blocker.id} to={getUserTaskManagerPath(blocker.ownerId || 'Unassigned')} className="block rounded-lg border border-border bg-background p-4 hover:border-gc-orange/40 hover:bg-gc-orange/5 transition-colors">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 text-gc-orange shrink-0" />
                   <div className="min-w-0">

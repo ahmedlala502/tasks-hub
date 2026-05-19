@@ -5,6 +5,7 @@ import { useAuth } from '../App';
 import { dataService } from '../services/dataService';
 import { buildMyCampaignMatrix, buildMyDashboardInsights, getOperationalTaskStatus } from '../lib/opsPageInsights';
 import { getPersonalWork } from '../lib/personalWork';
+import { getTaskManagerPath, getTaskRecordPath } from '../lib/taskRoutes';
 import { cn } from '../lib/utils';
 import { notify } from '../services/notificationService';
 import type { Handover, Task } from '../types';
@@ -19,7 +20,7 @@ const WORK_TABS: Array<{ id: WorkTab; label: string }> = [
 const TASK_STATUS_OPTIONS: Array<NonNullable<Task['status']>> = ['Pending', 'In Progress', 'Blocked', 'Done'];
 
 function taskPath(task: Pick<Task, 'id' | 'completed'>) {
-  return `/tasks?task=${encodeURIComponent(task.id)}`;
+  return getTaskRecordPath(task.id);
 }
 
 function handoverPath(handover: Pick<Handover, 'id'>) {
@@ -41,7 +42,7 @@ function activityPath(event: { entityType: string; entityId: string | null; meta
   const campaignId = typeof event.metadata?.campaignId === 'string' ? event.metadata.campaignId : '';
   switch (event.entityType) {
     case 'task':
-      return `/tasks?task=${encodeURIComponent(id || metadataId)}`;
+      return getTaskRecordPath(id || metadataId);
     case 'handover':
       return `/handover?handover=${encodeURIComponent(id || metadataId)}`;
     case 'campaign':
@@ -150,7 +151,7 @@ export default function MyDashboard() {
             <p className="mt-1 text-sm text-muted-foreground">Personal workspace for assigned tasks, completed work, delegated tasks, and handovers.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link to="/tasks" className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-gc-orange/90">
+            <Link to={getTaskManagerPath()} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-white hover:bg-gc-orange/90">
               <Plus size={16} /> New Task
             </Link>
             <Link to="/handover" className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-foreground hover:bg-accent">
@@ -166,7 +167,7 @@ export default function MyDashboard() {
             <h3 className="text-sm font-extrabold text-foreground">My Work Summary</h3>
             <p className="mt-1 text-xs text-muted-foreground">One clean view of your assigned, completed, blocked, and delegated work.</p>
           </div>
-          <Link to="/tasks" className="text-xs font-bold text-gc-orange hover:underline">View All Tasks</Link>
+          <Link to={getTaskManagerPath()} className="text-xs font-bold text-gc-orange hover:underline">View All Tasks</Link>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
           <Metric title="Assigned" value={performanceMetrics.total} detail={`${performanceMetrics.inProgress} in progress`} icon={Target} />

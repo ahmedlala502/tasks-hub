@@ -9,6 +9,7 @@ import { useAuth } from '../App';
 import { canEditHandoverRecord, filterHandoversByRole, filterTasksByRole, filterTeamOptionsByRole, getWorkspaceScope } from '../lib/workspace';
 import { getDefaultPlatformUserNames, loadPlatformUserNames, sortUniqueUserNames } from '../lib/platformUsers';
 import { clearRecordParam } from '../lib/recordNavigation';
+import { getTaskRecordPath } from '../lib/taskRoutes';
 import { cn } from '../utils';
 import { dataService } from '../services/dataService';
 import { notify } from '../services/notificationService';
@@ -613,7 +614,7 @@ export default function HandoverCenter() {
                       <div className="mt-3">
                         <div className="flex flex-wrap gap-2">
                           {relatedTasks.slice(0, 4).map((task) => (
-                            <Link key={task.id} to={`/tasks?task=${encodeURIComponent(task.id)}`} className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold text-foreground hover:border-gc-orange hover:text-gc-orange">
+                            <Link key={task.id} to={getTaskRecordPath(task.id)} className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold text-foreground hover:border-gc-orange hover:text-gc-orange">
                               {task.title}
                             </Link>
                           ))}

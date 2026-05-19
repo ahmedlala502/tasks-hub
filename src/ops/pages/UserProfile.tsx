@@ -22,6 +22,7 @@ import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
 import { ATTACHED_EXPORT_USERS, dataService } from '../services/dataService';
 import { notify } from '../services/notificationService';
 import { filterBlockersByRole, filterCampaignsByRole, filterHandoversByRole, filterInfluencersByRole, filterTasksByRole } from '../lib/workspace';
+import { getTaskManagerPath } from '../lib/taskRoutes';
 import {
   buildPerformanceInsights,
   type PerformanceRow,
@@ -44,8 +45,7 @@ const DEPARTMENTS: OpsDepartment[] = [
 ];
 
 const TOOL_LINKS = [
-  { label: 'Task Lanes', to: '/tasks', icon: ListChecks },
-  { label: 'Priority Board', to: '/priority-board', icon: Flame },
+  { label: 'Tasks Manager', to: getTaskManagerPath(), icon: ListChecks },
   { label: 'Handovers', to: '/handover', icon: Layers3 },
   { label: 'Blockers', to: '/blockers', icon: CircleAlert },
   { label: 'Reporting', to: '/reporting', icon: BarChart3 },

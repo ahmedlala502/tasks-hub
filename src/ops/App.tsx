@@ -10,10 +10,9 @@ import type { OpsDepartment, OpsOffice, OpsRole, OpsUser } from './auth/types';
 import Updates from './pages/Updates';
 import Login from './pages/Login';
 import Layout from './components/Layout';
-import Tasks from './pages/Tasks';
+import { TASK_MANAGER_PATH } from './lib/taskRoutes';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
-const MyDashboard = lazy(() => import('./pages/MyDashboard'));
 const LiveOps = lazy(() => import('./pages/LiveOps'));
 const Admin = lazy(() => import('./pages/Admin'));
 const Reporting = lazy(() => import('./pages/Reporting'));
@@ -181,7 +180,7 @@ export default function App() {
                 element={user ? <Layout /> : <Navigate to="/login" />}
               >
                 <Route index element={allow('/', <Dashboard />)} />
-                <Route path="my-dashboard" element={allow('/my-dashboard', <MyDashboard />)} />
+                <Route path="my-dashboard" element={<Navigate to={TASK_MANAGER_PATH} replace />} />
                 <Route path="live-ops" element={allow('/live-ops', <LiveOps />)} />
                 <Route path="handover" element={allow('/handover', <Handover />)} />
                 <Route path="online-users" element={allow('/online-users', <OnlineUsers />)} />
@@ -191,11 +190,11 @@ export default function App() {
                 <Route path="system-live-report" element={allow('/system-live-report', <LiveReportPage reportKey="system" />)} />
                 <Route path="dropbox-live-report" element={allow('/dropbox-live-report', <LiveReportPage reportKey="dropbox" />)} />
                 <Route path="try-dashboard" element={<Navigate to="/system-live-report" replace />} />
-                <Route path="tasks" element={allow('/tasks', <Tasks />)} />
-                <Route path="tasks/:bucket" element={allow('/tasks', <Tasks />)} />
-                <Route path="tasks-daily-routines" element={allow('/tasks-daily-routines', <DailyRoutines />)} />
-                <Route path="daily-routines" element={allow('/daily-routines', <DailyRoutines />)} />
-                <Route path="priority-board" element={<Navigate to="/tasks-daily-routines" replace />} />
+                <Route path="tasks" element={allow(TASK_MANAGER_PATH, <DailyRoutines />)} />
+                <Route path="tasks/:bucket" element={allow(TASK_MANAGER_PATH, <DailyRoutines />)} />
+                <Route path="tasks-daily-routines" element={<Navigate to={TASK_MANAGER_PATH} replace />} />
+                <Route path="daily-routines" element={<Navigate to={TASK_MANAGER_PATH} replace />} />
+                <Route path="priority-board" element={<Navigate to={TASK_MANAGER_PATH} replace />} />
                 <Route path="profile" element={allow('/profile', <UserProfile />)} />
                 <Route path="performance" element={allow('/performance', <UserProfile />)} />
                 <Route path="templates" element={allow('/templates', <Templates />)} />
