@@ -92,7 +92,7 @@ function draftFromTask(task: Task): TaskDraft {
     campaignId: task.campaignId || '',
     department: task.department || task.category || 'PMO',
     priority: task.priority,
-    status: getOperationalTaskStatus(task),
+    status: task.status || 'In Progress',
     dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
     nextStep: task.nextStep || task.description || '',
   };
