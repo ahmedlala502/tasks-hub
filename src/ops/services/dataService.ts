@@ -207,7 +207,7 @@ function applyWorkspaceRecord(recordType: WorkspaceRecordType, payload: unknown[
   }
 }
 
-const persistRecord = (recordType: WorkspaceRecordType, data: unknown[], options?: { mergeById?: boolean }) => {
+const persistRecord = (recordType: WorkspaceRecordType, data: unknown[], options?: { mergeById?: boolean; deletedIds?: string[] }) => {
   saveToStorage(STORAGE_KEYS[recordType], data);
   emitWorkspaceDataChanged([recordType], 'local');
   if (!cloudInitialized) return Promise.resolve();
@@ -497,7 +497,7 @@ export const dataService = {
     const result = ensureDailyOperatingTasks(TASKS_DATA, now);
     if (result.createdCount > 0) {
       TASKS_DATA = result.tasks;
-      persistRecord('tasks', TASKS_DATA);
+      persistRecord('tasks', TASKS_DATA, { mergeById: true });
       logActivity({ action: 'tasks.auto_created', entityType: 'task', summary: `Created ${result.createdCount} daily operating tasks`, metadata: { count: result.createdCount } });
     }
     return { tasks: [...TASKS_DATA], createdCount: result.createdCount };
@@ -636,7 +636,7 @@ export const dataService = {
   },
   deleteTask: (id: string) => {
     TASKS_DATA = TASKS_DATA.filter(t => t.id !== id);
-    persistRecord('tasks', TASKS_DATA);
+    persistRecord('tasks', TASKS_DATA, { mergeById: true, deletedIds: [id] });
     logActivity({ action: 'task.deleted', entityType: 'task', entityId: id, summary: `Deleted task ${id}`, metadata: { id } });
     return [...TASKS_DATA];
   },

@@ -25,12 +25,18 @@ function getEntityTime(item: WorkspaceEntity): number {
   return Math.max(toTimestamp(item.updatedAt), toTimestamp(item.createdAt));
 }
 
-export function mergeWorkspaceRecordsById<T extends WorkspaceEntity>(remotePayload: unknown, localPayload: unknown): T[] {
+export function mergeWorkspaceRecordsById<T extends WorkspaceEntity>(
+  remotePayload: unknown,
+  localPayload: unknown,
+  deletedIds: string[] = [],
+): T[] {
   const merged = new Map<string, T>();
   const anonymous: T[] = [];
+  const deleted = new Set(deletedIds.map((id) => id.trim()).filter(Boolean));
 
   const add = (item: T) => {
     const id = getEntityId(item);
+    if (id && deleted.has(id)) return;
     if (!id) {
       anonymous.push(item);
       return;

@@ -110,11 +110,11 @@ export const cloudWorkspaceService = {
     return parseWorkspaceRecordPayload((data as any)?.payload);
   },
 
-  async saveRecord(recordType: WorkspaceRecordType, payload: unknown[], options?: { mergeById?: boolean }): Promise<unknown[]> {
+  async saveRecord(recordType: WorkspaceRecordType, payload: unknown[], options?: { mergeById?: boolean; deletedIds?: string[] }): Promise<unknown[]> {
     const { data: sessionData } = await supabase.auth.getSession();
     const updatedBy = sessionData.session?.user?.id ?? null;
     const finalPayload = options?.mergeById
-      ? mergeWorkspaceRecordsById(await this.loadRecord(recordType), payload)
+      ? mergeWorkspaceRecordsById(await this.loadRecord(recordType), payload, options.deletedIds)
       : payload;
     const { error } = await supabase
       .from('ops_workspace_records' as any)

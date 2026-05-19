@@ -20,6 +20,19 @@ describe('workspace record merge', () => {
     expect(merged).toEqual([{ id: 'task-1', title: 'Remote update', updatedAt: 50 }]);
   });
 
+  it('can remove an explicitly deleted id without dropping other remote records', () => {
+    const merged = mergeWorkspaceRecordsById(
+      [
+        { id: 'keep-cloud', title: 'Remote task', updatedAt: 10 },
+        { id: 'delete-me', title: 'Deleted task', updatedAt: 30 },
+      ],
+      [{ id: 'local-only', title: 'Local task', updatedAt: 20 }],
+      ['delete-me'],
+    );
+
+    expect(merged.map((item) => item.id).sort()).toEqual(['keep-cloud', 'local-only']);
+  });
+
   it('accepts only array payloads from workspace records', () => {
     expect(parseWorkspaceRecordPayload({ id: 'not-an-array' })).toEqual([]);
     expect(parseWorkspaceRecordPayload([{ id: 'task-1' }])).toEqual([{ id: 'task-1' }]);
