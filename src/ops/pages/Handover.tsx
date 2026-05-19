@@ -9,6 +9,7 @@ import { useAuth } from '../App';
 import { canEditHandoverRecord, filterHandoversByRole, filterTasksByRole, filterTeamOptionsByRole, getWorkspaceScope } from '../lib/workspace';
 import { getDefaultPlatformUserNames, loadPlatformUserNames, sortUniqueUserNames } from '../lib/platformUsers';
 import { clearRecordParam } from '../lib/recordNavigation';
+import { getTaskRecordPath } from '../lib/taskRoutes';
 import { cn } from '../utils';
 import { dataService } from '../services/dataService';
 import { notify } from '../services/notificationService';
@@ -133,6 +134,7 @@ export default function HandoverCenter() {
   const { role, user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const directHandoverId = searchParams.get('handover');
+  const personFilter = searchParams.get('person') || '';
   const scope = getWorkspaceScope(role);
   
   const [handovers, setHandovers] = useState<Handover[]>(
@@ -209,10 +211,11 @@ export default function HandoverCenter() {
         handover.team, handover.region, handover.notes
       ].join(' ').toLowerCase();
       const matchesQuery = !query || haystack.includes(query.toLowerCase());
+      const matchesPerson = !personFilter || haystack.includes(personFilter.toLowerCase());
       const matchesStatus = statusFilter === 'all' || handover.status === statusFilter;
-      return matchesQuery && matchesStatus;
+      return matchesQuery && matchesPerson && matchesStatus;
     });
-  }, [handovers, query, statusFilter]);
+  }, [handovers, personFilter, query, statusFilter]);
 
   const resetDraft = () => {
     setEditingId(null);
@@ -323,7 +326,7 @@ export default function HandoverCenter() {
           <h2 className="font-extrabold text-2xl tracking-tight text-foreground">Handover Command</h2>
           <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
             <Handshake size={16} className="text-gc-orange" />
-            Multi-assign tasks between team members with full context transfer
+            {personFilter ? `Handovers involving ${personFilter}` : 'Multi-assign tasks between team members with full context transfer'}
           </p>
         </div>
         <button onClick={resetDraft} className="inline-flex items-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-sm font-bold text-white hover:bg-gc-orange/90">
@@ -613,7 +616,7 @@ export default function HandoverCenter() {
                       <div className="mt-3">
                         <div className="flex flex-wrap gap-2">
                           {relatedTasks.slice(0, 4).map((task) => (
-                            <Link key={task.id} to={`/tasks?task=${encodeURIComponent(task.id)}`} className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold text-foreground hover:border-gc-orange hover:text-gc-orange">
+                            <Link key={task.id} to={getTaskRecordPath(task.id)} className="rounded-full border border-border bg-background px-3 py-1 text-[11px] font-semibold text-foreground hover:border-gc-orange hover:text-gc-orange">
                               {task.title}
                             </Link>
                           ))}

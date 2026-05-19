@@ -13,6 +13,7 @@ import { CAMPAIGNS_20260515 } from '../data/campaigns-20260515';
 import { buildImportedCompletedTasks, deriveUsersFromCompletedTasks, extractUsersFromWorkspaceExport, parseCompletedTasksCsv } from '../lib/importedWorkspaceData';
 import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
 import { getNewHandoverRecipients, getTaskAssignmentRecipient } from '../lib/personalWork';
+import { getTaskRecordPath } from '../lib/taskRoutes';
 import { cloudWorkspaceService, type ActivityDraft, type UserActivityLog, type WorkspaceRecordType } from './cloudWorkspaceService';
 import { notify } from './notificationService';
 
@@ -214,7 +215,7 @@ const logActivity = (draft: ActivityDraft) => {
 function notifyTaskAssignment(previous: Task | undefined, next: Task) {
   const recipientName = getTaskAssignmentRecipient(previous, next);
   if (!recipientName) return;
-  notify('New case assigned', `"${next.title}" was assigned to you.`, 'purple', `/tasks?task=${encodeURIComponent(next.id)}`, {
+  notify('New case assigned', `"${next.title}" was assigned to you.`, 'purple', getTaskRecordPath(next.id), {
     recipientName,
     sound: true,
   });
