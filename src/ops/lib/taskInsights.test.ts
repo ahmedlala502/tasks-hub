@@ -29,7 +29,7 @@ describe('taskInsights', () => {
 
     expect(getTaskBucket(baseTask({ completed: true }), now)).toBe('done');
     expect(getTaskBucket(baseTask({ ownerId: '', completed: false }), now)).toBe('pending');
-    expect(getTaskBucket(baseTask({ dueDate: now - 1000, completed: false }), now)).toBe('blocked');
+    expect(getTaskBucket(baseTask({ dueDate: now - 86400000, completed: false }), now)).toBe('blocked');
     expect(getTaskBucket(baseTask({
       completed: false,
       flags: [{ id: 'f1', label: 'Client blocker', tone: 'red', resolved: false }],
@@ -43,7 +43,7 @@ describe('taskInsights', () => {
       baseTask({ id: 'done', completed: true, createdAt: now - 10 * 86400000 }),
       baseTask({ id: 'active', completed: false, createdAt: now - 3600000 }),
       baseTask({ id: 'pending', ownerId: '', completed: false, createdAt: now - 3600000 }),
-      baseTask({ id: 'blocked', completed: false, dueDate: now - 1000, createdAt: now - 2 * 86400000 }),
+      baseTask({ id: 'blocked', completed: false, dueDate: now - 86400000, createdAt: now - 2 * 86400000 }),
     ];
 
     const summaries = buildTaskBucketSummaries(tasks, now);

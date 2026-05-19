@@ -22,6 +22,7 @@ import { dataService } from '../services/dataService';
 import { Button } from '../components/ui/button';
 import { CampaignStage } from '../constants';
 import { buildUpdatesFeed } from '../lib/opsPageInsights';
+import { normalizeDashboardName } from '../lib/dashboardView';
 import { opsUpdatesService, toFeedItem, type OpsUpdate } from '../services/opsUpdatesService';
 
 const STAGE_SHORT: Record<number, string> = {
@@ -65,10 +66,6 @@ function timeAgo(ts: number): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
-}
-
-function normalizeName(name: string): string {
-  return name.trim().replace(/\s+/g, ' ');
 }
 
 function HeaderWidget({
@@ -225,6 +222,8 @@ export default function Dashboard() {
   const { role } = useAuth();
 
   const [onlineUpdates, setOnlineUpdates] = React.useState<OpsUpdate[]>([]);
+  const [workspaceVersion, setWorkspaceVersion] = React.useState(0);
+  void workspaceVersion;
   React.useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -245,6 +244,12 @@ export default function Dashboard() {
       window.clearInterval(interval);
       window.removeEventListener('gc-online-updates-refresh', refresh);
     };
+  }, []);
+
+  React.useEffect(() => {
+    return dataService.subscribeToWorkspaceChanges(() => {
+      setWorkspaceVersion((version) => version + 1);
+    }, ['campaigns', 'tasks', 'blockers', 'handovers', 'influencers']);
   }, []);
 
   const campaigns = filterCampaignsByRole(role, dataService.getCampaigns());
@@ -326,8 +331,8 @@ export default function Dashboard() {
   ).length;
 
   const employeeStatsMap = new Map<string, EmployeeProductivity>();
-  const ensureEmployee = (name: string) => {
-    const normalized = normalizeName(name);
+  const ensureEmployee = (name: unknown) => {
+    const normalized = normalizeDashboardName(name);
     if (!employeeStatsMap.has(normalized)) {
       employeeStatsMap.set(normalized, {
         name: normalized,
@@ -381,13 +386,13 @@ export default function Dashboard() {
 
   const recentActivity = new Map<string, number>();
   tasks.forEach(task => {
-    const owner = normalizeName(task.ownerId);
+    const owner = normalizeDashboardName(task.ownerId);
     recentActivity.set(owner, Math.max(recentActivity.get(owner) ?? 0, task.updatedAt));
   });
   handovers.forEach(handover => {
     const lastActiveAt = handover.reviewedAt ?? handover.acknowledgedAt ?? handover.updatedAt;
     [handover.outgoingLead ?? '', handover.incomingLead ?? ''].forEach(name => {
-      const employee = normalizeName(name);
+      const employee = normalizeDashboardName(name);
       recentActivity.set(employee, Math.max(recentActivity.get(employee) ?? 0, lastActiveAt));
     });
   });
@@ -739,7 +744,7 @@ export default function Dashboard() {
                         <p className="text-[12.5px] font-semibold text-foreground truncate">{b.summary}</p>
                         <span className="text-[9.5px] font-mono text-muted-foreground shrink-0">{timeAgo(b.createdAt)}</span>
                       </div>
-                      <p className="text-[10.5px] text-muted-foreground font-mono">{b.id} · {normalizeName(b.ownerId)}</p>
+                      <p className="text-[10.5px] text-muted-foreground font-mono">{b.id} · {normalizeDashboardName(b.ownerId)}</p>
                     </div>
                   </button>
                 ))

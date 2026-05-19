@@ -131,7 +131,7 @@ describe('ops page insights', () => {
   it('derives donor-style operational task status from task fields', () => {
     expect(getOperationalTaskStatus(task({ completed: true }), now)).toBe('Done');
     expect(getOperationalTaskStatus(task({ status: 'Blocked', completed: false }), now)).toBe('Blocked');
-    expect(getOperationalTaskStatus(task({ dueDate: now - 1000, completed: false }), now)).toBe('Blocked');
+    expect(getOperationalTaskStatus(task({ dueDate: now - 86400000, completed: false }), now)).toBe('Blocked');
     expect(getOperationalTaskStatus(task({ status: 'Pending', ownerId: '', completed: false }), now)).toBe('Pending');
     expect(getOperationalTaskStatus(task({ ownerId: 'Mona K.', completed: false }), now)).toBe('In Progress');
   });

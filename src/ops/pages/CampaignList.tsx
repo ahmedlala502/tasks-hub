@@ -133,6 +133,13 @@ export default function CampaignList() {
     };
   }, []);
 
+  useEffect(() => {
+    return dataService.subscribeToWorkspaceChanges(() => {
+      setCampaigns(dataService.getCampaigns());
+      setTasks(dataService.getTasks());
+    }, ['campaigns', 'tasks']);
+  }, []);
+
   const toggleExpanded = (campaignId: string) => {
     setExpanded((current) => {
       const next = new Set(current);
