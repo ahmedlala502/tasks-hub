@@ -6,7 +6,6 @@ import {
   ChevronRight,
   CircleAlert,
   Clock3,
-  Flame,
   KeyRound,
   Layers3,
   ListChecks,
@@ -28,7 +27,17 @@ import {
   type PerformanceRow,
   type PerformanceUser,
 } from '../lib/performanceInsights';
+import { isHandoverForUser, isTaskAssignedToUser, isTaskCreatedByUser } from '../lib/personalWork';
+import { getOperationalTaskStatus } from '../lib/opsPageInsights';
 import { buildOfficeInsights } from '../lib/officeInsights';
+import {
+  buildPersonalPerformanceLinks,
+  buildUserProfileHeader,
+  getPrimaryProfileMetrics,
+  getSecondaryProfileMetrics,
+  type LinkedProfileMetric,
+  type ProfileMetric,
+} from '../lib/userProfileView';
 import { cn } from '../utils';
 
 const DEPARTMENTS: OpsDepartment[] = [
@@ -49,15 +58,6 @@ const TOOL_LINKS = [
   { label: 'Handovers', to: '/handover', icon: Layers3 },
   { label: 'Blockers', to: '/blockers', icon: CircleAlert },
   { label: 'Reporting', to: '/reporting', icon: BarChart3 },
-];
-
-const TRYGCKPIMATRIX = [
-  { operation: 'Client Response', target: '<=2 hours', current: 'Live from tasks', status: 'On Track' },
-  { operation: 'Influencer Invitation', target: '<=24 hours', current: 'Live from influencers', status: 'On Track' },
-  { operation: 'Campaign Setup', target: '<=4 hours', current: 'Live from campaigns', status: 'On Track' },
-  { operation: 'Coverage QA Review', target: 'Same Day', current: 'Live from approvals', status: 'Excellent' },
-  { operation: 'Missing Content Follow-up', target: '<=24 hours', current: 'Live from missed coverage', status: 'At Risk' },
-  { operation: 'Final Report Delivery', target: '24-48 hours', current: 'Live from reporting', status: 'On Track' },
 ];
 
 function normalize(value: string | undefined | null): string {
@@ -220,6 +220,30 @@ export default function UserProfile() {
   const targetRosterUser = targetUserName ? roster.find(r => r.name === targetUserName) : null;
   const viewedName = targetUserName || user.displayName;
   const viewedSummary = targetAgentRow?.summary || personal;
+  const viewedRole = targetRosterUser?.role || targetAgentRow?.role || user.role;
+  const viewedOffice = targetRosterUser?.office || targetAgentRow?.team || user.office;
+  const profileHeader = buildUserProfileHeader({
+    viewedName,
+    isPerformancePage,
+    isTargetUser: Boolean(targetUserName),
+    role: viewedRole,
+    office: viewedOffice,
+    email: user.email,
+  });
+  const primaryMetrics = getPrimaryProfileMetrics(viewedSummary);
+  const secondaryMetrics = getSecondaryProfileMetrics(viewedSummary);
+  const assignedToTasks = workspaceData.tasks.filter((task) => isTaskAssignedToUser(task, viewedName));
+  const assignedByTasks = workspaceData.tasks.filter((task) => isTaskCreatedByUser(task, viewedName));
+  const personalHandovers = workspaceData.handovers.filter((handover) => isHandoverForUser(handover, viewedName));
+  const personalPerformanceLinks = buildPersonalPerformanceLinks(viewedName, {
+    assignedTo: assignedToTasks.length,
+    assignedBy: assignedByTasks.length,
+    completed: assignedToTasks.filter((task) => getOperationalTaskStatus(task) === 'Done').length,
+    blocked: assignedToTasks.filter((task) => getOperationalTaskStatus(task) === 'Blocked').length,
+    handovers: personalHandovers.length,
+    total: new Set([...assignedToTasks, ...assignedByTasks].map((task) => task.id)).size,
+  });
+  const completionTone = viewedSummary.completionRate >= 75 ? 'text-emerald-600' : viewedSummary.blocked > 0 ? 'text-red-600' : 'text-gc-orange';
 
   const saveProfile = async () => {
     if (!displayName.trim()) return;
@@ -263,154 +287,92 @@ export default function UserProfile() {
   };
 
   return (
-    <div className="mx-auto max-w-[1360px] space-y-6 pb-12">
-      <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+    <div className="mx-auto max-w-[1180px] space-y-5 pb-12">
+      <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gc-orange/10 text-gc-orange">
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gc-orange/10 text-gc-orange">
               <UserRound className="h-7 w-7" />
             </div>
-            <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">
-                {targetUserName ? 'Team Member Performance' : isPerformancePage ? 'Performance Matrix' : 'Account Profile'}
-              </p>
-              <h2 className="text-2xl font-extrabold text-foreground">
-                {targetUserName ? viewedName : isPerformancePage ? "TRYGC KPI's Performance Matrix" : user.displayName}
-              </h2>
-              <p className="text-xs font-semibold text-muted-foreground">
-                {targetUserName
-                  ? `${targetRosterUser?.role || targetAgentRow?.role || 'Team Member'} · ${targetRosterUser?.office || targetAgentRow?.team || 'Workspace'}`
-                  : isPerformancePage
-                    ? 'Team, agent, office, and SLA performance from live workspace records'
-                    : `${user.email} - credentials handled by Supabase Auth`}
-              </p>
+            <div className="min-w-0">
+              <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">{profileHeader.eyebrow}</p>
+              <h2 className="truncate text-2xl font-extrabold text-foreground">{profileHeader.title}</h2>
+              <p className="mt-1 text-xs font-semibold text-muted-foreground">{profileHeader.detail}</p>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
-            <Metric label="Role" value={targetRosterUser?.role || user.role} />
-            <Metric label="Office" value={targetRosterUser?.office || user.office} />
-            <Metric label="Done" value={String(viewedSummary.done)} />
-            <Metric label="Pending" value={String(viewedSummary.pending)} />
+          <div className="grid min-w-[min(100%,360px)] grid-cols-2 gap-3 sm:grid-cols-[1fr_1fr_auto]">
+            <Metric label="Role" value={viewedRole} />
+            <Metric label="Office" value={viewedOffice} />
+            <div className="col-span-2 rounded-lg border border-border bg-background px-4 py-3 sm:col-span-1">
+              <p className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground">Done Rate</p>
+              <p className={cn('mt-1 text-xl font-black tabular-nums', completionTone)}>{viewedSummary.completionRate}%</p>
+            </div>
           </div>
         </div>
       </section>
 
       {isPerformancePage && (
-        <section className="space-y-4 rounded-xl border border-gc-orange/20 bg-gc-orange/5 p-5 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <section className="rounded-lg border border-gc-orange/20 bg-gc-orange/5 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">KPI Matrix Link</p>
-              <h3 className="text-lg font-extrabold text-foreground">Performance is linked to TRYGC KPI's performance matrix</h3>
-              <p className="mt-1 text-sm font-medium text-muted-foreground">Use the reporting matrix for task, campaign, handover, blocker, office, team, and agent breakdowns.</p>
+              <h3 className="text-sm font-extrabold text-foreground">Need the full KPI report?</h3>
+              <p className="mt-1 text-xs font-medium text-muted-foreground">Open reporting for deeper task, campaign, handover, office, and SLA breakdowns.</p>
             </div>
-            <Link to="/reporting?pillar=tasks" className="inline-flex items-center justify-center gap-2 rounded-lg bg-gc-orange px-4 py-2.5 text-xs font-extrabold uppercase tracking-widest text-white hover:bg-gc-orange/90">
+            <Link to="/reporting?pillar=tasks" className="inline-flex items-center justify-center gap-2 rounded-lg bg-gc-orange px-4 py-2 text-xs font-extrabold uppercase tracking-wider text-white hover:bg-gc-orange/90">
               Open KPI Matrix
               <ChevronRight size={14} />
             </Link>
           </div>
-          <div className="overflow-hidden rounded-lg border border-border bg-card">
-            <div className="border-b border-border bg-background px-4 py-3">
-              <h4 className="text-sm font-extrabold text-foreground">TRYGC KPI & SLA Matrix</h4>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-muted/30">
-                  <tr>
-                    <th className="px-4 py-3 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Operation</th>
-                    <th className="px-4 py-3 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Target</th>
-                    <th className="px-4 py-3 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Current Source</th>
-                    <th className="px-4 py-3 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {TRYGCKPIMATRIX.map((row) => (
-                    <tr key={row.operation} className="hover:bg-muted/30">
-                      <td className="px-4 py-3 text-sm font-bold text-foreground">{row.operation}</td>
-                      <td className="px-4 py-3 text-sm font-semibold text-muted-foreground">{row.target}</td>
-                      <td className="px-4 py-3 text-sm font-semibold text-muted-foreground">{row.current}</td>
-                      <td className="px-4 py-3">
-                        <span className={cn(
-                          'rounded-full border px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-widest',
-                          row.status === 'At Risk'
-                            ? 'border-amber-200 bg-amber-50 text-amber-700'
-                            : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        )}>
-                          {row.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </section>
       )}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <PerformanceCard label="Tasks Done" value={viewedSummary.done} tone="text-emerald-600" icon={CheckCircle2} />
-        <PerformanceCard label="In Progress" value={viewedSummary.inProgress} tone="text-gc-orange" icon={Clock3} />
-        <PerformanceCard label="Pending" value={viewedSummary.pending} tone="text-amber-600" icon={ListChecks} />
-        <PerformanceCard label="Blocked" value={viewedSummary.blocked} tone="text-red-600" icon={CircleAlert} />
-        <PerformanceCard label="Campaigns" value={viewedSummary.campaigns} tone="text-purple-600" icon={Layers3} />
-        <PerformanceCard label="Creators" value={viewedSummary.creators} tone="text-sky-600" icon={UsersRound} />
-        <PerformanceCard label="Handovers" value={viewedSummary.handovers} tone="text-indigo-600" icon={ShieldCheck} />
-        <PerformanceCard label="All Tasks" value={viewedSummary.tasks} tone="text-foreground" icon={BarChart3} />
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {primaryMetrics.map((metric) => <PerformanceCard key={metric.label} metric={metric} />)}
       </section>
 
-      {role === 'master' && !isProfilePage && (
-        <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">Office Command</p>
-              <h3 className="text-lg font-extrabold text-foreground">Egypt, KSA, UAE, and Kuwait breakdown</h3>
-            </div>
-            <Link to="/reporting?pillar=offices" className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-extrabold uppercase tracking-widest text-foreground hover:border-gc-orange hover:text-gc-orange">
-              Reports
-              <ChevronRight size={14} />
-            </Link>
+      <section className="rounded-lg border border-border bg-card p-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {secondaryMetrics.map((metric) => <SmallMetric key={metric.label} metric={metric} />)}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-sm font-extrabold text-foreground">Personal performance</h3>
+            <p className="text-xs font-medium text-muted-foreground">Click any number to open the matching work directly.</p>
           </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            {officeInsights.officeRows.map((row) => (
-              <Link key={row.office} to={`/reporting?pillar=offices&office=${encodeURIComponent(row.office)}`} className="rounded-lg border border-border bg-background p-4 hover:border-gc-orange">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{row.office}</p>
-                    <p className="mt-2 text-2xl font-black text-foreground">{row.agents}</p>
-                  </div>
-                  <MapPin className="h-4 w-4 text-gc-orange" />
-                </div>
-                <p className="mt-2 text-xs font-bold text-muted-foreground">{row.tasks} tasks / {row.completionRate}% done</p>
-              </Link>
-            ))}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {personalPerformanceLinks.map((metric) => <LinkedMetric key={metric.label} metric={metric} />)}
+        </div>
+      </section>
+
+      {!isProfilePage && !targetUserName && (
+        <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-sm font-extrabold text-foreground">Quick actions</h3>
+              <p className="mt-1 text-xs font-medium text-muted-foreground">Jump to the places people use most from performance review.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {TOOL_LINKS.map((tool) => (
+                <Link key={tool.to} to={tool.to} className="group flex min-h-10 items-center justify-between rounded-lg border border-border bg-background px-3 py-2 text-xs font-extrabold uppercase tracking-wide text-foreground hover:border-gc-orange">
+                  <span className="flex items-center gap-2"><tool.icon size={15} className="text-gc-orange" />{tool.label}</span>
+                  <ChevronRight size={14} className="text-muted-foreground transition-transform group-hover:translate-x-1" />
+                </Link>
+              ))}
+            </div>
           </div>
         </section>
       )}
 
-      {!isProfilePage && <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">Tool Access</p>
-            <h3 className="text-lg font-extrabold text-foreground">Everything you are working through</h3>
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {TOOL_LINKS.map((tool) => (
-            <Link key={tool.to} to={tool.to} className="group flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3 text-sm font-bold text-foreground hover:border-gc-orange">
-              <span className="flex items-center gap-2"><tool.icon size={16} className="text-gc-orange" />{tool.label}</span>
-              <ChevronRight size={15} className="text-muted-foreground transition-transform group-hover:translate-x-1" />
-            </Link>
-          ))}
-        </div>
-      </section>}
-
-      {role === 'master' && !isProfilePage && (
-        <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm">
+      {role === 'master' && !isProfilePage && !targetUserName && (
+        <section className="space-y-4 rounded-lg border border-border bg-card p-5 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-gc-orange">Master Performance Control</p>
-              <h3 className="text-lg font-extrabold text-foreground">Workspace, team, and agent performance</h3>
-              <p className="mt-1 text-sm font-medium text-muted-foreground">Master users can inspect community, operations, every team, and every individual agent.</p>
+              <h3 className="text-base font-extrabold text-foreground">Team overview</h3>
+              <p className="mt-1 text-sm font-medium text-muted-foreground">Filter once, then review teams and agents in the same place.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Select label="Workspace" value={workspaceFilter} onChange={value => { setWorkspaceFilter(value as any); setTeamFilter('all'); setAgentFilter('all'); }}>
@@ -450,14 +412,38 @@ export default function UserProfile() {
             <PerformanceTable title="Teams" rows={filteredTeamRows} mode="team" onPick={(row) => setTeamFilter(row.team || 'all')} />
             <PerformanceTable title="Agents" rows={filteredAgentRows} mode="agent" onPick={(row) => setAgentFilter(row.name)} highlightName={agentFilter !== 'all' ? agentFilter : undefined} />
           </div>
+
+          <div className="rounded-lg border border-border bg-background p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-extrabold text-foreground">Offices</h4>
+                <p className="mt-1 text-xs font-medium text-muted-foreground">Small regional snapshot for the active workspace.</p>
+              </div>
+              <Link to="/reporting?pillar=offices" className="inline-flex items-center gap-1 text-xs font-extrabold text-gc-orange hover:underline">
+                Reports <ChevronRight size={13} />
+              </Link>
+            </div>
+            <div className="grid gap-2 md:grid-cols-4">
+              {officeInsights.officeRows.map((row) => (
+                <Link key={row.office} to={`/reporting?pillar=offices&office=${encodeURIComponent(row.office)}`} className="rounded-lg border border-border bg-card p-3 hover:border-gc-orange">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-extrabold text-foreground">{row.office}</p>
+                    <MapPin className="h-3.5 w-3.5 text-gc-orange" />
+                  </div>
+                  <p className="mt-2 text-xl font-black text-foreground">{row.agents}</p>
+                  <p className="text-[11px] font-semibold text-muted-foreground">{row.tasks} tasks / {row.completionRate}% done</p>
+                </Link>
+              ))}
+            </div>
+          </div>
         </section>
       )}
 
-      {!targetUserName && !isPerformancePage && <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-        <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+      {!targetUserName && !isPerformancePage && <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-gc-orange" />
-            <h3 className="text-lg font-extrabold text-foreground">Identity & Assignment Profile</h3>
+            <h3 className="text-base font-extrabold text-foreground">Profile details</h3>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Display name">
@@ -493,10 +479,10 @@ export default function UserProfile() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
+        <section className="rounded-lg border border-border bg-card p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-2">
             <KeyRound className="h-4 w-4 text-gc-orange" />
-            <h3 className="text-lg font-extrabold text-foreground">Password Access</h3>
+            <h3 className="text-base font-extrabold text-foreground">Password</h3>
           </div>
           <Field label="New password">
             <input
@@ -537,19 +523,59 @@ function uniqueOpsUsers(users: OpsUser[]): OpsUser[] {
   return [...byName.values()];
 }
 
-function PerformanceCard({ label, value, tone, icon: Icon }: { label: string; value: number; tone: string; icon: React.ComponentType<{ className?: string }> }) {
+const METRIC_TONE_CLASS: Record<ProfileMetric['tone'], string> = {
+  green: 'text-emerald-600',
+  orange: 'text-gc-orange',
+  amber: 'text-amber-600',
+  red: 'text-red-600',
+  purple: 'text-purple-600',
+  sky: 'text-sky-600',
+  indigo: 'text-indigo-600',
+  neutral: 'text-foreground',
+};
+
+const METRIC_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  Done: CheckCircle2,
+  'In Progress': Clock3,
+  Pending: ListChecks,
+  Blocked: CircleAlert,
+};
+
+function PerformanceCard({ metric }: { metric: ProfileMetric }) {
+  const Icon = METRIC_ICON[metric.label] || BarChart3;
   return (
-    <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+    <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</p>
-          <p className={cn('mt-2 text-3xl font-black tabular-nums', tone)}>{value}</p>
+          <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{metric.label}</p>
+          <p className={cn('mt-2 text-3xl font-black tabular-nums', METRIC_TONE_CLASS[metric.tone])}>{metric.value}</p>
         </div>
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary text-gc-orange">
           <Icon className="h-4 w-4" />
         </div>
       </div>
     </div>
+  );
+}
+
+function SmallMetric({ metric }: { metric: ProfileMetric }) {
+  return (
+    <div className="rounded-lg border border-border bg-background px-4 py-3">
+      <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{metric.label}</p>
+      <p className={cn('mt-1 text-xl font-black tabular-nums', METRIC_TONE_CLASS[metric.tone])}>{metric.value}</p>
+    </div>
+  );
+}
+
+function LinkedMetric({ metric }: { metric: LinkedProfileMetric }) {
+  return (
+    <Link to={metric.to} className="group rounded-lg border border-border bg-background px-4 py-3 transition-colors hover:border-gc-orange hover:bg-gc-orange/5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{metric.label}</p>
+        <ChevronRight size={13} className="text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-gc-orange" />
+      </div>
+      <p className={cn('mt-2 text-2xl font-black tabular-nums', METRIC_TONE_CLASS[metric.tone])}>{metric.value}</p>
+    </Link>
   );
 }
 

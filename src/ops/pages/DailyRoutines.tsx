@@ -24,6 +24,7 @@ import { dataService } from '../services/dataService';
 import { canEditTaskRecord } from '../lib/workspace';
 import { getDefaultPlatformUserNames, loadPlatformUserNames, sortUniqueUserNames } from '../lib/platformUsers';
 import { getOperationalTaskStatus } from '../lib/opsPageInsights';
+import { isTaskAssignedToUser, isTaskCreatedByUser } from '../lib/personalWork';
 import {
   filterDailyRoutineStats,
   type DailyRoutineOverviewFilter,
@@ -73,6 +74,14 @@ const BUCKET_STATUS_FILTERS: Record<string, string> = {
   pending: 'Pending',
   blocked: 'Blocked',
   'in-progress': 'In Progress',
+};
+
+const WORK_FILTER_LABELS: Record<string, string> = {
+  assigned: 'Assigned to',
+  created: 'Assigned by',
+  done: 'Completed by',
+  blocked: 'Blocked for',
+  all: 'All work for',
 };
 
 function draftFromTask(task: Task): TaskDraft {
@@ -186,18 +195,25 @@ export default function DailyRoutines() {
   );
 
   const selectedStats = selectedUser ? allStats.get(selectedUser.toLowerCase()) : null;
+  const workFilter = searchParams.get('work') || 'assigned';
 
   const selectedUserTasks = useMemo(() => {
     if (!selectedUser) return [];
     return tasks
-      .filter(t => t.ownerId?.toLowerCase() === selectedUser.toLowerCase())
+      .filter((task) => {
+        if (workFilter === 'created') return isTaskCreatedByUser(task, selectedUser);
+        if (workFilter === 'done') return isTaskAssignedToUser(task, selectedUser) && getOperationalTaskStatus(task) === 'Done';
+        if (workFilter === 'blocked') return isTaskAssignedToUser(task, selectedUser) && getOperationalTaskStatus(task) === 'Blocked';
+        if (workFilter === 'all') return isTaskAssignedToUser(task, selectedUser) || isTaskCreatedByUser(task, selectedUser);
+        return isTaskAssignedToUser(task, selectedUser);
+      })
       .sort((a, b) => {
         const ao = STATUS_ORDER.indexOf(getOperationalTaskStatus(a) as typeof STATUS_ORDER[number]);
         const bo = STATUS_ORDER.indexOf(getOperationalTaskStatus(b) as typeof STATUS_ORDER[number]);
         if (ao !== bo) return ao - bo;
         return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt);
       });
-  }, [selectedUser, tasks]);
+  }, [selectedUser, tasks, workFilter]);
 
   const filteredDetailTasks = useMemo(() => {
     if (statusFilter === 'all') return selectedUserTasks;
@@ -243,6 +259,10 @@ export default function DailyRoutines() {
     if (requestedUser) {
       setSelectedUser(requestedUser);
       setDetailTab('tasks');
+      const requestedWork = searchParams.get('work');
+      if (requestedWork === 'done') setStatusFilter('Done');
+      else if (requestedWork === 'blocked') setStatusFilter('Blocked');
+      else setStatusFilter('all');
       return;
     }
 
@@ -350,7 +370,7 @@ export default function DailyRoutines() {
               </h1>
               <p className="mt-0.5 text-sm font-medium text-muted-foreground">
                 {selectedUser
-                  ? `All tasks and handovers assigned to ${selectedUser}`
+                  ? `${WORK_FILTER_LABELS[workFilter] || 'Assigned to'} ${selectedUser}`
                   : 'Per-user task widgets, task status filters, and handovers in one organized workspace.'}
               </p>
             </div>
