@@ -33,7 +33,7 @@ const OPS_NAV: NavItem[] = [
   { icon: ClipboardList,   label: TASK_MANAGER_LABEL, path: TASK_MANAGER_PATH },
   { icon: RefreshCw,       label: 'Handover',       path: '/handover' },
   { icon: Trophy,          label: 'Updates',        path: '/updates' },
-  { icon: BarChart3,       label: 'Reports & Exports', path: '/reporting' },
+  { icon: BarChart3,       label: 'Full Analysis', path: '/reporting' },
   { icon: BarChart3,       label: 'System live report',  path: '/system-live-report' },
   { icon: Database,        label: 'Dropbox live report', path: '/dropbox-live-report' },
 ];
