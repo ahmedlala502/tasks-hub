@@ -2,22 +2,35 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   BarChart3,
-  Building2,
+  BriefcaseBusiness,
   CheckSquare,
   Clock3,
   Download,
   FileSpreadsheet,
   FolderKanban,
   Handshake,
+  RotateCcw,
   Search,
   ShieldAlert,
-  Trash2,
   Users2,
   Workflow,
 } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { useAuth } from '../App';
+import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
+import { getOfficeFromProfile, OPS_OFFICES, type OpsOffice, type OpsRole, type OpsUser } from '../auth/types';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import {
   Table,
@@ -29,122 +42,58 @@ import {
 } from '../components/ui/table';
 import { ATTACHED_EXPORT_USERS, dataService } from '../services/dataService';
 import { exportRows, exportRowsAsCsv, exportWorkbook } from '../services/spreadsheetService';
-import { useAuth } from '../App';
 import {
   filterBlockersByRole,
   filterCampaignsByRole,
   filterHandoversByRole,
   filterTasksByRole,
 } from '../lib/workspace';
-import { INITIAL_MEMBERS, OFFICES, TEAMS } from '../../constants';
-import { DEFAULT_ACCESS_USERS } from '../auth/defaultAccessUsers';
-import { getOfficeFromProfile, OPS_OFFICES, type OpsOffice, type OpsRole, type OpsUser } from '../auth/types';
-import { buildOfficeInsights, type OfficeUser } from '../lib/officeInsights';
+import { INITIAL_MEMBERS } from '../../constants';
 import { isReportVisibleUser, isVisibleInReports } from '../lib/reportVisibility';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+  buildFullAnalysisHub,
+  defaultAnalysisFilters,
+  type AnalysisDataRow,
+  type AnalysisFilters,
+  type AnalysisPillarKey,
+  type EmployeeBreakdown,
+} from '../lib/fullAnalysisHub';
+import type { OfficeUser } from '../lib/officeInsights';
 
-type PillarKey =
-  | 'offices'
-  | 'teams'
-  | 'agents'
-  | 'tasks'
-  | 'handovers'
-  | 'sla'
-  | 'blockers'
-  | 'campaigns';
+const CHART_COLORS = ['#f97316', '#8b5cf6', '#14b8a6', '#6366f1', '#22c55e', '#ef4444', '#0ea5e9', '#f59e0b'];
 
-type DataRow = Record<string, string | number>;
-
-type PillarReport = {
-  key: PillarKey;
-  label: string;
-  description: string;
-  value: string;
-  insight: string;
-  rows: DataRow[];
-  detailRows?: DataRow[];
+const PILLAR_ICONS: Record<AnalysisPillarKey, React.ComponentType<{ className?: string }>> = {
+  employees: Users2,
+  tasks: CheckSquare,
+  campaigns: FolderKanban,
+  handovers: Handshake,
+  blockers: ShieldAlert,
+  sla: Clock3,
+  teams: Workflow,
+  offices: BriefcaseBusiness,
 };
 
-const PILLAR_META: Array<{
-  key: PillarKey;
-  label: string;
-  description: string;
-  icon: React.ComponentType<{ className?: string }>;
-  tone: string;
-}> = [
-  { key: 'offices', label: 'Offices', description: 'Regional command coverage and load distribution.', icon: Building2, tone: '#f97316' },
-  { key: 'teams', label: 'Teams', description: 'Execution quality and team productivity.', icon: Workflow, tone: '#f59e0b' },
-  { key: 'agents', label: 'Agents', description: 'Individual throughput and ownership depth.', icon: Users2, tone: '#8b5cf6' },
-  { key: 'tasks', label: 'Tasks', description: 'Task flow, completion, and pending backlog.', icon: CheckSquare, tone: '#14b8a6' },
-  { key: 'handovers', label: 'Handovers', description: 'Shift relay health and acknowledgement quality.', icon: Handshake, tone: '#6366f1' },
-  { key: 'sla', label: 'SLA', description: 'On-time delivery, due-soon, and overdue pressure.', icon: Clock3, tone: '#22c55e' },
-  { key: 'blockers', label: 'Blockers', description: 'Risk concentration by owner and severity.', icon: ShieldAlert, tone: '#ef4444' },
-  { key: 'campaigns', label: 'Campaigns', description: 'Portfolio health, budget, and ownership.', icon: FolderKanban, tone: '#0ea5e9' },
-];
+const PILLAR_TONES: Record<AnalysisPillarKey, string> = {
+  employees: '#8b5cf6',
+  tasks: '#14b8a6',
+  campaigns: '#0ea5e9',
+  handovers: '#6366f1',
+  blockers: '#ef4444',
+  sla: '#22c55e',
+  teams: '#f59e0b',
+  offices: '#f97316',
+};
 
-const CHART_COLORS = ['#f97316', '#f59e0b', '#8b5cf6', '#14b8a6', '#6366f1', '#22c55e', '#ef4444', '#0ea5e9'];
-const PILLAR_KEYS: PillarKey[] = ['offices', 'teams', 'agents', 'tasks', 'handovers', 'sla', 'blockers', 'campaigns'];
-
-function normalize(value: string | undefined | null) {
+function normalize(value: string | undefined | null): string {
   return (value || '').trim();
 }
 
-function toTitle(text: string) {
-  return text.replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function currency(value: number) {
-  return `$${value.toLocaleString()}`;
-}
-
-function percent(value: number) {
-  return `${Math.round(value)}%`;
-}
-
-function isOverdue(dueDate: number | undefined, completed: boolean) {
-  return !completed && typeof dueDate === 'number' && dueDate < Date.now();
-}
-
-function isDueSoon(dueDate: number | undefined, completed: boolean) {
-  if (completed || typeof dueDate !== 'number') return false;
-  const diff = dueDate - Date.now();
-  return diff >= 0 && diff <= 1000 * 60 * 60 * 24;
-}
-
-function formatDueDate(dueDate: number | undefined) {
-  if (!dueDate) return 'N/A';
-  return new Date(dueDate).toLocaleString([], {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function buildRowsMap<T>(items: T[], getKey: (item: T) => string) {
-  return items.reduce<Record<string, T[]>>((acc, item) => {
-    const key = normalize(getKey(item)) || 'Unassigned';
-    acc[key] = [...(acc[key] || []), item];
-    return acc;
-  }, {});
-}
-
-function isPillarKey(value: unknown): value is PillarKey {
-  return PILLAR_KEYS.includes(value as PillarKey);
-}
-
-function normalizeLower(value: string | undefined | null) {
+function normalizeLower(value: string | undefined | null): string {
   return normalize(value).toLowerCase();
+}
+
+function isPillarKey(value: unknown): value is AnalysisPillarKey {
+  return ['employees', 'tasks', 'campaigns', 'handovers', 'blockers', 'sla', 'teams', 'offices'].includes(value as string);
 }
 
 function roleFromObservedName(name: string): OpsRole {
@@ -164,22 +113,32 @@ function uniqueOfficeUsers(users: OfficeUser[]): OfficeUser[] {
   return [...byName.values()];
 }
 
+function optionList(values: string[], manualValues: string[] = []) {
+  return [...new Set([...manualValues, ...values].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
 export default function Reporting() {
   const { role, user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [selectedPillar, setSelectedPillar] = useState<PillarKey>('campaigns');
-  const [selectedOffice, setSelectedOffice] = useState<'all' | OpsOffice>('all');
-  const [searchTerm, setSearchTerm] = useState('');
   const [cloudUsers, setCloudUsers] = useState<OpsUser[]>([]);
-  const [, setRefreshNonce] = useState(0);
-  const [hiddenAgents, setHiddenAgents] = useState<Set<string>>(new Set());
+  const [workspaceVersion, setWorkspaceVersion] = useState(0);
+  const [filters, setFilters] = useState<AnalysisFilters>(() => {
+    const pillar = isPillarKey(searchParams.get('pillar')) ? searchParams.get('pillar') as AnalysisPillarKey : 'employees';
+    const officeParam = searchParams.get('office');
+    return {
+      ...defaultAnalysisFilters(pillar),
+      office: OPS_OFFICES.includes(officeParam as OpsOffice) ? officeParam as OpsOffice : 'all',
+    };
+  });
 
   useEffect(() => {
     const pillarParam = searchParams.get('pillar');
     const officeParam = searchParams.get('office');
-    if (isPillarKey(pillarParam)) setSelectedPillar(pillarParam);
-    if (OPS_OFFICES.includes(officeParam as OpsOffice)) setSelectedOffice(officeParam as OpsOffice);
-    else setSelectedOffice('all');
+    setFilters((current) => ({
+      ...current,
+      pillar: isPillarKey(pillarParam) ? pillarParam : current.pillar,
+      office: OPS_OFFICES.includes(officeParam as OpsOffice) ? officeParam as OpsOffice : officeParam ? current.office : 'all',
+    }));
   }, [searchParams]);
 
   useEffect(() => {
@@ -196,452 +155,265 @@ export default function Reporting() {
   }, [role]);
 
   useEffect(() => {
-    const refresh = () => setRefreshNonce((value) => value + 1);
-    window.addEventListener('storage', refresh);
-    window.addEventListener('focus', refresh);
-    return () => {
-      window.removeEventListener('storage', refresh);
-      window.removeEventListener('focus', refresh);
-    };
+    return dataService.subscribeToWorkspaceChanges(() => {
+      setWorkspaceVersion((version) => version + 1);
+    }, ['tasks', 'handovers', 'blockers', 'campaigns', 'influencers']);
   }, []);
 
-  const reports = useMemo(() => {
-    const tasks = filterTasksByRole(role, dataService.getTasks());
-    const handovers = filterHandoversByRole(role, dataService.getHandovers());
-    const blockers = filterBlockersByRole(role, dataService.getBlockers());
-    const campaigns = filterCampaignsByRole(role, dataService.getCampaigns());
+  const workspaceData = useMemo(() => {
+    return {
+      tasks: filterTasksByRole(role, dataService.getTasks()),
+      handovers: filterHandoversByRole(role, dataService.getHandovers()),
+      blockers: filterBlockersByRole(role, dataService.getBlockers()),
+      campaigns: filterCampaignsByRole(role, dataService.getCampaigns()),
+    };
+  }, [role, workspaceVersion]);
 
-    const directoryFromMembers = INITIAL_MEMBERS.map((member) => ({
-      name: member.name,
-      team: member.team,
-      office: member.office,
-      country: member.country,
-      role: member.role,
-      status: member.status,
-    }));
-
+  const directoryUsers = useMemo(() => {
     const observedNames = new Set<string>();
-    tasks.forEach((task) => observedNames.add(normalize(task.ownerId)));
-    handovers.forEach((handover) => {
+    workspaceData.tasks.forEach((task) => observedNames.add(normalize(task.ownerId)));
+    workspaceData.handovers.forEach((handover) => {
       observedNames.add(normalize(handover.outgoingLead));
       observedNames.add(normalize(handover.incomingLead));
     });
-    blockers.forEach((blocker) => observedNames.add(normalize(blocker.ownerId)));
-    campaigns.forEach((campaign) => {
+    workspaceData.blockers.forEach((blocker) => observedNames.add(normalize(blocker.ownerId)));
+    workspaceData.campaigns.forEach((campaign) => {
       observedNames.add(normalize(campaign.currentOwner));
-      campaign.internalOwners.forEach((owner) => observedNames.add(normalize(owner)));
+      campaign.internalOwners?.forEach((owner) => observedNames.add(normalize(owner)));
     });
 
-    const memberMap = new Map(directoryFromMembers.map((member) => [normalizeLower(member.name), member]));
-    const visibleDefaultAccessUsers = DEFAULT_ACCESS_USERS.filter(isReportVisibleUser);
-    const visibleAttachedUsers = ATTACHED_EXPORT_USERS.filter(isReportVisibleUser);
-    const visibleCloudUsers = cloudUsers.filter(isReportVisibleUser);
-    const visibleCurrentUser = user && isReportVisibleUser(user) ? [user] : [];
-    const visibleObservedNames = Array.from(observedNames).filter((name) => Boolean(name) && isVisibleInReports(name));
+    const memberMap = new Map(INITIAL_MEMBERS.map((member) => [normalizeLower(member.name), member]));
+    const visibleObservedNames = [...observedNames].filter((name) => Boolean(name) && isVisibleInReports(name));
 
-    const directoryUsers: OfficeUser[] = [
-      ...visibleDefaultAccessUsers.map((item) => ({
-        uid: `seed-${item.email}`,
-        email: item.email,
+    const users: OfficeUser[] = [
+      ...DEFAULT_ACCESS_USERS.filter(isReportVisibleUser).map((item) => ({
         displayName: item.name,
+        email: item.email,
         role: item.role,
         status: 'active' as const,
         office: item.office,
         department: item.department,
         title: item.title,
-        timezone: 'Africa/Cairo',
       })),
-      ...visibleAttachedUsers,
-      ...visibleCloudUsers,
-      ...visibleCurrentUser,
+      ...ATTACHED_EXPORT_USERS.filter(isReportVisibleUser).map((item) => ({
+        displayName: item.displayName,
+        email: item.email,
+        role: item.role,
+        status: item.status,
+        office: item.office,
+        department: item.department,
+        title: item.title,
+      })),
+      ...cloudUsers.filter(isReportVisibleUser).map((item) => ({
+        displayName: item.displayName,
+        email: item.email,
+        role: item.role,
+        status: item.status,
+        office: item.office,
+        department: item.department,
+        title: item.title,
+      })),
+      ...(user && isReportVisibleUser(user) ? [{
+        displayName: user.displayName,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        office: user.office,
+        department: user.department,
+        title: user.title,
+      }] : []),
       ...visibleObservedNames.map((name) => {
         const member = memberMap.get(normalizeLower(name));
         const inferredRole = roleFromObservedName(name);
         return {
-          uid: `observed-${normalizeLower(name)}`,
-          email: '',
           displayName: name,
+          email: '',
           role: inferredRole,
           status: 'active' as const,
           office: getOfficeFromProfile({ name, role: inferredRole, office: member?.office }),
           department: member?.team || (inferredRole === 'community' ? 'Coordination' : 'Operations'),
           title: member?.role || 'Workspace Owner',
-          timezone: 'Africa/Cairo',
         };
       }),
     ];
 
-    const officeInsights = buildOfficeInsights({
-      users: uniqueOfficeUsers(directoryUsers),
-      tasks,
-      handovers,
-      blockers,
-      campaigns,
-    });
+    return uniqueOfficeUsers(users);
+  }, [cloudUsers, user, workspaceData]);
 
-    const agents = officeInsights.agentRows
-      .map((row) => ({
-        name: row.name,
-        team: row.department || (row.role === 'community' ? 'Community Team' : 'Operations Team'),
-        office: row.office,
-        country: OFFICES.find((office) => office.name === row.office)?.country || row.office,
-        role: row.title || row.role,
-        status: 'active',
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+  const analysis = useMemo(() => buildFullAnalysisHub({
+    users: directoryUsers,
+    tasks: workspaceData.tasks,
+    campaigns: workspaceData.campaigns,
+    handovers: workspaceData.handovers,
+    blockers: workspaceData.blockers,
+    filters,
+  }), [directoryUsers, filters, workspaceData]);
 
-    const tasksByOwner = buildRowsMap(tasks, (task) => task.ownerId);
-    const blockersByOwner = buildRowsMap(blockers, (blocker) => blocker.ownerId);
-    const handoversByOutgoing = buildRowsMap(handovers, (handover) => handover.outgoingLead ?? '');
-    const campaignsByOwner = buildRowsMap(campaigns, (campaign) => campaign.currentOwner);
-
-    const officeRows: DataRow[] = officeInsights.officeRows.map((row) => ({
-      Office: row.office,
-      Country: OFFICES.find((office) => office.name === row.office)?.country || row.office,
-      Agents: row.agents,
-      Community: row.communityAgents,
-      Operations: row.operationsAgents,
-      Tasks: row.tasks,
-      Completed: row.done,
-      Pending: row.pending,
-      Handovers: row.handovers,
-      Blockers: row.blockers,
-      Campaigns: row.campaigns,
-      SLA: `${row.completionRate}%`,
-    }));
-
-    const officeAgentRows: DataRow[] = officeInsights.agentRows
-      .filter((row) => selectedOffice === 'all' || row.office === selectedOffice)
-      .map((row) => ({
-        Agent: row.name,
-        Email: row.email || 'N/A',
-        Office: row.office,
-        Role: row.role,
-        Team: row.department,
-        Title: row.title,
-        Tasks: row.tasks,
-        Done: row.done,
-        Pending: row.pending,
-        Handovers: row.handovers,
-        Blockers: row.blockers,
-        Campaigns: row.campaigns,
-        Rate: `${row.completionRate}%`,
-      }));
-
-    const teamRows: DataRow[] = TEAMS.map((team) => {
-      const teamAgents = agents.filter((agent) => agent.team === team);
-      const teamNames = new Set(teamAgents.map((agent) => agent.name));
-      const teamTasks = tasks.filter((task) => teamNames.has(normalize(task.ownerId)));
-      const teamDone = teamTasks.filter((task) => task.completed).length;
-      const teamHandovers = handovers.filter(
-        (handover) =>
-          teamNames.has(normalize(handover.outgoingLead)) ||
-          teamNames.has(normalize(handover.incomingLead)) ||
-          normalize(handover.team) === team.replace(' Team', ''),
-      );
-      const teamBlockers = blockers.filter((blocker) => teamNames.has(normalize(blocker.ownerId)));
-      const teamCampaigns = campaigns.filter((campaign) => teamNames.has(normalize(campaign.currentOwner)));
-
-      return {
-        Team: team,
-        Agents: teamAgents.length,
-        Offices: new Set(teamAgents.map((agent) => agent.office)).size,
-        Tasks: teamTasks.length,
-        Completed: teamDone,
-        Pending: teamTasks.length - teamDone,
-        Handovers: teamHandovers.length,
-        Blockers: teamBlockers.length,
-        Campaigns: teamCampaigns.length,
-        Productivity: percent(teamTasks.length ? (teamDone / teamTasks.length) * 100 : 0),
-      };
-    }).filter((row) => Number(row.Agents) > 0 || Number(row.Tasks) > 0);
-
-    const agentRows: DataRow[] = agents.map((agent) => {
-      const agentTasks = tasksByOwner[agent.name] || [];
-      const done = agentTasks.filter((task) => task.completed).length;
-      const pending = agentTasks.length - done;
-      const agentHandoversOut = handoversByOutgoing[agent.name] || [];
-      const agentHandoversIn = handovers.filter((handover) => normalize(handover.incomingLead) === agent.name);
-      const agentBlockers = blockersByOwner[agent.name] || [];
-      const agentCampaigns = campaignsByOwner[agent.name] || [];
-      const productivityScore = done * 10 + agentHandoversOut.length * 5 - agentBlockers.length * 4;
-
-      return {
-        Agent: agent.name,
-        Team: agent.team,
-        Office: agent.office,
-        Role: agent.role,
-        Tasks: agentTasks.length,
-        Done: done,
-        Pending: pending,
-        HandoversOut: agentHandoversOut.length,
-        HandoversIn: agentHandoversIn.length,
-        Blockers: agentBlockers.length,
-        Campaigns: agentCampaigns.length,
-        Score: productivityScore,
-      };
-    }).filter((row) => Number(row.Tasks) > 0 || Number(row.HandoversOut) > 0 || Number(row.Campaigns) > 0);
-
-    const reportVisibleTasks = tasks.filter((task) => isVisibleInReports(task.ownerId));
-    const reportVisibleHandovers = handovers.filter((handover) => isVisibleInReports(handover.outgoingLead) && isVisibleInReports(handover.incomingLead));
-    const reportVisibleBlockers = blockers.filter((blocker) => isVisibleInReports(blocker.ownerId));
-    const reportVisibleCampaigns = campaigns.filter((campaign) => isVisibleInReports(campaign.currentOwner));
-
-    const taskRows: DataRow[] = reportVisibleTasks.map((task) => ({
-      Task: task.title,
-      Owner: normalize(task.ownerId),
-      Campaign: normalize(task.campaignId),
-      Priority: task.priority,
-      Status: task.completed ? 'Completed' : isOverdue(task.dueDate, task.completed) ? 'Overdue' : isDueSoon(task.dueDate, task.completed) ? 'Due Soon' : 'Open',
-      DueDate: formatDueDate(task.dueDate),
-      AgeDays: Math.max(0, Math.floor((Date.now() - task.createdAt) / (1000 * 60 * 60 * 24))),
-    }));
-
-    const handoverRows: DataRow[] = reportVisibleHandovers.map((handover) => ({
-      Date: handover.handoffDate,
-      Team: handover.team,
-      Region: handover.region,
-      From: handover.outgoingLead ?? '',
-      To: handover.incomingLead ?? '',
-      Status: handover.status,
-      LinkedTasks: handover.taskIds.length,
-      NotesSize: handover.notes.length,
-    }));
-
-    const blockerRows: DataRow[] = reportVisibleBlockers.map((blocker) => ({
-      Blocker: blocker.summary,
-      Owner: normalize(blocker.ownerId),
-      Severity: blocker.severity,
-      Status: blocker.status,
-      Campaign: normalize(blocker.campaignId),
-      AgeDays: Math.max(0, Math.floor((Date.now() - blocker.createdAt) / (1000 * 60 * 60 * 24))),
-      Impact: blocker.impact,
-    }));
-
-    const campaignRows: DataRow[] = reportVisibleCampaigns.map((campaign) => ({
-      Campaign: campaign.name,
-      Owner: campaign.currentOwner,
-      Market: `${campaign.country} / ${campaign.city}`,
-      Status: campaign.status,
-      Health: campaign.recordHealth,
-      Budget: campaign.budget,
-      Targets: campaign.targetInfluencers,
-      CoverageTarget: campaign.targetPostingCoverage,
-      Platforms: campaign.platforms.join(', '),
-    }));
-
-    const slaOwnerRows: DataRow[] = agents.map((agent) => {
-      const agentTasks = tasksByOwner[agent.name] || [];
-      const total = agentTasks.length;
-      const completed = agentTasks.filter((task) => task.completed).length;
-      const overdue = agentTasks.filter((task) => isOverdue(task.dueDate, task.completed)).length;
-      const dueSoon = agentTasks.filter((task) => isDueSoon(task.dueDate, task.completed)).length;
-      const complianceRate = total ? ((total - overdue) / total) * 100 : 100;
-
-      return {
-        Owner: agent.name,
-        Team: agent.team,
-        TotalTasks: total,
-        Completed: completed,
-        DueSoon: dueSoon,
-        Overdue: overdue,
-        Compliance: percent(complianceRate),
-      };
-    }).filter((row) => Number(row.TotalTasks) > 0);
-
-    const acknowledgedHandovers = reportVisibleHandovers.filter((handover) => handover.status !== 'Pending').length;
-
-    const reportMap: Record<PillarKey, PillarReport> = {
-      offices: {
-        key: 'offices',
-        label: 'Offices',
-        description: selectedOffice === 'all'
-          ? 'Regional office throughput, staffing spread, and SLA posture.'
-          : `${selectedOffice} office agent-by-agent performance breakdown.`,
-        value: selectedOffice === 'all'
-          ? String(officeRows.length)
-          : String(officeAgentRows.length),
-        insight: selectedOffice === 'all'
-          ? `${officeRows.reduce((sum, row) => sum + Number(row.Tasks || 0), 0)} tracked tasks across all active offices`
-          : `${officeAgentRows.reduce((sum, row) => sum + Number(row.Done || 0), 0)} completed tasks inside ${selectedOffice}`,
-        rows: officeRows,
-        detailRows: officeAgentRows,
-      },
-      teams: {
-        key: 'teams',
-        label: 'Teams',
-        description: 'Team-level execution, load, and backlog visibility.',
-        value: String(teamRows.length),
-        insight: `${teamRows.reduce((sum, row) => sum + Number(row.Completed || 0), 0)} completed tasks delivered by active teams`,
-        rows: teamRows,
-      },
-      agents: {
-        key: 'agents',
-        label: 'Agents',
-        description: 'Individual productivity, ownership, and handover responsibility.',
-        value: String(agentRows.length),
-        insight: `${agentRows.filter((row) => Number(row.Score || 0) > 0).length} agents currently driving positive output`,
-        rows: agentRows,
-      },
-      tasks: {
-        key: 'tasks',
-        label: 'Tasks',
-        description: 'Detailed task flow with owner, status, and due-date pressure.',
-        value: String(reportVisibleTasks.length),
-        insight: `${reportVisibleTasks.filter((task) => task.completed).length} done / ${reportVisibleTasks.filter((task) => !task.completed).length} still open`,
-        rows: taskRows,
-      },
-      handovers: {
-        key: 'handovers',
-        label: 'Handovers',
-        description: 'Shift relay continuity, acknowledgement, and linked workload.',
-        value: String(reportVisibleHandovers.length),
-        insight: `${acknowledgedHandovers} acknowledged or reviewed relays`,
-        rows: handoverRows,
-      },
-      sla: {
-        key: 'sla',
-        label: 'SLA',
-        description: 'Compliance pressure by owner using due dates and backlog heat.',
-        value: percent(reportVisibleTasks.length ? ((reportVisibleTasks.length - reportVisibleTasks.filter((task) => isOverdue(task.dueDate, task.completed)).length) / reportVisibleTasks.length) * 100 : 100),
-        insight: `${reportVisibleTasks.filter((task) => isOverdue(task.dueDate, task.completed)).length} overdue tasks currently threatening SLA`,
-        rows: slaOwnerRows,
-      },
-      blockers: {
-        key: 'blockers',
-        label: 'Blockers',
-        description: 'Open risk inventory with severity, age, and ownership.',
-        value: String(reportVisibleBlockers.length),
-        insight: `${reportVisibleBlockers.filter((blocker) => blocker.severity === 'Critical').length} critical blockers require immediate attention`,
-        rows: blockerRows,
-      },
-      campaigns: {
-        key: 'campaigns',
-        label: 'Campaigns',
-        description: 'Portfolio health, ownership mix, and budget exposure.',
-        value: String(reportVisibleCampaigns.length),
-        insight: `${currency(reportVisibleCampaigns.reduce((sum, campaign) => sum + campaign.budget, 0))} in tracked campaign budget`,
-        rows: campaignRows,
-      },
-    };
-
-    return reportMap;
-  }, [cloudUsers, role, selectedOffice, user]);
-
-  const selectedReport = reports[selectedPillar];
-  const activeReportRows = selectedPillar === 'offices' && selectedOffice !== 'all'
-    ? selectedReport.detailRows || selectedReport.rows
-    : selectedReport.rows;
-  const filteredRows = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-    let rows = activeReportRows;
-    if (selectedPillar === 'agents') {
-      rows = rows.filter((row) => !hiddenAgents.has(String(row.Agent || row.name)));
-    }
-    if (query) {
-      rows = rows.filter((row) =>
-        Object.values(row).some((value) => String(value).toLowerCase().includes(query)),
-      );
-    }
-    return rows;
-  }, [activeReportRows, searchTerm, selectedPillar, hiddenAgents]);
+  const selectedReport = analysis.reports[filters.pillar];
+  const tableRows = selectedReport.filteredRows;
+  const tableColumns = tableRows[0] ? Object.keys(tableRows[0]) : selectedReport.rows[0] ? Object.keys(selectedReport.rows[0]) : [];
 
   const chart = useMemo(() => {
-    const rows = filteredRows.slice(0, 6);
-    if (!rows.length) return { labelKey: '', valueKey: '', rows: [] as Array<Record<string, string | number>> };
-
+    const rows = tableRows.slice(0, 8);
+    if (!rows.length) return { labelKey: '', valueKey: '', rows: [] as AnalysisDataRow[] };
     const firstRow = rows[0];
     const keys = Object.keys(firstRow);
     const labelKey = keys.find((key) => typeof firstRow[key] === 'string') || keys[0];
     const valueKey = keys.find((key) => typeof firstRow[key] === 'number') || keys[1] || keys[0];
-
     return { labelKey, valueKey, rows };
-  }, [filteredRows]);
+  }, [tableRows]);
 
-  const tableColumns = filteredRows[0] ? Object.keys(filteredRows[0]) : [];
-  const officeSummaryRows = reports.offices.rows;
-  const allOfficeTotals = officeSummaryRows.reduce<{ agents: number; tasks: number; done: number }>((acc, row) => ({
-    agents: acc.agents + Number(row.Agents || 0),
-    tasks: acc.tasks + Number(row.Tasks || 0),
-    done: acc.done + Number(row.Completed || 0),
-  }), { agents: 0, tasks: 0, done: 0 });
-  const globalSheets = Object.values(reports).map((report) => ({
-    name: toTitle(report.label),
-    rows: report.key === 'offices' && report.detailRows ? [...report.rows, ...report.detailRows] : report.rows,
-  }));
+  const setFilter = <K extends keyof AnalysisFilters>(key: K, value: AnalysisFilters[K]) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    if (key === 'pillar') {
+      const next = new URLSearchParams(searchParams);
+      next.set('pillar', String(value));
+      if (String(value) !== 'offices') next.delete('office');
+      setSearchParams(next);
+    }
+    if (key === 'office') {
+      const next = new URLSearchParams(searchParams);
+      next.set('pillar', filters.pillar);
+      if (value === 'all') next.delete('office');
+      else next.set('office', String(value));
+      setSearchParams(next);
+    }
+  };
 
-  const exportCurrentXlsx = () => exportRows(`trygc_${selectedPillar}_report.xlsx`, selectedReport.rows);
-  const exportCurrentCsv = () => exportRowsAsCsv(`trygc_${selectedPillar}_report.csv`, selectedReport.rows);
-  const exportAllWorkbook = () => exportWorkbook('trygc_reporting_hub.xlsx', globalSheets);
-
-  const totalTasks = Number(reports.tasks.value || 0);
-  const totalHandovers = Number(reports.handovers.value || 0);
-  const totalBlockers = Number(reports.blockers.value || 0);
-  const totalCampaigns = Number(reports.campaigns.value || 0);
-
-  const choosePillar = (pillar: PillarKey) => {
-    setSelectedPillar(pillar);
+  const resetFilters = () => {
+    const reset = defaultAnalysisFilters(filters.pillar);
+    setFilters(reset);
     const next = new URLSearchParams(searchParams);
-    next.set('pillar', pillar);
-    if (pillar !== 'offices') next.delete('office');
+    next.set('pillar', filters.pillar);
+    next.delete('office');
     setSearchParams(next);
   };
 
-  const chooseOffice = (office: 'all' | OpsOffice) => {
-    setSelectedPillar('offices');
-    setSelectedOffice(office);
-    const next = new URLSearchParams(searchParams);
-    next.set('pillar', 'offices');
-    if (office === 'all') next.delete('office');
-    else next.set('office', office);
-    setSearchParams(next);
-  };
+  const exportCurrentXlsx = () => exportRows(`trygc_${filters.pillar}_analysis.xlsx`, selectedReport.filteredRows);
+  const exportCurrentCsv = () => exportRowsAsCsv(`trygc_${filters.pillar}_analysis.csv`, selectedReport.filteredRows);
+  const exportAllWorkbook = () => exportWorkbook('trygc_full_analysis_hub.xlsx', analysis.exportSheets);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 pb-10">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-gc-orange">Reporting Center</p>
-          <h1 className="font-condensed text-[28px] font-extrabold uppercase tracking-tight">Pillar Analytics Hub</h1>
+          <h1 className="font-condensed text-[30px] font-extrabold uppercase tracking-tight">Full Analysis Hub</h1>
           <p className="mt-1 max-w-3xl text-[12px] font-medium text-muted-foreground">
-            Drill into every operational pillar, click across live metrics, and export both Excel and CSV reports from the same command surface.
+            Filter every operational pillar by employee, task, campaign, handover, office, status, priority, and search, then export the exact analysis.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
           <Button onClick={exportAllWorkbook} className="h-10 bg-gc-orange text-white hover:bg-gc-orange/90">
             <FileSpreadsheet className="mr-2 h-4 w-4" />
-            Export Full Workbook
+            Export All Pillars
           </Button>
           <Button variant="outline" onClick={exportCurrentXlsx} className="h-10">
             <Download className="mr-2 h-4 w-4" />
-            Export {selectedReport.label} XLSX
+            Export Filtered XLSX
           </Button>
           <Button variant="outline" onClick={exportCurrentCsv} className="h-10">
             <Download className="mr-2 h-4 w-4" />
-            Export {selectedReport.label} CSV
+            Export Filtered CSV
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <SummaryCard label="Tasks Tracked" value={String(totalTasks)} tone="text-gc-orange" />
-        <SummaryCard label="Handovers Live" value={String(totalHandovers)} tone="text-indigo-500" />
-        <SummaryCard label="Open Blockers" value={String(totalBlockers)} tone="text-red-500" />
-        <SummaryCard label="Campaigns Active" value={String(totalCampaigns)} tone="text-sky-500" />
-      </div>
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+        {analysis.globalMetrics.map((metric) => (
+          <Card key={String(metric.Label)} className="border-border bg-card">
+            <CardContent className="p-4">
+              <p className="text-[9.5px] font-extrabold uppercase tracking-widest text-muted-foreground">{metric.Label}</p>
+              <p className="mt-2 font-condensed text-[28px] font-black leading-none text-foreground">{metric.Value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {PILLAR_META.map((pillar) => {
-          const report = reports[pillar.key];
-          const Icon = pillar.icon;
-          const isActive = selectedPillar === pillar.key;
+      <Card className="border-border bg-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="font-condensed text-[18px] font-extrabold uppercase tracking-tight">Analysis Filters</CardTitle>
+          <CardDescription>Combine filters to inspect the exact pillar view you need before exporting.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+            <SelectField
+              label="Pillar"
+              value={filters.pillar}
+              onChange={(value) => setFilter('pillar', value as AnalysisPillarKey)}
+              options={analysis.pillarOrder.map((key) => ({ value: key, label: analysis.reports[key].label }))}
+            />
+            <SelectField
+              label="Employee"
+              value={filters.employee}
+              onChange={(value) => setFilter('employee', value)}
+              options={[{ value: 'all', label: 'All Employees' }, ...analysis.options.employees.map((value) => ({ value, label: value }))]}
+            />
+            <SelectField
+              label="Team"
+              value={filters.team}
+              onChange={(value) => setFilter('team', value)}
+              options={[{ value: 'all', label: 'All Teams' }, ...analysis.options.teams.map((value) => ({ value, label: value }))]}
+            />
+            <SelectField
+              label="Office"
+              value={filters.office}
+              onChange={(value) => setFilter('office', value as AnalysisFilters['office'])}
+              options={analysis.options.offices.map((value) => ({ value, label: value === 'all' ? 'All Offices' : value }))}
+            />
+            <SelectField
+              label="Campaign"
+              value={filters.campaign}
+              onChange={(value) => setFilter('campaign', value)}
+              options={[{ value: 'all', label: 'All Campaigns' }, ...analysis.options.campaigns.map((value) => ({ value, label: value }))]}
+            />
+            <SelectField
+              label="Status"
+              value={filters.status}
+              onChange={(value) => setFilter('status', value)}
+              options={[{ value: 'all', label: 'All Statuses' }, ...optionList(analysis.options.statuses, ['Open']).map((value) => ({ value, label: value }))]}
+            />
+            <SelectField
+              label="Priority"
+              value={filters.priority}
+              onChange={(value) => setFilter('priority', value)}
+              options={[{ value: 'all', label: 'All Priority' }, ...analysis.options.priorities.map((value) => ({ value, label: value }))]}
+            />
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground">Reset</span>
+              <Button variant="outline" className="h-9 justify-center" onClick={resetFilters}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Clear
+              </Button>
+            </div>
+          </div>
+
+          <div className="relative mt-3">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="h-10 pl-9"
+              placeholder="Search inside the selected analysis scope..."
+              value={filters.search}
+              onChange={(event) => setFilter('search', event.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {analysis.pillarOrder.map((pillar) => {
+          const report = analysis.reports[pillar];
+          const Icon = PILLAR_ICONS[pillar];
+          const tone = PILLAR_TONES[pillar];
+          const isActive = filters.pillar === pillar;
 
           return (
             <button
-              key={pillar.key}
-              onClick={() => choosePillar(pillar.key)}
-              className={`rounded-2xl border p-4 text-left transition-all ${
+              key={pillar}
+              type="button"
+              onClick={() => setFilter('pillar', pillar)}
+              className={`rounded-lg border p-4 text-left transition-all ${
                 isActive
                   ? 'border-gc-orange bg-gc-orange/8 shadow-[0_0_0_1px_rgba(249,115,22,0.15)]'
                   : 'border-border bg-card hover:border-gc-orange/40 hover:bg-secondary/30'
@@ -649,56 +421,32 @@ export default function Reporting() {
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div
-                  className="flex h-10 w-10 items-center justify-center rounded-xl"
-                  style={{ backgroundColor: `${pillar.tone}18`, color: pillar.tone }}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg"
+                  style={{ backgroundColor: `${tone}18`, color: tone }}
                 >
                   <Icon className="h-5 w-5" />
                 </div>
                 <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
-                  Click
+                  {report.filteredRows.length}/{report.rows.length}
                 </Badge>
               </div>
-              <div>
-                <p className="font-condensed text-[18px] font-extrabold uppercase tracking-tight">{report.label}</p>
-                <p className="mt-1 text-[12px] font-semibold text-muted-foreground">{report.description}</p>
-                <div className="mt-4 flex items-end justify-between gap-3">
-                  <span className="font-condensed text-[28px] font-black leading-none">{report.value}</span>
-                  <span className="text-right text-[11px] font-bold text-muted-foreground">{report.insight}</span>
-                </div>
+              <p className="font-condensed text-[18px] font-extrabold uppercase tracking-tight">{report.label}</p>
+              <p className="mt-1 min-h-[34px] text-[12px] font-semibold leading-snug text-muted-foreground">{report.description}</p>
+              <div className="mt-4 flex items-end justify-between gap-3">
+                <span className="font-condensed text-[28px] font-black leading-none">{report.value}</span>
+                <span className="text-right text-[11px] font-bold leading-snug text-muted-foreground">{report.insight}</span>
               </div>
             </button>
           );
         })}
-      </div>
+      </section>
 
-      {selectedPillar === 'offices' && (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-          <OfficeFilterCard
-            active={selectedOffice === 'all'}
-            label="All Offices"
-            value={String(allOfficeTotals.agents)}
-            detail={`${allOfficeTotals.tasks} tasks / ${allOfficeTotals.done} done`}
-            onClick={() => chooseOffice('all')}
-          />
-          {officeSummaryRows.map((row) => (
-            <OfficeFilterCard
-              key={String(row.Office)}
-              active={selectedOffice === row.Office}
-              label={String(row.Office)}
-              value={String(row.Agents)}
-              detail={`${row.Tasks} tasks / ${row.Completed} done`}
-              onClick={() => chooseOffice(row.Office as OpsOffice)}
-            />
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_0.9fr]">
         <Card className="border-border bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 font-condensed text-[18px] font-extrabold uppercase tracking-tight">
               <BarChart3 className="h-4 w-4 text-gc-orange" />
-              {selectedReport.label} Performance Spread
+              {selectedReport.label} Spread
             </CardTitle>
             <CardDescription>{selectedReport.description}</CardDescription>
           </CardHeader>
@@ -707,22 +455,17 @@ export default function Reporting() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chart.rows}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis
-                    dataKey={chart.labelKey}
-                    stroke="var(--muted-foreground)"
-                    fontSize={10}
-                    tickLine={false}
-                    axisLine={false}
-                  />
+                  <XAxis dataKey={chart.labelKey} stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} />
                   <YAxis stroke="var(--muted-foreground)" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: 'var(--card)',
                       border: '1px solid var(--border)',
-                      borderRadius: '12px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
                     }}
                   />
-                  <Bar dataKey={chart.valueKey} radius={[8, 8, 0, 0]}>
+                  <Bar dataKey={chart.valueKey} radius={[6, 6, 0, 0]}>
                     {chart.rows.map((_, index) => (
                       <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                     ))}
@@ -730,9 +473,7 @@ export default function Reporting() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No chartable data available for this pillar yet.
-              </div>
+              <EmptyState text="No chartable data for the current filters." />
             )}
           </CardContent>
         </Card>
@@ -742,153 +483,247 @@ export default function Reporting() {
             <CardTitle className="font-condensed text-[18px] font-extrabold uppercase tracking-tight">
               {selectedReport.label} Intelligence
             </CardTitle>
-            <CardDescription>Fast operational reading for the currently selected reporting pillar.</CardDescription>
+            <CardDescription>Current filtered readout for the selected pillar.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <InsightRow label="Selected Pillar" value={selectedReport.label} />
-            <InsightRow label="Rows Available" value={String(selectedReport.rows.length)} />
-            <InsightRow label="Filtered Rows" value={String(filteredRows.length)} />
+            <InsightRow label="Total Rows" value={String(selectedReport.rows.length)} />
+            <InsightRow label="Filtered Rows" value={String(selectedReport.filteredRows.length)} />
             <InsightRow label="Key Insight" value={selectedReport.insight} />
-            <InsightRow label="Export Modes" value="XLSX + CSV" />
-            <div className="rounded-xl border border-dashed border-gc-orange/30 bg-gc-orange/5 p-4">
+            <InsightRow label="Exports" value="All pillars workbook + filtered XLSX/CSV" />
+            <div className="rounded-lg border border-dashed border-gc-orange/30 bg-gc-orange/5 p-4">
               <p className="text-[11px] font-extrabold uppercase tracking-widest text-gc-orange">Analysis Note</p>
               <p className="mt-2 text-[12px] font-medium leading-relaxed text-muted-foreground">
-                Click any pillar card to reframe the report instantly. Each pillar now has its own table, chart, and dedicated export path.
+                Workbook export includes every pillar using the active filters. Single-pillar exports use the table below.
               </p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="border-border bg-card">
-        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <CardTitle className="font-condensed text-[20px] font-extrabold uppercase tracking-tight">
-              {selectedReport.label} Detailed Analysis
-            </CardTitle>
-            <CardDescription>
-              {selectedPillar === 'offices' && selectedOffice !== 'all'
-                ? `Showing every person in ${selectedOffice} with workload, handovers, blockers, and campaign ownership.`
-                : 'Search, click through, and export the exact rows behind the selected pillar.'}
-            </CardDescription>
-          </div>
-
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder={`Search ${selectedReport.label.toLowerCase()} report...`}
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
-          </div>
-          {selectedPillar === 'agents' && hiddenAgents.size > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-10 text-[10px]"
-              onClick={() => {
-                if (confirm(`Show all ${hiddenAgents.size} hidden agent(s)?`)) {
-                  setHiddenAgents(new Set());
-                }
-              }}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Show {hiddenAgents.size} Hidden
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent>
-          {filteredRows.length ? (
-            <div className="overflow-x-auto rounded-xl border border-border">
-              <Table>
-                <TableHeader className="bg-secondary/50">
-                  <TableRow className="border-border hover:bg-transparent">
-                    {tableColumns.map((column) => (
-                      <TableHead key={column} className="py-3 text-[10px] font-extrabold uppercase tracking-[0.12em] text-muted-foreground">
-                        {column}
-                      </TableHead>
-                    ))}
-                    {selectedPillar === 'agents' && (
-                      <TableHead className="py-3 text-[10px] font-extrabold uppercase tracking-[0.12em] text-muted-foreground text-right">
-                        Actions
-                      </TableHead>
-                    )}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRows.map((row, index) => (
-                    <TableRow key={`${selectedPillar}-${index}`} className="border-border hover:bg-secondary/30">
+      {filters.pillar === 'employees' && analysis.employeeBreakdown ? (
+        <EmployeeBreakdownView
+          breakdown={analysis.employeeBreakdown}
+          onOpenPillar={(pillar) => setFilter('pillar', pillar)}
+        />
+      ) : (
+        <Card className="border-border bg-card">
+          <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <CardTitle className="font-condensed text-[20px] font-extrabold uppercase tracking-tight">
+                {selectedReport.label} Detailed Analysis
+              </CardTitle>
+              <CardDescription>
+                {filters.pillar === 'employees'
+                  ? 'Choose an employee from the filter, or click a name below, to open a cross-pillar breakdown for that person.'
+                  : `${tableRows.length} filtered rows from ${selectedReport.rows.length} total rows. Export buttons above use this filtered analysis.`}
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {tableRows.length ? (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <Table>
+                  <TableHeader className="bg-secondary/50">
+                    <TableRow className="border-border hover:bg-transparent">
                       {tableColumns.map((column) => (
-                        <TableCell key={`${selectedPillar}-${index}-${column}`} className="text-[12px] font-medium">
-                          {String(row[column])}
-                        </TableCell>
+                        <TableHead key={column} className="py-3 text-[10px] font-extrabold uppercase tracking-[0.12em] text-muted-foreground">
+                          {column}
+                        </TableHead>
                       ))}
-                      {selectedPillar === 'agents' && (
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
-                            onClick={() => {
-                              const agentName = String(row.Agent || row.name || '');
-                              if (agentName && confirm(`Hide "${agentName}" from reports?`)) {
-                                setHiddenAgents(prev => new Set([...prev, agentName]));
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      )}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="flex min-h-[180px] items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
-              No matching rows found for this search.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {tableRows.map((row, index) => (
+                      <TableRow key={`${filters.pillar}-${index}`} className="border-border hover:bg-secondary/30">
+                        {tableColumns.map((column) => (
+                          <TableCell key={`${filters.pillar}-${index}-${column}`} className="max-w-[260px] truncate text-[12px] font-medium">
+                            {filters.pillar === 'employees' && column === 'Employee' ? (
+                              <button
+                                type="button"
+                                className="font-extrabold text-gc-orange underline-offset-4 hover:underline"
+                                onClick={() => setFilter('employee', String(row[column]))}
+                              >
+                                {String(row[column] ?? '')}
+                              </button>
+                            ) : (
+                              String(row[column] ?? '')
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <EmptyState text="No rows match the current filters. Clear filters or export an empty workbook shell." />
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
-function SummaryCard({ label, value, tone }: { label: string; value: string; tone: string }) {
+function EmployeeBreakdownView({
+  breakdown,
+  onOpenPillar,
+}: {
+  breakdown: EmployeeBreakdown;
+  onOpenPillar: (pillar: AnalysisPillarKey) => void;
+}) {
+  const profile = breakdown.profile;
+  const headlineMetrics = [
+    { label: 'Team', value: profile.Team },
+    { label: 'Office', value: profile.Office },
+    { label: 'Completion', value: profile.Completion },
+    { label: 'Score', value: profile.Score },
+  ];
+
   return (
     <Card className="border-border bg-card">
-      <CardContent className="p-4">
-        <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</p>
-        <p className={`mt-2 font-condensed text-[30px] font-black leading-none ${tone}`}>{value}</p>
+      <CardHeader className="space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-gc-orange">Employee Breakdown</p>
+            <CardTitle className="mt-1 font-condensed text-[24px] font-extrabold uppercase tracking-tight">
+              {breakdown.selectedEmployee}
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Every pillar below is filtered to this employee: tasks, campaigns, handovers, blockers, SLA, team, and office context.
+            </CardDescription>
+          </div>
+          <div className="grid min-w-[min(100%,520px)] grid-cols-2 gap-2 lg:grid-cols-4">
+            {headlineMetrics.map((metric) => (
+              <div key={metric.label} className="rounded-lg border border-border bg-background px-3 py-2.5">
+                <p className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground">{metric.label}</p>
+                <p className="mt-1 truncate text-[15px] font-black text-foreground">{String(metric.value || 'N/A')}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          {breakdown.pillarCards.map((card) => {
+            const Icon = PILLAR_ICONS[card.key];
+            const tone = PILLAR_TONES[card.key];
+            return (
+              <button
+                key={card.key}
+                type="button"
+                onClick={() => onOpenPillar(card.key)}
+                className="rounded-lg border border-border bg-background p-3 text-left transition-colors hover:border-gc-orange/50 hover:bg-gc-orange/5"
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: `${tone}18`, color: tone }}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <span className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground">{card.label}</span>
+                </div>
+                <p className="truncate font-condensed text-[24px] font-black leading-none">{card.value}</p>
+                <p className="mt-2 min-h-[28px] text-[10.5px] font-bold leading-snug text-muted-foreground">{card.insight}</p>
+              </button>
+            );
+          })}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 xl:grid-cols-2">
+          {breakdown.detailSections.map((section) => (
+            <div key={section.key} className="rounded-lg border border-border bg-background">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <div>
+                  <h3 className="font-condensed text-[16px] font-extrabold uppercase tracking-tight">{section.label}</h3>
+                  <p className="text-[11px] font-semibold text-muted-foreground">{section.rows.length} employee-linked rows</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => onOpenPillar(section.key)}>
+                  Open Pillar
+                </Button>
+              </div>
+              <MiniRowsTable rows={section.rows.slice(0, 6)} emptyText={`No ${section.label.toLowerCase()} for this employee.`} />
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function OfficeFilterCard({ active, label, value, detail, onClick }: { active: boolean; label: string; value: string; detail: string; onClick: () => void }) {
+function MiniRowsTable({ rows, emptyText }: { rows: AnalysisDataRow[]; emptyText: string }) {
+  if (!rows.length) {
+    return <div className="p-4"><EmptyState text={emptyText} /></div>;
+  }
+
+  const columns = Object.keys(rows[0]).slice(0, 5);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-xl border p-4 text-left transition-all ${
-        active ? 'border-gc-orange bg-gc-orange/8 shadow-[0_0_0_1px_rgba(249,115,22,0.14)]' : 'border-border bg-card hover:border-gc-orange/40'
-      }`}
-    >
-      <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</p>
-      <p className="mt-2 font-condensed text-[26px] font-black leading-none text-foreground">{value}</p>
-      <p className="mt-2 text-[11px] font-bold text-muted-foreground">{detail}</p>
-    </button>
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader className="bg-secondary/40">
+          <TableRow className="border-border hover:bg-transparent">
+            {columns.map((column) => (
+              <TableHead key={column} className="py-2 text-[9.5px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                {column}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, index) => (
+            <TableRow key={index} className="border-border hover:bg-secondary/30">
+              {columns.map((column) => (
+                <TableCell key={`${index}-${column}`} className="max-w-[220px] truncate text-[11.5px] font-medium">
+                  {String(row[column] ?? '')}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</span>
+      <select
+        className="h-9 min-w-0 rounded-lg border border-input bg-background px-2 text-[12px] font-semibold text-foreground outline-none transition-colors focus:border-gc-orange focus:ring-2 focus:ring-gc-orange/20"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={`${label}-${option.value}`} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 
 function InsightRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-4 rounded-xl border border-border bg-background px-3 py-2.5">
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-background px-3 py-2.5">
       <span className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">{label}</span>
       <span className="text-right text-[12px] font-semibold text-foreground">{value}</span>
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="flex h-full min-h-[160px] items-center justify-center rounded-lg border border-dashed border-border px-4 text-center text-sm font-medium text-muted-foreground">
+      {text}
     </div>
   );
 }

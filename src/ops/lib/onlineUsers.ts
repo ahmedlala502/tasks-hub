@@ -50,11 +50,11 @@ interface BuildOnlineUserRosterInput {
 const DEFAULT_ONLINE_WINDOW_MS = 1000 * 60 * 60 * 12;
 const DEFAULT_IDLE_WINDOW_MS = 1000 * 60 * 60 * 48;
 
-function normalizeName(name: string): string {
-  return name.trim().replace(/\s+/g, ' ');
+function normalizeName(name: string | null | undefined): string {
+  return (name ?? '').trim().replace(/\s+/g, ' ');
 }
 
-function keyFor(name: string): string {
+function keyFor(name: string | null | undefined): string {
   return normalizeName(name).toLowerCase();
 }
 
@@ -123,7 +123,7 @@ export function buildOnlineUserRoster({
   const rows = new Map<string, OnlineUserRow>();
   const todayKey = cairoDateKey(now);
 
-  const ensureRow = (name: string): OnlineUserRow | undefined => {
+  const ensureRow = (name: string | null | undefined): OnlineUserRow | undefined => {
     const normalized = normalizeName(name);
     if (!normalized) return undefined;
     const key = keyFor(normalized);
